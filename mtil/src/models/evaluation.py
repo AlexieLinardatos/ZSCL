@@ -5,10 +5,12 @@ import csv
 import torch
 import gc
 from tqdm import tqdm
+import tkinter
 
 from .. import datasets
 from ..datasets.common import get_dataloader, maybe_dictionarize
 from PIL import Image
+
 
 
 def accuracy(output, target, topk=(1,)):
@@ -122,7 +124,10 @@ def evaluate(image_classifier, args, val_preprocess):
 
 def eval_single_image(image_classifier, args, val_preprocess):
     if args.eval_single is None:
-        return
+        image_path = input("Enter a path to a image: ")
+    else:
+        image_path = args.eval_single
+
     if args.class_names is None:
         return 
     
@@ -131,7 +136,7 @@ def eval_single_image(image_classifier, args, val_preprocess):
     model.eval()
     
     #loading image
-    image = val_preprocess(Image.open(args.eval_single)).unsqueeze(0).to("cuda")
+    image = val_preprocess(Image.open(image_path)).unsqueeze(0).to("cuda")
 
     #loading class names
     with open(args.class_names, "r") as file:
