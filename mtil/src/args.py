@@ -51,9 +51,13 @@ def parse_arguments():
     parser.add_argument("--eval-datasets", default=None, type=lambda x: x.split(","))
     parser.add_argument("--text-datasets", default=None, type=lambda x: x.split(","))
     parser.add_argument("--template", type=str, default=None)
+
+    #single image evaluation
     parser.add_argument("--eval-single", default=None, type=str)
     parser.add_argument("--prompt", default=None, type=str)
     parser.add_argument("--class-names", default=None, type=str)
+    
+
 
     # save & load
     parser.add_argument("--save", type=str, default=None)

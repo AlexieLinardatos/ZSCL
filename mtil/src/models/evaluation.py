@@ -8,6 +8,7 @@ from tqdm import tqdm
 
 from .. import datasets
 from ..datasets.common import get_dataloader, maybe_dictionarize
+from PIL import Image
 
 
 def accuracy(output, target, topk=(1,)):
@@ -119,25 +120,49 @@ def evaluate(image_classifier, args, val_preprocess):
 
 
 
-def eval_single_image(image_classifier, args):
+def eval_single_image(image_classifier, args, val_preprocess):
     if args.eval_single is None:
         return
     if args.class_names is None:
         return 
+    
+    #load model
     model = image_classifier
     model.eval()
     
+    #loading image
+    image = val_preprocess(Image.open(args.eval_single)).unsqueeze(0).to("cuda")
+
+    #loading class names
     with open(args.class_names, "r") as file:
         lines = file.readlines()
-
+    
     class_names = [line.strip() for line in lines]
-    print(class_names) 
 
-    prompt = ""
+    prompts = ""
     if args.prompt is not None:
         prompts = [f"{args.prompt} {name}" for name in class_names]
     else:
         prompts = [f"a photo of a {name}" for name in class_names]
+
+    text = clip.tokenize(prompts).to("cuda")
+
+    with torch.no_grad():
+        image_feat = model.encode_image(image)
+        text_feat = model.encode_text(text)
+
+        logits_per_image, _ = model(image, text)
+        probs = logits_per_image.softmax(dim=-1).cpu().numpy()
+
+    # print(probs.tolist()[0])
+    result = dict(zip(prompts, probs.tolist()[0]))
+    result = dict(sorted(result.items(), key=lambda item: item[1]))
+    if args.save:
+        with open(os.path.join(args.save, os.path.splitext(os.path.basename(args.eval_single))[0]) + ".txt", "w") as file:
+            for key, value in result.items():
+                file.write(f"{key}: {value:.6f}\n")
+    else:
+        print(f"label probabilities: {result}")
     
 
 

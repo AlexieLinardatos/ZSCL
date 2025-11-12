@@ -7,7 +7,7 @@ import torch
 
 from . import utils
 from .args import parse_arguments
-from .models import evaluate, evaluate_fc, evaluate_wise_ft, finetune, finetune_fc, finetune_icarl, test
+from .models import evaluate, evaluate_fc, evaluate_wise_ft, finetune, finetune_fc, finetune_icarl, test, eval_single_image
 from .models.modeling import create_image_classifier
 
 
@@ -62,7 +62,7 @@ def main(args):
                 )
                 utils.torch_save(checkpoint_pth, model)
             if args.eval_single:
-                eval_single_image(model, args)
+                eval_single_image(model, args, val_preprocess)
             else:
                 evaluate(model, args, val_preprocess)
         elif args.method in ["icarl"]:

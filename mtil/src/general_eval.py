@@ -174,6 +174,7 @@ def evaluate(dictionary, agrs, fc, RECORD):
             evaluate_bl(model, datasets, val_preprocess, RECORD)
     return 
         
+        
 if __name__ == "__main__":
     args = parse_arguments()
     NAMES_ARRAY =  ["exp_zscl"]
