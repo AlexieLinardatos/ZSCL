@@ -61,7 +61,10 @@ def main(args):
                     args.save, f"clip_zeroshot_{args.train_dataset}.pth"
                 )
                 utils.torch_save(checkpoint_pth, model)
-            evaluate(model, args, val_preprocess)
+            if args.eval_single:
+                eval_single_image(model, args)
+            else:
+                evaluate(model, args, val_preprocess)
         elif args.method in ["icarl"]:
             model = finetune_icarl(args) 
         else:

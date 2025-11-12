@@ -30,6 +30,7 @@ def parse_arguments():
     parser.add_argument("--save-eval", action="store_true")
     parser.add_argument("--start-iteration", type=int, default=None)
 
+
     # exp setting
     parser.add_argument(
         "--method",
@@ -50,6 +51,9 @@ def parse_arguments():
     parser.add_argument("--eval-datasets", default=None, type=lambda x: x.split(","))
     parser.add_argument("--text-datasets", default=None, type=lambda x: x.split(","))
     parser.add_argument("--template", type=str, default=None)
+    parser.add_argument("--eval-single", default=None, type=str)
+    parser.add_argument("--prompt", default=None, type=str)
+    parser.add_argument("--class-names", default=None, type=str)
 
     # save & load
     parser.add_argument("--save", type=str, default=None)

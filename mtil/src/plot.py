@@ -100,4 +100,4 @@ def plot_all(path):
     plt.savefig(path +"/"+ "output_all.png")
 
 if __name__ == "__main__":
-    plot_metrics("./ckpt/DTD/MNIST")
+    plot_all("./ckpt/DTD/")

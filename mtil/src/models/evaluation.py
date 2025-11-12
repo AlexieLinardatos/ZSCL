@@ -117,6 +117,30 @@ def evaluate(image_classifier, args, val_preprocess):
                 writer.writeheader()
             writer.writerow(row)
 
+
+
+def eval_single_image(image_classifier, args):
+    if args.eval_single is None:
+        return
+    if args.class_names is None:
+        return 
+    model = image_classifier
+    model.eval()
+    
+    with open(args.class_names, "r") as file:
+        lines = file.readlines()
+
+    class_names = [line.strip() for line in lines]
+    print(class_names) 
+
+    prompt = ""
+    if args.prompt is not None:
+        prompts = [f"{args.prompt} {name}" for name in class_names]
+    else:
+        prompts = [f"a photo of a {name}" for name in class_names]
+    
+
+
 def eval_single_dataset_2(image_classifier, dataset, args):
     model = image_classifier
     input_key = "images"
