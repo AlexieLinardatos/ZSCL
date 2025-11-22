@@ -269,6 +269,8 @@ def finetune(args):
 
 
     model_ref = model.module if hasattr(model, "module") else model
+    
+    mixup_image, mixup_label = None, None
     for iteration in tqdm(range(model_iteration_count, total_iterations + 1)):
         #saving references
         iteration_save = iteration
@@ -309,6 +311,13 @@ def finetune(args):
         model.train()
         scheduler(iteration)
 
+        #freezing layers
+        if args.freeze:
+            for param in model.module.visual.ln_pre.parameters():
+                param.requires_grad = False
+            # for param in model.transformer.parameters():
+            #     param.requires_grad = False
+
         # prepare data
         if args.train_dataset == 'ImageNet':
             try:
@@ -340,6 +349,20 @@ def finetune(args):
         logits_per_image = logit_scale.exp() * out @ embeddings.t()
         loss = F.cross_entropy(logits_per_image, labels, label_smoothing=args.ls)
 
+        
+
+        if args.mixup is not None:
+            beta_m = 0.5
+            lamb = torch.Tensor([random.betavariate(beta_m,beta_m)]).to("cuda:0")
+            theta = torch.acos( (logits_per_image*logits_per_text).sum(dim=[1])).view(logits_per_image.shape[0],1)
+            n1 = torch.sin(lamb*theta)/torch.sin(theta)*logits_per_image
+            n2 = torch.sin((1-lamb)*theta)/torch.sin(theta)*logits_per_text
+
+            mixed = n1+n2
+
+
+
+
         if args.l2 > 0:
             loss_l2 = l2_loss(model, l2_model)
             loss += args.l2 * loss_l2
@@ -363,8 +386,7 @@ def finetune(args):
             ref_images, ref_labels = ref_images.cuda(), ref_labels.cuda()
             # breakpoint()
             
-            # ref_model = torch.nn.DataParallel(ref_model)
-            # ref_model = ref_model.cuda()
+            
             with torch.no_grad():
                 # -- get ref text embedding --
                 
@@ -392,7 +414,6 @@ def finetune(args):
             if args.feature_mse:
                 mse_loss = torch.nn.MSELoss()
                 loss += mse_loss(ref_out, ref_out_current)
-
             # -- final loss --
             if args.image_loss:
                 if args.weight_adjust:
@@ -451,6 +472,9 @@ def finetune(args):
             if args.l2 > 0:
                 prev_L2_loss = loss_l2.item() 
                 print("Loss L2:", loss_l2.item())
+
+
+        # mixup_image, mixup_label = images.copy(), labels.copy()
 
         #
     if args.wise_merge:
