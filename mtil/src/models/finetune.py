@@ -11,12 +11,32 @@ from .. import datasets, templates, utils
 from .evaluation import evaluate, zeroshot_classifier, evaluate_2
 from .helpers import get_datasets_text, merge_we, wise_we, moving_avg, l2_loss, virtual_vocab, distillation
 
-
+from collections import defaultdict
 import signal, torch, sys
 
 model_ref = None
 args_ref = None
 iteration_save = 0
+
+def svd_basis(gradient_per_layer_list, energy=0.97):
+    basis_per_layer = {}
+    
+    for name, gradient_list in gradient_per_layer_list.items():
+        G = torch.stack(gradient_list)
+        U, S, V_transpose = torch.linalg.svd(G)
+
+        total_energy = S.pow(2).sum()
+        running = 0.0
+        k = 0
+        for i in range(len(S)):
+            running += S[i].pow(2)
+            if running/total_energy >= energy:
+                k = i+1
+                break
+
+        basis_per_layer[name] = V_transpose[:k]
+    return basis_per_layer
+
 
 def eval_and_save(args, model, val_preprocess, model_iteration_count, loss_dict):
     
@@ -269,6 +289,22 @@ def finetune(args):
 
 
     model_ref = model.module if hasattr(model, "module") else model
+    
+    mixup_image, mixup_label = None, None
+
+
+    #orthogonal gradients
+    if args.orthogonal_gradients is not None:
+        gradient_list = []
+        gradients_per_layer = defaultdict(list)
+    #prev task
+    if args.orthogonal_gradients_path is not None:    
+        prev_basis = []
+        for t in range(len(args.orthogonal_gradients_path)):
+            basis = torch.load(args.orthogonal_gradients_path[t])
+            past_basis.append(basis.to(device))
+
+            
     for iteration in tqdm(range(model_iteration_count, total_iterations + 1)):
         #saving references
         iteration_save = iteration
@@ -309,6 +345,13 @@ def finetune(args):
         model.train()
         scheduler(iteration)
 
+        #freezing layers
+        if args.freeze:
+            for param in model.module.visual.ln_pre.parameters():
+                param.requires_grad = False
+            # for param in model.transformer.parameters():
+            #     param.requires_grad = False
+
         # prepare data
         if args.train_dataset == 'ImageNet':
             try:
@@ -340,6 +383,20 @@ def finetune(args):
         logits_per_image = logit_scale.exp() * out @ embeddings.t()
         loss = F.cross_entropy(logits_per_image, labels, label_smoothing=args.ls)
 
+        
+        '''
+        if args.mixup is not None:
+            beta_m = 0.5
+            lamb = torch.Tensor([random.betavariate(beta_m,beta_m)]).to("cuda:0")
+            theta = torch.acos( (logits_per_image*logits_per_text).sum(dim=[1])).view(logits_per_image.shape[0],1)
+            n1 = torch.sin(lamb*theta)/torch.sin(theta)*logits_per_image
+            n2 = torch.sin((1-lamb)*theta)/torch.sin(theta)*logits_per_text
+
+            mixed = n1+n2
+        '''
+
+
+
         if args.l2 > 0:
             loss_l2 = l2_loss(model, l2_model)
             loss += args.l2 * loss_l2
@@ -363,8 +420,7 @@ def finetune(args):
             ref_images, ref_labels = ref_images.cuda(), ref_labels.cuda()
             # breakpoint()
             
-            # ref_model = torch.nn.DataParallel(ref_model)
-            # ref_model = ref_model.cuda()
+            
             with torch.no_grad():
                 # -- get ref text embedding --
                 
@@ -392,7 +448,6 @@ def finetune(args):
             if args.feature_mse:
                 mse_loss = torch.nn.MSELoss()
                 loss += mse_loss(ref_out, ref_out_current)
-
             # -- final loss --
             if args.image_loss:
                 if args.weight_adjust:
@@ -452,6 +507,24 @@ def finetune(args):
                 prev_L2_loss = loss_l2.item() 
                 print("Loss L2:", loss_l2.item())
 
+        if args.orthogonal_gradients is not None:
+            if iteration % total_iterations//args.orthogonal_gradients == 0:
+                for name, param in model.named_parameters():
+                    if param.grad is None:
+                        continue
+                    
+                    gradient = param.grad.detach().clone().flatten()
+
+                    gradients_per_layer[name].append(gradient)
+
+                # gradient = torch.cat([
+                #     parameter.grad.detach().clone().flatten()
+                #     for parameter in model.parameters() if parameter.grad is not None
+                # ])
+                # gradient_list.append(gradient)
+        
+        # mixup_image, mixup_label = images.copy(), labels.copy()
+
         #
     if args.wise_merge:
         alpha = args.wise_ft_alpha
@@ -463,7 +536,9 @@ def finetune(args):
         for param_q, param_k in zip(model.module.parameters(), wise_ft_model.parameters()):
             param_q.data = param_q.data * alpha + param_k.data * (1 - alpha)
 
-
+    #Saving gradients
+    basis_per_layer = svd_basis(gradients_per_layer)
+    torch.save(basis_per_layer, os.path.join(args.save, f"grad_{args.train-dataset}.pth"))
 
     # Saving model
     if args.save is not None:

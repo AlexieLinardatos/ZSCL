@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import csv
 import os
 from matplotlib.ticker import FormatStrFormatter
+import argparse
 
 
 
@@ -56,8 +57,9 @@ def plot_all(path):
 
     index = 1
     while True:
+        print(f"os.listdir {os.listdir(path)}")
         folder = [f for f in os.listdir(path) if os.path.isdir(os.path.join(path,f))]
-
+        print(f"FOLDER:{folder}")
         if folder:
             folder = folder[0]
             print(f"folder:{folder}")
@@ -78,6 +80,7 @@ def plot_all(path):
             break
         path = os.path.join(path,folder)
     
+    print(versions)
     versions[0] = "DTD"
     print(datasets)
     print(accuracies_top1)    
@@ -99,5 +102,18 @@ def plot_all(path):
     # plt.gca().yaxis.set_major_formatter(FormatStrFormatter("%.0f"))
     plt.savefig(path +"/"+ "output_all.png")
 
+
 if __name__ == "__main__":
-    plot_all("./ckpt/DTD/")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--path", type=str, required=True)
+    parser.add_argument("--all", action="store_true", default=None)
+    parser.add_argument("--single", action="store_true", default=None)
+
+    args = parser.parse_args()
+
+    # path = "./ckpt/DTD_finetune/"
+    # path = "./ckpt/DTD_finetune/MNIST_finetune/EuroSAT_finetune/Aircraft_finetune"
+    if args.single:
+        plot_metrics(args.path)
+    elif args.all:
+        plot_all(args.path)

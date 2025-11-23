@@ -311,6 +311,14 @@ def parse_arguments():
         help="TODO",
     )
 
+    #THESIS ARGS
+    parser.add_argument("--freeze", action="store_true", default=False)
+    parser.add_argument("--mixup", type=int, default=None)
+    # parser.add_argument("--orthogonal-gradients", action="store_true", default=False)
+    parser.add_argument("--orthogonal-gradients", type=int, default=None)
+    parser.add_argument("--orthogonal-gradients-path", type=str, default=None, nargs="*")
+
+
     args = parser.parse_args()
     args.device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -320,5 +328,7 @@ def parse_arguments():
     assert (
         args.eval_interval is None or not args.eval_every_epoch
     ), "Cannot specify both eval_interval and eval_every_epoch."
+    
+
 
     return args
