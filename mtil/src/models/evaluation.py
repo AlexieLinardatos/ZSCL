@@ -162,6 +162,7 @@ def eval_single_image(image_classifier, args, val_preprocess):
     # print(probs.tolist()[0])
     result = dict(zip(prompts, probs.tolist()[0]))
     result = dict(sorted(result.items(), key=lambda item: item[1]))
+
     if args.save:
         with open(os.path.join(args.save, os.path.splitext(os.path.basename(args.eval_single))[0]) + ".txt", "w") as file:
             for key, value in result.items():
