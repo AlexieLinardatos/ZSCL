@@ -11,12 +11,32 @@ from .. import datasets, templates, utils
 from .evaluation import evaluate, zeroshot_classifier, evaluate_2
 from .helpers import get_datasets_text, merge_we, wise_we, moving_avg, l2_loss, virtual_vocab, distillation
 
-
+from collections import defaultdict
 import signal, torch, sys
 
 model_ref = None
 args_ref = None
 iteration_save = 0
+
+def svd_basis(gradient_per_layer_list, energy=0.97):
+    basis_per_layer = {}
+    
+    for name, gradient_list in gradient_per_layer_list.items():
+        G = torch.stack(gradient_list)
+        U, S, V_transpose = torch.linalg.svd(G)
+
+        total_energy = S.pow(2).sum()
+        running = 0.0
+        k = 0
+        for i in range(len(S)):
+            running += S[i].pow(2)
+            if running/total_energy >= energy:
+                k = i+1
+                break
+
+        basis_per_layer[name] = V_transpose[:k]
+    return basis_per_layer
+
 
 def eval_and_save(args, model, val_preprocess, model_iteration_count, loss_dict):
     
@@ -271,6 +291,20 @@ def finetune(args):
     model_ref = model.module if hasattr(model, "module") else model
     
     mixup_image, mixup_label = None, None
+
+
+    #orthogonal gradients
+    if args.orthogonal_gradients is not None:
+        gradient_list = []
+        gradients_per_layer = defaultdict(list)
+    #prev task
+    if args.orthogonal_gradients_path is not None:    
+        prev_basis = []
+        for t in range(len(args.orthogonal_gradients_path)):
+            basis = torch.load(args.orthogonal_gradients_path[t])
+            past_basis.append(basis.to(device))
+
+            
     for iteration in tqdm(range(model_iteration_count, total_iterations + 1)):
         #saving references
         iteration_save = iteration
@@ -350,7 +384,7 @@ def finetune(args):
         loss = F.cross_entropy(logits_per_image, labels, label_smoothing=args.ls)
 
         
-
+        '''
         if args.mixup is not None:
             beta_m = 0.5
             lamb = torch.Tensor([random.betavariate(beta_m,beta_m)]).to("cuda:0")
@@ -359,7 +393,7 @@ def finetune(args):
             n2 = torch.sin((1-lamb)*theta)/torch.sin(theta)*logits_per_text
 
             mixed = n1+n2
-
+        '''
 
 
 
@@ -473,7 +507,22 @@ def finetune(args):
                 prev_L2_loss = loss_l2.item() 
                 print("Loss L2:", loss_l2.item())
 
+        if args.orthogonal_gradients is not None:
+            if iteration % total_iterations//args.orthogonal_gradients == 0:
+                for name, param in model.named_parameters():
+                    if param.grad is None:
+                        continue
+                    
+                    gradient = param.grad.detach().clone().flatten()
 
+                    gradients_per_layer[name].append(gradient)
+
+                # gradient = torch.cat([
+                #     parameter.grad.detach().clone().flatten()
+                #     for parameter in model.parameters() if parameter.grad is not None
+                # ])
+                # gradient_list.append(gradient)
+        
         # mixup_image, mixup_label = images.copy(), labels.copy()
 
         #
@@ -487,7 +536,9 @@ def finetune(args):
         for param_q, param_k in zip(model.module.parameters(), wise_ft_model.parameters()):
             param_q.data = param_q.data * alpha + param_k.data * (1 - alpha)
 
-
+    #Saving gradients
+    basis_per_layer = svd_basis(gradients_per_layer)
+    torch.save(basis_per_layer, os.path.join(args.save, f"grad_{args.train-dataset}.pth"))
 
     # Saving model
     if args.save is not None:

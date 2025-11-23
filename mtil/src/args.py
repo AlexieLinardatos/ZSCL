@@ -314,6 +314,10 @@ def parse_arguments():
     #THESIS ARGS
     parser.add_argument("--freeze", action="store_true", default=False)
     parser.add_argument("--mixup", type=int, default=None)
+    # parser.add_argument("--orthogonal-gradients", action="store_true", default=False)
+    parser.add_argument("--orthogonal-gradients", type=int, default=None)
+    parser.add_argument("--orthogonal-gradients-path", type=str, default=None, nargs="*")
+
 
     args = parser.parse_args()
     args.device = "cuda" if torch.cuda.is_available() else "cpu"
