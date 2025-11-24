@@ -22,25 +22,42 @@ gradient_save = False
 gradient_list = []
 gradients_per_layer = defaultdict(list)
 
+def should_track_layer(name):
+    if name.endswith(".bias"):
+        return False
+    if "attn" in name and "weight" in name:
+        return True
+
+    if "mlp" in name and "weight" in name:
+        return True
+        
+    if "ln" in name and "weight" in name:
+        return True
+
+    return False
+
 def save_output_gradients(layer_name):    
     global gradients_per_layer, gradient_save
     
-    def hook_fn(module, grad_input, grad_output):
+    def hook_fn(grad):
         if gradient_save:
-            gradients_per_layer[layer_name].append(grad_output[0].detach().cpu().flatten())
+            gradients_per_layer[layer_name].append(grad.detach().cpu().flatten())
     
     return hook_fn
 
 
 def svd_basis(gradient_per_layer_list, energy=0.97):
+
     basis_per_layer = {}
     
     for name, gradient_list in gradient_per_layer_list.items():
+        
         if len(gradient_list) < 2:
             continue
         q = min(len(gradient_list), 20) 
         G = torch.stack(gradient_list, dim=0)
         G = G.cpu()
+        print(f"{name}: len = {len(gradient_list)}, G.shape = {G.shape}")
         if hasattr(torch.linalg, "svd_lowrank"):
             U, S, V_transpose = torch.linalg.svd_lowrank(G, q=q, niter=4)
         elif hasattr(torch, "svd_lowrank"):
@@ -56,7 +73,9 @@ def svd_basis(gradient_per_layer_list, energy=0.97):
                 k = i+1
                 break
 
-        basis_per_layer[name] = V_transpose[:, :k]
+        V_transpose = V_transpose.T
+        print(f"{name}: V.shape = {V_transpose.shape}, k={k}")
+        basis_per_layer[name] = V_transpose[:k, :].contiguous().clone().cpu()
     return basis_per_layer
 
 
@@ -319,9 +338,10 @@ def finetune(args):
     if args.orthogonal_gradients is not None:
         # gradient_list = []
         # gradients_per_layer = defaultdict(list)
-        for name, block in model.module.visual.transformer.resblocks.named_children():
-            gradients_per_layer[name] = []
-            block.register_full_backward_hook(save_output_gradients(name))
+        for name, block in model.module.named_parameters():
+            if should_track_layer(name):
+                gradients_per_layer[name] = []
+                block.register_hook(save_output_gradients(name))
     
     #prev task
     if args.orthogonal_gradients_path is not None:    
@@ -378,11 +398,20 @@ def finetune(args):
 
         #freezing layers
         if args.freeze:
-            for param in model.module.visual.ln_pre.parameters():
-                param.requires_grad = False
-            # for param in model.transformer.parameters():
-            #     param.requires_grad = False
-
+            freeze = [
+                "positional_embedding",
+                "visual.positional_embedding",
+                "visual.class_embedding",
+                "visual.proj",
+                "visual.conv1.weight",
+                "visual.ln_pre.weight",
+                "visual.ln_pre.bias",
+                "text_projection",
+                "logit_scale",
+            ]
+            for name, param in model.module.named_parameters():
+                if any(key in name for key in freeze):
+                    param.requires_grad = False
         # prepare data
         if args.train_dataset == 'ImageNet':
             try:
@@ -514,19 +543,32 @@ def finetune(args):
 
         #OGD, modify gradients before stepping
         if args.orthogonal_gradients_path is not None:
+            new_gradients = {}
             for name, gradient in gradients_per_layer.items():
+                gradient = gradient[-1].to("cuda:0")
                 for basis_dict in prev_basis:
                     #prev layers does not match with current layers
                     if name not in basis_dict:
                         continue
                     B = basis_dict[name]
+                    # if B.shape[0] != gradient.numel():    
+                    #     B = B.T
+
+                    # if isinstance(B, list):
+                    #     B = torch.stack(B, dim=0).contiguous().clone().cpu()
                     B = B.to(gradient.device)
                     
                     proj_g_ort_B = B.T @ (B @ gradient)
                     gradient = gradient - proj_g_ort_B
 
-                gradients_per_layer[name] = gradient
+                new_gradients[name] = gradient
 
+            param_dict = dict(model.named_parameters())
+            for name, gradient in new_gradients.items():
+                if name not in param_dict:
+                    continue
+                param = param_dict[name]
+                param.grad = gradient.view_as(param)
         optimizer.step()
 
         # we
