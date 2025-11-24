@@ -514,7 +514,7 @@ def finetune(args):
 
         #OGD, modify gradients before stepping
         if args.orthogonal_gradients_path is not None:
-            for name, gradient in gradients_per_layer.item():
+            for name, gradient in gradients_per_layer.items():
                 for basis_dict in prev_basis:
                     #prev layers does not match with current layers
                     if name not in basis_dict:
