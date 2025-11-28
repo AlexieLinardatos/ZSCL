@@ -1,0 +1,13 @@
+- clip vs finetuning has opposite effects on datasets
+    - Where clip is originally accurate at, finetuning causes a decrease in accuracy (does not happen for ZSCL methods)
+
+- orthogonal and freezing layers have higher accuracies but not much especially with OGD
+
+- orthogonal is worse at top5 accuracies
+    - worse at zeroshot tasks?
+    - tends to focus on previous gradients too much?
+
+- finetuning as expected has worse performance on average
+    - with some exceptions
+
+    - Mostly those that it has not trained on

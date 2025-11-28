@@ -20,4 +20,4 @@ pip install git+https://github.com/modestyachts/ImageNetV2_pytorch
 
 cd /scratch/alanz21/thesis/mtil/
 
-run python -m src.feature_space
+python -m src.feature_space
