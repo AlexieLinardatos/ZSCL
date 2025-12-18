@@ -4,7 +4,108 @@ import os
 from matplotlib.ticker import FormatStrFormatter
 import argparse
 import numpy as np
+from sklearn.manifold import TSNE
+import torch
 
+
+def plot_tsne(
+    embeddings,
+    labels=None,
+    class_names=None,
+    title="t-SNE Visualization",
+    save_path=None,
+    perplexity=30,
+    n_iter=1000,
+    random_state=42,
+    figsize=(10, 8),
+    alpha=0.7,
+    cmap="tab10",
+    show_legend=True,
+):
+    """
+    Create a t-SNE plot from embeddings.
+
+    Args:
+        embeddings: numpy array or torch tensor of shape (n_samples, n_features)
+        labels: optional array of integer labels for coloring points (n_samples,)
+        class_names: optional list of class names corresponding to label indices
+        title: plot title
+        save_path: path to save the figure (if None, displays the plot)
+        perplexity: t-SNE perplexity parameter (typically 5-50)
+        n_iter: number of iterations for t-SNE optimization
+        random_state: random seed for reproducibility
+        figsize: figure size as (width, height)
+        alpha: point transparency
+        cmap: colormap name for coloring different classes
+        show_legend: whether to show legend when labels are provided
+
+    Returns:
+        tsne_results: 2D numpy array of shape (n_samples, 2)
+    """
+    # Convert torch tensor to numpy if needed
+    if isinstance(embeddings, torch.Tensor):
+        embeddings = embeddings.detach().cpu().numpy()
+
+    if labels is not None and isinstance(labels, torch.Tensor):
+        labels = labels.detach().cpu().numpy()
+
+    # Ensure embeddings are 2D
+    if embeddings.ndim == 1:
+        embeddings = embeddings.reshape(1, -1)
+
+    # Run t-SNE
+    tsne = TSNE(
+        n_components=2,
+        perplexity=min(perplexity, len(embeddings) - 1),
+        n_iter=n_iter,
+        random_state=random_state,
+    )
+    tsne_results = tsne.fit_transform(embeddings)
+
+    # Create plot
+    fig, ax = plt.subplots(figsize=figsize)
+
+    if labels is not None:
+        unique_labels = np.unique(labels)
+        colors = plt.cm.get_cmap(cmap, len(unique_labels))
+
+        for i, label in enumerate(unique_labels):
+            mask = labels == label
+            label_name = class_names[label] if class_names is not None else f"Class {label}"
+            ax.scatter(
+                tsne_results[mask, 0],
+                tsne_results[mask, 1],
+                c=[colors(i)],
+                label=label_name,
+                alpha=alpha,
+                s=50,
+            )
+
+        if show_legend:
+            ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
+    else:
+        ax.scatter(
+            tsne_results[:, 0],
+            tsne_results[:, 1],
+            alpha=alpha,
+            s=50,
+        )
+
+    ax.set_title(title, fontsize=14)
+    ax.set_xlabel("t-SNE 1")
+    ax.set_ylabel("t-SNE 2")
+
+    plt.tight_layout()
+
+    if save_path is not None:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        print(f"t-SNE plot saved to {save_path}")
+    else:
+        plt.show()
+
+    plt.close()
+
+    return tsne_results
 
 
 def plot_metrics(path):
@@ -185,11 +286,45 @@ if __name__ == "__main__":
     parser.add_argument("--top5", action="store_true", default=None)
     parser.add_argument("--text", action="store_true", default=None)
 
+    # t-SNE arguments
+    parser.add_argument("--tsne", action="store_true", help="Generate t-SNE plot")
+    parser.add_argument("--embeddings", type=str, help="Path to embeddings file (.npy or .pt)")
+    parser.add_argument("--labels", type=str, help="Path to labels file (.npy or .pt)")
+    parser.add_argument("--perplexity", type=int, default=30, help="t-SNE perplexity")
+    parser.add_argument("--title", type=str, default="t-SNE Visualization", help="Plot title")
+
     args = parser.parse_args()
 
     # path = "./ckpt/DTD_finetune/"
     # path = "./ckpt/DTD_finetune/MNIST_finetune/EuroSAT_finetune/Aircraft_finetune"
-    if args.single:
+    if args.tsne:
+        assert args.embeddings is not None, "Must provide --embeddings for t-SNE"
+        assert args.save_path is not None, "Must provide --save-path for t-SNE"
+
+        # Load embeddings
+        if args.embeddings.endswith(".npy"):
+            embeddings = np.load(args.embeddings)
+        elif args.embeddings.endswith(".pt"):
+            embeddings = torch.load(args.embeddings)
+        else:
+            raise ValueError("Embeddings must be .npy or .pt file")
+
+        # Load labels if provided
+        labels = None
+        if args.labels is not None:
+            if args.labels.endswith(".npy"):
+                labels = np.load(args.labels)
+            elif args.labels.endswith(".pt"):
+                labels = torch.load(args.labels)
+
+        plot_tsne(
+            embeddings=embeddings,
+            labels=labels,
+            title=args.title,
+            save_path=args.save_path,
+            perplexity=args.perplexity,
+        )
+    elif args.single:
         assert args.path is not None
         plot_metrics(args.path)
     elif args.all:
