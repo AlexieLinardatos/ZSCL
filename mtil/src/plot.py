@@ -18,7 +18,7 @@ import torch
 from PIL import Image
 from glob import glob
 from tqdm import tqdm
-
+import clip
 
 # =============================================================================
 # t-SNE Visualization Functions
@@ -35,7 +35,7 @@ def plot_tsne(
     random_state=42,
     figsize=(10, 8),
     alpha=0.7,
-    cmap="tab10",
+    cmap="tab20",
     show_legend=True,
 ):
     """
@@ -73,13 +73,17 @@ def plot_tsne(
     tsne = TSNE(
         n_components=2,
         perplexity=min(perplexity, len(embeddings) - 1),
-        n_iter=n_iter,
+        max_iter=n_iter,
         random_state=random_state,
+        learning_rate='auto',
+        init="pca"
     )
     tsne_results = tsne.fit_transform(embeddings)
 
     # Create plot
     fig, ax = plt.subplots(figsize=figsize)
+
+    markers = ["o", "^", "s", "D", "P", "X", "*", "v", "<", ">"]
 
     if labels is not None:
         unique_labels = np.unique(labels)
@@ -92,6 +96,7 @@ def plot_tsne(
                 tsne_results[mask, 0],
                 tsne_results[mask, 1],
                 c=[colors(i)],
+                marker=markers[i % len(markers)],
                 label=label_name,
                 alpha=alpha,
                 s=50,
@@ -124,7 +129,7 @@ def plot_tsne(
     return tsne_results
 
 
-def load_clip_model(model_path=None, model_name="ViT-B/32", device="cuda"):
+def load_clip_model(model_path=None, model_name="ViT-B/16", device="cuda"):
     """
     Load a CLIP model for extracting embeddings.
 
@@ -432,7 +437,7 @@ def extract_embeddings_from_dataset(
 def plot_tsne_from_dataset(
     dataset_name,
     model_path=None,
-    model_name="ViT-B/32",
+    model_name="ViT-B/16",
     data_location="./data",
     device="cuda",
     split="test",
@@ -468,7 +473,12 @@ def plot_tsne_from_dataset(
         embeddings: The extracted embeddings
         tsne_results: The 2D t-SNE coordinates
     """
-    model, _ = load_clip_model(model_path, model_name, device)
+    # model, _ = load_clip_model(model_path, model_name, device)
+    print("model name:", model_name)
+    model, _, preprocess = clip.load(model_name, device=device, jit=False)
+    checkpoint = torch.load(model_path, map_location=device)
+
+    model.load_state_dict(checkpoint["state_dict"], strict=False)
 
     embeddings, labels, class_names = extract_embeddings_from_dataset(
         model=model,
@@ -499,7 +509,7 @@ def plot_tsne_from_dataset(
 
 def plot_tsne_from_model(
     model_path=None,
-    model_name="ViT-B/32",
+    model_name="ViT-B/16",
     image_dir=None,
     image_paths=None,
     texts=None,
@@ -561,7 +571,7 @@ def plot_tsne_from_model(
         class_names=class_names,
         title=title,
         save_path=save_path,
-        perplexity=perplexity,
+        perplexity=min(perplexity, len(embeddings) - 1),
         n_iter=n_iter,
         **tsne_kwargs
     )
@@ -838,7 +848,7 @@ Available datasets:
 
     # t-SNE from model arguments
     parser.add_argument("--model-path", type=str, help="Path to model checkpoint for embedding extraction")
-    parser.add_argument("--model-name", type=str, default="ViT-B/32", help="CLIP architecture (default: ViT-B/32)")
+    parser.add_argument("--model-name", type=str, default="ViT-B/16", help="CLIP architecture (default: ViT-B/32)")
     parser.add_argument("--image-dir", type=str, help="Directory containing images for t-SNE")
     parser.add_argument("--image-paths", nargs="+", type=str, help="List of image paths for t-SNE")
     parser.add_argument("--texts", nargs="+", type=str, help="List of texts to embed for t-SNE")
