@@ -17,6 +17,7 @@ from sklearn.manifold import TSNE
 import torch
 from PIL import Image
 from glob import glob
+from tqdm import tqdm
 
 
 # =============================================================================
@@ -304,6 +305,196 @@ def extract_embeddings_from_model(
             labels = np.arange(len(texts))
 
     return embeddings, labels, class_names
+
+
+def extract_embeddings_from_dataset(
+    model,
+    dataset_name,
+    data_location="./data",
+    device="cuda",
+    split="test",
+    max_samples=None,
+    include_text=False,
+    batch_size=32,
+):
+    """
+    Extract embeddings from a dataset using the existing dataset loaders.
+
+    Args:
+        model: CLIP model (with encode_image and encode_text methods)
+        dataset_name: Name of the dataset (e.g., "CIFAR100", "DTD", "ImageNet")
+        data_location: Root directory for datasets
+        device: Computation device
+        split: "train" or "test" split
+        max_samples: Maximum number of samples to process (None for all)
+        include_text: Whether to also extract text embeddings from class names
+        batch_size: Batch size for dataloader
+
+    Returns:
+        embeddings: numpy array of embeddings
+        labels: numpy array of labels
+        class_names: list of class names
+    """
+    import clip.clip as clip
+    from . import datasets as dataset_module
+
+    # Get the dataset class
+    if not hasattr(dataset_module, dataset_name):
+        available = [name for name in dir(dataset_module) if not name.startswith('_')]
+        raise ValueError(f"Dataset '{dataset_name}' not found. Available: {available[:20]}...")
+
+    dataset_class = getattr(dataset_module, dataset_name)
+
+    # Get preprocessing from model
+    _, _, preprocess = clip.load("ViT-B/32", device, jit=False)
+
+    # Create dataset instance
+    dataset = dataset_class(
+        preprocess=preprocess,
+        location=data_location,
+        batch_size=batch_size,
+    )
+
+    # Get dataloader
+    dataloader = dataset.train_loader if split == "train" else dataset.test_loader
+    class_names = dataset.classnames
+
+    print(f"Extracting embeddings from {dataset_name} ({split} split)...")
+    print(f"Classes: {len(class_names)}, Samples: {len(dataloader.dataset)}")
+
+    all_embeddings = []
+    all_labels = []
+    total_samples = 0
+
+    model.eval()
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc="Extracting"):
+            # Handle different batch formats
+            if isinstance(batch, dict):
+                images = batch['images']
+                labels = batch['labels']
+            elif isinstance(batch, (list, tuple)):
+                images, labels = batch[0], batch[1]
+            else:
+                raise ValueError(f"Unexpected batch type: {type(batch)}")
+
+            images = images.to(device)
+            embeddings = model.encode_image(images)
+            embeddings = embeddings / embeddings.norm(dim=-1, keepdim=True)
+
+            all_embeddings.append(embeddings.cpu().numpy())
+            all_labels.append(labels.numpy() if isinstance(labels, torch.Tensor) else np.array(labels))
+
+            total_samples += len(images)
+            if max_samples is not None and total_samples >= max_samples:
+                break
+
+    embeddings = np.concatenate(all_embeddings, axis=0)
+    labels = np.concatenate(all_labels, axis=0)
+
+    # Trim to max_samples if needed
+    if max_samples is not None and len(embeddings) > max_samples:
+        embeddings = embeddings[:max_samples]
+        labels = labels[:max_samples]
+
+    print(f"Extracted {len(embeddings)} image embeddings")
+
+    # Optionally add text embeddings
+    if include_text:
+        print(f"Extracting text embeddings for {len(class_names)} classes...")
+
+        # Use dataset templates if available
+        if hasattr(dataset, 'templates') and dataset.templates:
+            template = dataset.templates[0]
+            texts = [template(name) for name in class_names]
+        else:
+            texts = [f"a photo of a {name}" for name in class_names]
+
+        text_tokens = clip.tokenize(texts).to(device)
+        with torch.no_grad():
+            text_embeddings = model.encode_text(text_tokens)
+            text_embeddings = text_embeddings / text_embeddings.norm(dim=-1, keepdim=True)
+            text_embeddings = text_embeddings.cpu().numpy()
+
+        # Combine image and text embeddings
+        embeddings = np.concatenate([embeddings, text_embeddings], axis=0)
+        # Add text labels (use negative indices or max_label + class_idx)
+        text_labels = np.arange(len(class_names)) + labels.max() + 1
+        labels = np.concatenate([labels, text_labels])
+        # Update class names to distinguish text
+        class_names = list(class_names) + [f"[text] {name}" for name in class_names]
+
+        print(f"Total embeddings: {len(embeddings)} (images + text)")
+
+    return embeddings, labels, class_names
+
+
+def plot_tsne_from_dataset(
+    dataset_name,
+    model_path=None,
+    model_name="ViT-B/32",
+    data_location="./data",
+    device="cuda",
+    split="test",
+    max_samples=None,
+    include_text=False,
+    save_path=None,
+    title=None,
+    perplexity=30,
+    n_iter=1000,
+    batch_size=32,
+    **tsne_kwargs
+):
+    """
+    Create t-SNE plot from a dataset using existing dataset loaders.
+
+    Args:
+        dataset_name: Name of the dataset (e.g., "CIFAR100", "DTD", "ImageNet")
+        model_path: Path to model checkpoint, or None for pretrained CLIP
+        model_name: CLIP architecture name
+        data_location: Root directory for datasets
+        device: Computation device
+        split: "train" or "test" split
+        max_samples: Maximum samples to process
+        include_text: Whether to include text embeddings from class names
+        save_path: Path to save the plot
+        title: Plot title
+        perplexity: t-SNE perplexity
+        n_iter: t-SNE iterations
+        batch_size: Batch size for dataloader
+        **tsne_kwargs: Additional arguments for plot_tsne
+
+    Returns:
+        embeddings: The extracted embeddings
+        tsne_results: The 2D t-SNE coordinates
+    """
+    model, _ = load_clip_model(model_path, model_name, device)
+
+    embeddings, labels, class_names = extract_embeddings_from_dataset(
+        model=model,
+        dataset_name=dataset_name,
+        data_location=data_location,
+        device=device,
+        split=split,
+        max_samples=max_samples,
+        include_text=include_text,
+        batch_size=batch_size,
+    )
+
+    plot_title = title or f"t-SNE: {dataset_name} ({split})"
+
+    tsne_results = plot_tsne(
+        embeddings=embeddings,
+        labels=labels,
+        class_names=class_names,
+        title=plot_title,
+        save_path=save_path,
+        perplexity=perplexity,
+        n_iter=n_iter,
+        **tsne_kwargs
+    )
+
+    return embeddings, tsne_results
 
 
 def plot_tsne_from_model(
@@ -598,20 +789,29 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  # t-SNE from a dataset (recommended)
+  python -m src.plot --tsne --dataset CIFAR100 --save-path tsne.png
+  python -m src.plot --tsne --dataset DTD --include-text --save-path tsne.png
+
+  # t-SNE from a dataset with finetuned model
+  python -m src.plot --tsne --dataset ImageNet --model-path ckpt/model.pth --save-path tsne.png
+
   # t-SNE from pre-computed embeddings
   python -m src.plot --tsne --embeddings emb.npy --save-path tsne.png
 
-  # t-SNE from images using pretrained CLIP
+  # t-SNE from images directory
   python -m src.plot --tsne --image-dir ./data/images --save-path tsne.png
-
-  # t-SNE from images using finetuned model
-  python -m src.plot --tsne --model-path ckpt/model.pth --image-dir ./data --save-path tsne.png
 
   # Plot training metrics
   python -m src.plot --single --path ./ckpt/experiment/
 
   # Compare multiple models
   python -m src.plot --result-paths model1/results.csv model2/results.csv --save-path compare.png
+
+Available datasets:
+  CIFAR10, CIFAR100, DTD, MNIST, SUN397, Aircraft, Caltech101, EuroSAT,
+  Flowers, Food, OxfordPet, StanfordCars, ImageNet, ImageNetA, ImageNetR,
+  ImageNetSketch, ImageNetV2, and more.
         """
     )
 
@@ -647,14 +847,37 @@ Examples:
     parser.add_argument("--max-images", type=int, default=None, help="Maximum images to process")
     parser.add_argument("--device", type=str, default="cuda", help="Device for model inference (default: cuda)")
 
+    # t-SNE from dataset arguments
+    parser.add_argument("--dataset", type=str, help="Dataset name (e.g., CIFAR100, DTD, ImageNet)")
+    parser.add_argument("--data-location", type=str, default="./data", help="Root directory for datasets")
+    parser.add_argument("--split", type=str, default="test", choices=["train", "test"], help="Dataset split")
+    parser.add_argument("--max-samples", type=int, default=None, help="Maximum samples to process from dataset")
+    parser.add_argument("--include-text", action="store_true", help="Include text embeddings from class names")
+
     args = parser.parse_args()
 
     if args.tsne:
         assert args.save_path is not None, "Must provide --save-path for t-SNE"
 
-        use_model = any([args.image_dir, args.image_paths, args.texts, args.text_file])
-
-        if use_model:
+        # Priority: dataset > image_dir/image_paths/texts > embeddings
+        if args.dataset is not None:
+            # Use dataset loader (recommended)
+            plot_tsne_from_dataset(
+                dataset_name=args.dataset,
+                model_path=args.model_path,
+                model_name=args.model_name,
+                data_location=args.data_location,
+                device=args.device,
+                split=args.split,
+                max_samples=args.max_samples,
+                include_text=args.include_text,
+                save_path=args.save_path,
+                title=args.title,
+                perplexity=args.perplexity,
+                batch_size=args.batch_size,
+            )
+        elif any([args.image_dir, args.image_paths, args.texts, args.text_file]):
+            # Use image directory or paths
             plot_tsne_from_model(
                 model_path=args.model_path,
                 model_name=args.model_name,
@@ -669,10 +892,8 @@ Examples:
                 batch_size=args.batch_size,
                 max_images=args.max_images,
             )
-        else:
-            assert args.embeddings is not None, \
-                "Must provide --embeddings or --image-dir/--image-paths/--texts/--text-file for t-SNE"
-
+        elif args.embeddings is not None:
+            # Use pre-computed embeddings
             if args.embeddings.endswith(".npy"):
                 embeddings = np.load(args.embeddings)
             elif args.embeddings.endswith(".pt"):
@@ -693,6 +914,10 @@ Examples:
                 title=args.title or "t-SNE Visualization",
                 save_path=args.save_path,
                 perplexity=args.perplexity,
+            )
+        else:
+            raise ValueError(
+                "Must provide one of: --dataset, --image-dir, --image-paths, --texts, --text-file, or --embeddings"
             )
 
     elif args.single:

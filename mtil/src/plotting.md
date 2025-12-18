@@ -6,9 +6,10 @@ This document describes the plotting utilities available in `src/plot.py` for vi
 
 | Mode | Command |
 |------|---------|
+| t-SNE from dataset | `--tsne --dataset CIFAR100` |
+| t-SNE with text embeddings | `--tsne --dataset DTD --include-text` |
 | t-SNE from embeddings | `--tsne --embeddings file.npy` |
-| t-SNE from images | `--tsne --image-dir ./images` |
-| t-SNE from model | `--tsne --model-path model.pth --image-dir ./images` |
+| t-SNE from image directory | `--tsne --image-dir ./images` |
 | Training metrics | `--single --path ./ckpt/exp` |
 | Sequential results | `--all --path ./ckpt/exp` |
 | Model comparison | `--result-paths model1/results.csv model2/results.csv` |
@@ -18,6 +19,47 @@ This document describes the plotting utilities available in `src/plot.py` for vi
 ## t-SNE Visualization
 
 Generate t-SNE plots to visualize high-dimensional embeddings in 2D space.
+
+### From Dataset (Recommended)
+
+Use the existing dataset loaders to extract embeddings with proper preprocessing and class labels.
+
+```bash
+# Basic usage with pretrained CLIP
+python -m src.plot --tsne --dataset CIFAR100 --save-path tsne.png
+
+# With finetuned model
+python -m src.plot --tsne --dataset DTD --model-path ckpt/model.pth --save-path tsne.png
+
+# Include text embeddings from class names (uses dataset templates)
+python -m src.plot --tsne --dataset Flowers --include-text --save-path tsne.png
+
+# Use train split instead of test
+python -m src.plot --tsne --dataset ImageNet --split train --save-path tsne.png
+
+# Limit number of samples (for large datasets)
+python -m src.plot --tsne --dataset ImageNet --max-samples 5000 --save-path tsne.png
+
+# Custom data location
+python -m src.plot --tsne --dataset CIFAR100 --data-location /path/to/data --save-path tsne.png
+
+# CPU inference
+python -m src.plot --tsne --dataset MNIST --device cpu --save-path tsne.png
+```
+
+#### Available Datasets
+
+**Small datasets** (auto-download):
+- `CIFAR10`, `CIFAR100`, `MNIST`
+- `DTD`, `EuroSAT`, `Flowers`, `Food`
+- `Aircraft`, `Caltech101`, `OxfordPet`, `StanfordCars`, `SUN397`
+
+**ImageNet variants** (require manual download):
+- `ImageNet`, `ImageNetA`, `ImageNetR`, `ImageNetSketch`, `ImageNetV2`
+- `ImageNetSM`, `ImageNetSUB`, `ImageNetSC`
+
+**Other** (require manual download):
+- `FMOW`, `IWildCam`, `ObjectNet`, `YTBBRobust`
 
 ### From Pre-computed Embeddings
 
@@ -36,28 +78,22 @@ python -m src.plot --tsne --embeddings embeddings.npy --save-path tsne.png \
     --title "My Embeddings" --perplexity 50
 ```
 
-### From Images (Model-based Extraction)
+### From Image Directory
 
-Extract embeddings directly from images using CLIP.
+Extract embeddings directly from images in a directory.
 
 ```bash
-# Using pretrained CLIP (ViT-B/32)
+# Using pretrained CLIP
 python -m src.plot --tsne --image-dir ./data/images --save-path tsne.png
 
-# Using a finetuned model checkpoint
+# Using a finetuned model
 python -m src.plot --tsne --model-path ckpt/model.pth --image-dir ./data/images --save-path tsne.png
 
-# Using a different CLIP architecture
-python -m src.plot --tsne --model-name ViT-B/16 --image-dir ./data/images --save-path tsne.png
-
-# Limit number of images (useful for large datasets)
+# Limit number of images
 python -m src.plot --tsne --image-dir ./data/images --max-images 1000 --save-path tsne.png
 
 # Specific image paths
 python -m src.plot --tsne --image-paths img1.jpg img2.jpg img3.jpg --save-path tsne.png
-
-# CPU inference
-python -m src.plot --tsne --image-dir ./data/images --device cpu --save-path tsne.png
 ```
 
 #### Directory Structure for Automatic Labels
@@ -76,13 +112,11 @@ images/
     └── bird1.jpg
 ```
 
-This will automatically assign labels and use subdirectory names as class names in the legend.
-
 ### From Text
 
 ```bash
 # Embed text strings
-python -m src.plot --tsne --texts "a photo of a cat" "a photo of a dog" "a photo of a bird" --save-path tsne.png
+python -m src.plot --tsne --texts "a photo of a cat" "a photo of a dog" --save-path tsne.png
 
 # Embed texts from a file (one per line)
 python -m src.plot --tsne --text-file class_names.txt --save-path tsne.png
@@ -93,9 +127,6 @@ python -m src.plot --tsne --text-file class_names.txt --save-path tsne.png
 ```bash
 # Visualize both image and text embeddings together
 python -m src.plot --tsne --image-dir ./data/images --texts "cat" "dog" "bird" --save-path tsne.png
-
-# With text file
-python -m src.plot --tsne --image-dir ./data/images --text-file prompts.txt --save-path tsne.png
 ```
 
 ### t-SNE Parameters
@@ -104,9 +135,12 @@ python -m src.plot --tsne --image-dir ./data/images --text-file prompts.txt --sa
 |-----------|---------|-------------|
 | `--perplexity` | 30 | t-SNE perplexity (typically 5-50) |
 | `--batch-size` | 32 | Batch size for embedding extraction |
-| `--max-images` | None | Maximum images to process |
+| `--max-samples` | None | Maximum samples from dataset |
+| `--max-images` | None | Maximum images from directory |
 | `--device` | cuda | Device for model inference |
 | `--model-name` | ViT-B/32 | CLIP architecture |
+| `--split` | test | Dataset split (train/test) |
+| `--include-text` | False | Include text embeddings from class names |
 
 ---
 
@@ -200,13 +234,6 @@ python -m src.plot --result-paths model1/results.csv model2/results.csv \
     --save-path comparison.png --top5
 ```
 
-### Custom Title
-
-```bash
-python -m src.plot --result-paths model1/results.csv model2/results.csv \
-    --save-path comparison.png --title "Model Comparison on ImageNet"
-```
-
 **Expected CSV format**:
 
 ```csv
@@ -216,13 +243,44 @@ CIFAR100,62.3,85.4
 DTD,44.5,71.2
 ```
 
-Model names are automatically extracted from the parent directory of each CSV file.
-
 ---
 
 ## Python API
 
-You can also use the plotting functions directly in Python:
+Use the plotting functions directly in Python:
+
+### t-SNE from Dataset
+
+```python
+from src.plot import plot_tsne_from_dataset, extract_embeddings_from_dataset, load_clip_model
+
+# All-in-one: load dataset, extract embeddings, and plot
+embeddings, tsne_coords = plot_tsne_from_dataset(
+    dataset_name="CIFAR100",
+    model_path="ckpt/model.pth",  # or None for pretrained CLIP
+    data_location="./data",
+    split="test",
+    max_samples=5000,
+    include_text=True,           # Include text embeddings from class names
+    save_path="tsne.png",
+    title="CIFAR-100 Embeddings",
+    perplexity=30,
+)
+
+# Or extract embeddings separately
+model, preprocess = load_clip_model(model_path="ckpt/model.pth")
+embeddings, labels, class_names = extract_embeddings_from_dataset(
+    model=model,
+    dataset_name="DTD",
+    data_location="./data",
+    split="test",
+    include_text=True,
+)
+
+# Then plot
+from src.plot import plot_tsne
+plot_tsne(embeddings, labels=labels, class_names=class_names, save_path="tsne.png")
+```
 
 ### t-SNE from Embeddings
 
@@ -237,37 +295,34 @@ tsne_coords = plot_tsne(embeddings, labels=labels, save_path="tsne.png")
 
 # Full customization
 tsne_coords = plot_tsne(
-    embeddings,                          # numpy array or torch tensor (n_samples, n_features)
-    labels=labels,                       # optional integer labels (n_samples,)
+    embeddings,                          # numpy array or torch tensor
+    labels=labels,                       # optional integer labels
     class_names=["cat", "dog", "bird"],  # optional class name mapping
     title="My Embeddings",
-    save_path="output.png",              # None to display instead of save
-    perplexity=30,                       # t-SNE perplexity (5-50)
-    n_iter=1000,                         # optimization iterations
-    random_state=42,                     # for reproducibility
-    figsize=(10, 8),                     # figure dimensions
-    alpha=0.7,                           # point transparency
-    cmap="tab10",                        # colormap for classes
-    show_legend=True                     # show legend when labels provided
+    save_path="output.png",
+    perplexity=30,
+    n_iter=1000,
+    figsize=(10, 8),
+    alpha=0.7,
+    cmap="tab10",
+    show_legend=True,
 )
 ```
 
-### t-SNE from Model
+### t-SNE from Model and Images
 
 ```python
 from src.plot import plot_tsne_from_model, load_clip_model, extract_embeddings_from_model
 
-# All-in-one: load model, extract embeddings, and plot
+# All-in-one
 embeddings, tsne_coords = plot_tsne_from_model(
-    model_path="ckpt/model.pth",         # or None for pretrained CLIP
-    model_name="ViT-B/32",               # CLIP architecture
-    image_dir="./data/images",           # directory with images
+    model_path="ckpt/model.pth",
+    image_dir="./data/images",
     save_path="tsne.png",
     title="CLIP Embeddings",
     perplexity=30,
     batch_size=32,
     max_images=1000,
-    device="cuda",
 )
 
 # Or extract embeddings separately
@@ -278,10 +333,6 @@ embeddings, labels, class_names = extract_embeddings_from_model(
     device="cuda",
     batch_size=32,
 )
-
-# Then plot
-from src.plot import plot_tsne
-plot_tsne(embeddings, labels=labels, class_names=class_names, save_path="tsne.png")
 ```
 
 ### Training Metrics
@@ -349,42 +400,39 @@ t-SNE from model:
   --batch-size N        Batch size for embedding extraction (default: 32)
   --max-images N        Maximum images to process
   --device DEVICE       Device for model inference (default: cuda)
+
+t-SNE from dataset:
+  --dataset NAME        Dataset name (e.g., CIFAR100, DTD, ImageNet)
+  --data-location PATH  Root directory for datasets (default: ./data)
+  --split {train,test}  Dataset split (default: test)
+  --max-samples N       Maximum samples to process from dataset
+  --include-text        Include text embeddings from class names
 ```
 
 ---
 
 ## Examples
 
-### Visualizing CLIP Embeddings from a Dataset
+### Visualizing Dataset Embeddings with Text Alignment
 
-```python
-import torch
-from src.plot import plot_tsne
-from src.models.modeling import ImageEncoder
+```bash
+# See how well text embeddings align with image clusters
+python -m src.plot --tsne \
+    --dataset Flowers \
+    --include-text \
+    --model-path ckpt/flowers_finetuned.pth \
+    --save-path flowers_alignment.png \
+    --title "Flowers: Image-Text Alignment"
+```
 
-# Load model and extract embeddings
-encoder = ImageEncoder.load("ckpt/model.pth")
-embeddings = []
-labels = []
+### Comparing Pretrained vs Finetuned Representations
 
-for images, targets in dataloader:
-    with torch.no_grad():
-        emb = encoder(images)
-    embeddings.append(emb)
-    labels.append(targets)
+```bash
+# Pretrained CLIP
+python -m src.plot --tsne --dataset DTD --save-path dtd_pretrained.png
 
-embeddings = torch.cat(embeddings)
-labels = torch.cat(labels)
-
-# Create t-SNE visualization
-plot_tsne(
-    embeddings,
-    labels=labels,
-    class_names=dataset.classes,
-    title="CLIP Embeddings by Class",
-    save_path="clip_tsne.png",
-    perplexity=30
-)
+# Finetuned on DTD
+python -m src.plot --tsne --dataset DTD --model-path ckpt/dtd.pth --save-path dtd_finetuned.png
 ```
 
 ### Comparing Continual Learning Methods
@@ -399,29 +447,26 @@ python -m src.plot \
     --compare-original ckpt/pretrained/results.csv
 ```
 
-### Batch Processing Multiple Experiments
+### Batch Processing Multiple Datasets
 
 ```bash
-# Generate t-SNE for multiple checkpoints
-for ckpt in ckpt/*/; do
-    name=$(basename $ckpt)
+for dataset in CIFAR10 CIFAR100 DTD Flowers; do
     python -m src.plot --tsne \
-        --model-path ${ckpt}model.pth \
-        --image-dir ./data/test_images \
-        --save-path plots/${name}_tsne.png \
-        --title "$name Embeddings" \
-        --max-images 500
+        --dataset $dataset \
+        --model-path ckpt/model.pth \
+        --save-path plots/${dataset}_tsne.png \
+        --max-samples 2000
 done
 ```
 
-### Comparing Image and Text Embeddings
+### Large Dataset Visualization
 
 ```bash
-# Visualize how well text prompts align with images
+# ImageNet with sampling
 python -m src.plot --tsne \
-    --model-path ckpt/finetuned.pth \
-    --image-dir ./data/images \
-    --texts "a photo of a cat" "a photo of a dog" "a photo of a bird" \
-    --save-path image_text_alignment.png \
-    --title "Image-Text Embedding Alignment"
+    --dataset ImageNet \
+    --max-samples 10000 \
+    --include-text \
+    --perplexity 50 \
+    --save-path imagenet_tsne.png
 ```
