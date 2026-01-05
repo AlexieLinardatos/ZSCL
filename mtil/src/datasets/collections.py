@@ -6,7 +6,6 @@ from torchvision import datasets
 
 from .cifar10 import CIFAR10 as cifar10, CIFAR100 as cifar100
 
-
 def underline_to_space(s):
     return s.replace("_", " ")
 
@@ -537,10 +536,10 @@ class StanfordCars(ClassificationDataset):
         super().__init__(*args, **kwargs)
         self.name = "stanford cars"
         self.train_dataset = datasets.StanfordCars(
-            self.location, split="train", download=True, transform=self.preprocess
+            self.location, split="train", download=False, transform=self.preprocess
         )
         self.test_dataset = datasets.StanfordCars(
-            self.location, split="test", download=True, transform=self.preprocess
+            self.location, split="test", download=False, transform=self.preprocess
         )
         self.build_dataloader()
         self.classnames = self.train_dataset.classes

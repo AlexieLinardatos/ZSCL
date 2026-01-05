@@ -180,7 +180,12 @@ def setup_signal_handler():
 
 def load_base_model(args):
     """Load the base CLIP model and optionally restore from checkpoint."""
-    model, train_preprocess, val_preprocess = clip.load(args.model, jit=False)
+    print("TEST UNTRAINED BEFORE")
+    if args.untrained:
+        print("TEST UNTRAINED")
+        model, train_preprocess, val_preprocess = clip.load(args.model, jit=False, pretrained=False)
+    else:
+        model, train_preprocess, val_preprocess = clip.load(args.model, jit=False, pretrained=True)
 
     model_iteration_count = 0
     if args.load is not None:
@@ -388,14 +393,14 @@ def get_next_batch(data_iter, dataset, args):
     if args.train_dataset == 'ImageNet':
         try:
             train_batch = next(data_iter)
-        except StopIteration:
+        except:
             data_iter = iter(dataset.train_loader)
             train_batch = next(data_iter)
         images, labels = train_batch["images"], train_batch["labels"]
     else:
         try:
             images, labels = next(data_iter)
-        except StopIteration:
+        except:
             data_iter = iter(dataset.train_loader)
             images, labels = next(data_iter)
 
@@ -633,7 +638,7 @@ def apply_wise_merge(args, model):
 # Main Training Function
 # =============================================================================
 
-def finetune(args):
+def custom_finetune(args):
     """Main training function with modular organization."""
     global _training_state
 

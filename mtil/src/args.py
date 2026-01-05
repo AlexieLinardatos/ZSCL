@@ -317,6 +317,9 @@ def parse_arguments():
     # parser.add_argument("--orthogonal-gradients", action="store_true", default=False)
     parser.add_argument("--orthogonal-gradients", type=int, default=None)
     parser.add_argument("--orthogonal-gradients-path", type=str, default=None, nargs="*")
+    parser.add_argument("--untrained", action="store_true", default=False)
+    parser.add_argument("--custom-finetune", action="store_true", default=False)
+    parser.add_argument("--max-evaluation-size", type=int, default=None)
 
 
     args = parser.parse_args()

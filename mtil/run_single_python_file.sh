@@ -22,9 +22,12 @@ pip install matplotlib
 
 cd /scratch/alanz21/thesis/mtil/
 
+MODEL_PATH="ckpt/clean/finetune_only/DTD_untrained/DTD.pth"
+SAVE_PATH="ckpt/clean/finetune_only/DTD_untrained/tsne_untrained_dtd.pth"
+
 python -m src.plot \
     --tsne \
-    --dataset DTD \
-    --model-path ckpt/DTD_freeze/MNIST_freeze/EuroSAT_freeze/Aircraft_freeze/Aircraft.pth \
-    --save-path ./thesis_results/tsne_plots/freeze_Aircraft_on_DTD.png \
+    --dataset ImageNet \
+    --model-path ${MODEL_PATH} \
+    --save-path ${SAVE_PATH} \
     --device cuda
