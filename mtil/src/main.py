@@ -7,7 +7,7 @@ import torch
 
 from . import utils
 from .args import parse_arguments
-from .models import evaluate, evaluate_fc, evaluate_wise_ft, finetune, finetune_fc, finetune_icarl, test, eval_single_image
+from .models import evaluate, evaluate_fc, evaluate_wise_ft, finetune, finetune_fc, finetune_icarl, test, eval_single_image, custom_finetune
 from .models.modeling import create_image_classifier
 
 
@@ -68,7 +68,10 @@ def main(args):
         elif args.method in ["icarl"]:
             model = finetune_icarl(args) 
         else:
-            model = finetune(args)
+            if args.custom_finetune:
+                model = custom_finetune(args)
+            else:
+                model = finetune(args)
 
 
 if __name__ == "__main__":

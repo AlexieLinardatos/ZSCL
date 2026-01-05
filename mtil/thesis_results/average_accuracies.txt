@@ -1,0 +1,28 @@
+Aircraft_freeze, average top1 accuracy: 0.5351570531840184
+Aircraft_orthogonal, average top1 accuracy: 0.08675853951371376
+Aircraft_finetune, average top1 accuracy: -1.56376972770521
+
+Aircraft_freeze, average top5 accuracy: 0.1771601420126435
+Aircraft_orthogonal, average top5 accuracy: -0.06175965331942103
+Aircraft_finetune, average top5 accuracy: -1.1092238568921289
+
+--------------------------------------------------------------------------------------------------------
+
+Aircraft_freeze, average top1 accuracy: 0.5351570531840184
+Aircraft_orthogonal, average top1 accuracy: 0.08675853951371376
+Aircraft_finetune, average top1 accuracy: -1.56376972770521
+CLIP_ONLY, average top1 accuracy: -13.321342677008346
+
+--------------------------------------------------------------------------------------------------------
+
+comparing to clip:
+
+Aircraft_freeze, average top1 accuracy: 13.856499730192363
+Aircraft_orthogonal, average top1 accuracy: 13.408101216522061
+Aircraft_finetune, average top1 accuracy: 11.757572949303137
+Aircraft, average top1 accuracy: 13.321342677008346
+
+Aircraft_freeze, average top5 accuracy: 6.670688394510191
+Aircraft_orthogonal, average top5 accuracy: 6.431768599178127
+Aircraft_finetune, average top5 accuracy: 5.384304395605419
+Aircraft, average top5 accuracy: 6.493528252497548

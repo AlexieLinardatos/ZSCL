@@ -44,10 +44,13 @@ def zeroshot_classifier(classnames, templates, model):
 
 
 @torch.no_grad()
-def zeroshot_eval(model, loader, zeroshot_weights):
+def zeroshot_eval(model, loader, zeroshot_weights, args=None):
     top1, top5, n = 0.0, 0.0, 0.0
     for i, data in enumerate(tqdm(loader)):
-
+        if args is not None:
+            if args.max_evaluation_size is not None:
+                if i >= args.max_evaluation_size:
+                    break
         data = maybe_dictionarize(data)
         images = data["images"].cuda()
         target = data["labels"].cuda()
@@ -190,7 +193,7 @@ def eval_single_dataset_2(image_classifier, dataset, args):
         dataset, is_train=False, args=args, image_encoder=image_enc
     )
 
-    top1, top5 = zeroshot_eval(model, dataloader, zeroshot_weights)
+    top1, top5 = zeroshot_eval(model, dataloader, zeroshot_weights, args=args)
     print(f"Top-1 accuracy: {top1:.2f}")
     # print(f"Top-5 accuracy: {top5:.2f}")
     del dataloader, zeroshot_weights

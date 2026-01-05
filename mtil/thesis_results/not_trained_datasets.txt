@@ -1,0 +1,5 @@
+Not trained on:
+Caltech, CIFAR100, Flowers, Food, OxfordPet
+
+Trained on:
+DTD, MNIST, EuroSAT, Aircraft
