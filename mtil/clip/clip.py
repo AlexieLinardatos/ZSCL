@@ -10,6 +10,7 @@ import torch
 from torchvision.transforms import Compose, Resize, CenterCrop, ToTensor, Normalize, RandomResizedCrop, InterpolationMode
 from tqdm import tqdm
 
+import torch.nn as nn
 from clip.model import build_model
 from clip.tokenizer import SimpleTokenizer as _Tokenizer
 
@@ -227,6 +228,29 @@ def load(name: str, device: Union[str, torch.device] = "cuda" if torch.cuda.is_a
         except KeyError:
             sd = {k[7:]: v for k,v in state_dict["state_dict"].items()}
             model = build_model(sd).to(device)
+
+        # Reinitialize weights if pretrained=False
+        if not pretrained:
+            def _init_weights(module):
+                if isinstance(module, (nn.Linear, nn.Conv2d)):
+                    nn.init.normal_(module.weight, std=0.02)
+                    if module.bias is not None:
+                        nn.init.zeros_(module.bias)
+                elif isinstance(module, nn.Embedding):
+                    nn.init.normal_(module.weight, std=0.02)
+                elif isinstance(module, nn.LayerNorm):
+                    nn.init.ones_(module.weight)
+                    nn.init.zeros_(module.bias)
+            model.apply(_init_weights)
+            # Also reinitialize special CLIP parameters
+            if hasattr(model, 'logit_scale'):
+                nn.init.constant_(model.logit_scale, 0.0)
+            if hasattr(model, 'positional_embedding'):
+                nn.init.normal_(model.positional_embedding, std=0.01)
+            if hasattr(model.visual, 'positional_embedding'):
+                nn.init.normal_(model.visual.positional_embedding, std=0.01)
+            if hasattr(model.visual, 'class_embedding'):
+                nn.init.normal_(model.visual.class_embedding, std=0.02)
 
         if str(device) == "cpu":
             model.float()
