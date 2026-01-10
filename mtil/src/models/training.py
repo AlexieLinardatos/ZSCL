@@ -479,17 +479,20 @@ def compute_zscl_loss(model, ref_model, ref_images, ref_texts, logit_scale, args
 
 
 def apply_ogd_gradient_projection(model, gradients_per_layer, prev_basis):
-    """Apply Orthogonal Gradient Descent projection to gradients."""
+    """Apply Orthogonal Gradient Descent projection to gradients.
+
+    Args:
+        model: The model being trained
+        gradients_per_layer: Dict mapping layer names to gradient tensors
+        prev_basis: Single dict mapping layer names to concatenated basis tensors
+    """
     new_gradients = {}
 
     for name, gradient in gradients_per_layer.items():
         gradient = gradient[-1].to("cuda:0")
 
-        for basis_dict in prev_basis:
-            if name not in basis_dict:
-                continue
-
-            B = basis_dict[name].to(gradient.device)
+        if name in prev_basis:
+            B = prev_basis[name].to(gradient.device)
             proj_g_ort_B = B.T @ (B @ gradient)
             gradient = gradient - proj_g_ort_B
 
@@ -706,12 +709,10 @@ def custom_finetune(args):
             grad_path = os.path.join(args.save, f"grad_{args.train_dataset}.pth")
             gradient_tracker.load_existing_gradients(grad_path)
 
-    # Load previous task bases for OGD
-    prev_basis = []
+    # Load previous task basis for OGD (single file with concatenated bases)
+    prev_basis = {}
     if args.orthogonal_gradients_path is not None:
-        for path in args.orthogonal_gradients_path:
-            basis = torch.load(path, weights_only=False)
-            prev_basis.append(basis)
+        prev_basis = torch.load(args.orthogonal_gradients_path, weights_only=False)
 
     # Initialize loss tracking
     prev_L2_loss = None
@@ -797,7 +798,7 @@ def custom_finetune(args):
         loss.backward()
 
         # Apply OGD gradient projection
-        if args.orthogonal_gradients_path is not None:
+        if prev_basis:
             apply_ogd_gradient_projection(
                 model, gradient_tracker.gradients_per_layer, prev_basis
             )
@@ -821,9 +822,23 @@ def custom_finetune(args):
     # Post-training: WiSE merge
     apply_wise_merge(args, model)
 
-    # Save gradient basis
+    # Save gradient basis (concatenated with previous bases)
     if args.orthogonal_gradients:
         basis_per_layer = gradient_tracker.compute_svd_basis()
+
+        # Concatenate with previous basis if it exists
+        if prev_basis:
+            for name in basis_per_layer:
+                if name in prev_basis:
+                    # Concatenate along the first dimension (basis vectors)
+                    basis_per_layer[name] = torch.cat(
+                        [prev_basis[name], basis_per_layer[name]], dim=0
+                    )
+            # Include layers that are only in prev_basis
+            for name in prev_basis:
+                if name not in basis_per_layer:
+                    basis_per_layer[name] = prev_basis[name]
+
         basis_path = os.path.join(args.save, f"grad_{args.train_dataset}.pth")
         torch.save(basis_per_layer, basis_path)
         print(f"Saved gradient basis to {basis_path}")
