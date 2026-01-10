@@ -231,6 +231,7 @@ def load(name: str, device: Union[str, torch.device] = "cuda" if torch.cuda.is_a
 
         # Reinitialize weights if pretrained=False
         if not pretrained:
+            print("TEST PRETRAINED = FALSE")
             def _init_weights(module):
                 if isinstance(module, (nn.Linear, nn.Conv2d)):
                     nn.init.normal_(module.weight, std=0.02)
