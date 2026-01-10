@@ -319,6 +319,7 @@ def extract_embeddings_from_dataset(
     device="cuda",
     split="test",
     max_samples=None,
+    max_classes=None,
     include_text=False,
     batch_size=32,
 ):
@@ -332,6 +333,7 @@ def extract_embeddings_from_dataset(
         device: Computation device
         split: "train" or "test" split
         max_samples: Maximum number of samples to process (None for all)
+        max_classes: Maximum number of classes to include (None for all)
         include_text: Whether to also extract text embeddings from class names
         batch_size: Batch size for dataloader
 
@@ -402,6 +404,15 @@ def extract_embeddings_from_dataset(
         embeddings = embeddings[:max_samples]
         labels = labels[:max_samples]
 
+    # Filter to max_classes if specified
+    if max_classes is not None and max_classes < len(class_names):
+        print(f"Filtering to first {max_classes} classes (out of {len(class_names)})")
+        # Keep only samples belonging to the first max_classes classes
+        mask = labels < max_classes
+        embeddings = embeddings[mask]
+        labels = labels[mask]
+        class_names = class_names[:max_classes]
+
     print(f"Extracted {len(embeddings)} image embeddings")
 
     # Optionally add text embeddings
@@ -442,6 +453,7 @@ def plot_tsne_from_dataset(
     device="cuda",
     split="test",
     max_samples=None,
+    max_classes=None,
     include_text=False,
     save_path=None,
     title=None,
@@ -461,6 +473,7 @@ def plot_tsne_from_dataset(
         device: Computation device
         split: "train" or "test" split
         max_samples: Maximum samples to process
+        max_classes: Maximum number of classes to include (None for all)
         include_text: Whether to include text embeddings from class names
         save_path: Path to save the plot
         title: Plot title
@@ -487,6 +500,7 @@ def plot_tsne_from_dataset(
         device=device,
         split=split,
         max_samples=max_samples,
+        max_classes=max_classes,
         include_text=include_text,
         batch_size=batch_size,
     )
@@ -803,6 +817,9 @@ Examples:
   python -m src.plot --tsne --dataset CIFAR100 --save-path tsne.png
   python -m src.plot --tsne --dataset DTD --include-text --save-path tsne.png
 
+  # t-SNE with limited classes (e.g., first 10 classes only)
+  python -m src.plot --tsne --dataset CIFAR100 --max-classes 10 --save-path tsne.png
+
   # t-SNE from a dataset with finetuned model
   python -m src.plot --tsne --dataset ImageNet --model-path ckpt/model.pth --save-path tsne.png
 
@@ -862,6 +879,7 @@ Available datasets:
     parser.add_argument("--data-location", type=str, default="./data", help="Root directory for datasets")
     parser.add_argument("--split", type=str, default="test", choices=["train", "test"], help="Dataset split")
     parser.add_argument("--max-samples", type=int, default=None, help="Maximum samples to process from dataset")
+    parser.add_argument("--max-classes", type=int, default=None, help="Maximum number of classes to include in t-SNE")
     parser.add_argument("--include-text", action="store_true", help="Include text embeddings from class names")
 
     args = parser.parse_args()
@@ -880,6 +898,7 @@ Available datasets:
                 device=args.device,
                 split=args.split,
                 max_samples=args.max_samples,
+                max_classes=args.max_classes,
                 include_text=args.include_text,
                 save_path=args.save_path,
                 title=args.title,
