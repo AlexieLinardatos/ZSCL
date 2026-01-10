@@ -445,6 +445,121 @@ def extract_embeddings_from_dataset(
     return embeddings, labels, class_names
 
 
+def plot_tsne_from_datasets(
+    dataset_names,
+    model_path=None,
+    model_name="ViT-B/16",
+    data_location="./data",
+    device="cuda",
+    split="test",
+    max_samples=None,
+    max_classes=None,
+    include_text=False,
+    save_path=None,
+    title=None,
+    perplexity=30,
+    n_iter=1000,
+    batch_size=32,
+    **tsne_kwargs
+):
+    """
+    Create t-SNE plot from multiple datasets.
+
+    Args:
+        dataset_names: List of dataset names (e.g., ["CIFAR100", "DTD", "ImageNet"])
+        model_path: Path to model checkpoint, or None for pretrained CLIP
+        model_name: CLIP architecture name
+        data_location: Root directory for datasets
+        device: Computation device
+        split: "train" or "test" split
+        max_samples: Maximum samples to process per dataset
+        max_classes: Maximum total classes (distributed across datasets)
+        include_text: Whether to include text embeddings from class names
+        save_path: Path to save the plot
+        title: Plot title
+        perplexity: t-SNE perplexity
+        n_iter: t-SNE iterations
+        batch_size: Batch size for dataloader
+        **tsne_kwargs: Additional arguments for plot_tsne
+
+    Returns:
+        embeddings: The extracted embeddings
+        tsne_results: The 2D t-SNE coordinates
+    """
+    print("model name:", model_name)
+    model, _, preprocess = clip.load(model_name, device=device, jit=False)
+
+    if model_path is not None:
+        checkpoint = torch.load(model_path, map_location=device)
+        model.load_state_dict(checkpoint["state_dict"], strict=False)
+
+    # Calculate classes per dataset
+    num_datasets = len(dataset_names)
+    if max_classes is not None:
+        classes_per_dataset = max_classes // num_datasets
+        remainder = max_classes % num_datasets
+    else:
+        classes_per_dataset = None
+        remainder = 0
+
+    all_embeddings = []
+    all_labels = []
+    all_class_names = []
+    label_offset = 0
+
+    for i, dataset_name in enumerate(dataset_names):
+        # Distribute remainder classes to first datasets
+        dataset_max_classes = classes_per_dataset
+        if dataset_max_classes is not None and i < remainder:
+            dataset_max_classes += 1
+
+        print(f"\nProcessing {dataset_name}" + (f" (max {dataset_max_classes} classes)" if dataset_max_classes else ""))
+
+        embeddings, labels, class_names = extract_embeddings_from_dataset(
+            model=model,
+            dataset_name=dataset_name,
+            data_location=data_location,
+            device=device,
+            split=split,
+            max_samples=max_samples,
+            max_classes=dataset_max_classes,
+            include_text=include_text,
+            batch_size=batch_size,
+        )
+
+        # Offset labels to make them unique across datasets
+        labels = labels + label_offset
+        label_offset += len(class_names)
+
+        # Prefix class names with dataset name
+        class_names = [f"{dataset_name}:{name}" for name in class_names]
+
+        all_embeddings.append(embeddings)
+        all_labels.append(labels)
+        all_class_names.extend(class_names)
+
+    # Combine all embeddings
+    combined_embeddings = np.concatenate(all_embeddings, axis=0)
+    combined_labels = np.concatenate(all_labels, axis=0)
+
+    print(f"\nTotal: {len(combined_embeddings)} embeddings, {len(all_class_names)} classes")
+
+    plot_title = title or f"t-SNE: {', '.join(dataset_names)} ({split})"
+
+    tsne_results = plot_tsne(
+        embeddings=combined_embeddings,
+        labels=combined_labels,
+        class_names=all_class_names,
+        title=plot_title,
+        save_path=save_path,
+        perplexity=perplexity,
+        n_iter=n_iter,
+        **tsne_kwargs
+    )
+
+    return combined_embeddings, tsne_results
+
+
 def plot_tsne_from_dataset(
     dataset_name,
     model_path=None,
@@ -820,6 +935,10 @@ Examples:
   # t-SNE with limited classes (e.g., first 10 classes only)
   python -m src.plot --tsne --dataset CIFAR100 --max-classes 10 --save-path tsne.png
 
+  # t-SNE from multiple datasets (classes distributed evenly)
+  python -m src.plot --tsne --datasets DTD MNIST EuroSAT --save-path tsne.png
+  python -m src.plot --tsne --datasets DTD MNIST EuroSAT --max-classes 15 --save-path tsne.png
+
   # t-SNE from a dataset with finetuned model
   python -m src.plot --tsne --dataset ImageNet --model-path ckpt/model.pth --save-path tsne.png
 
@@ -876,6 +995,7 @@ Available datasets:
 
     # t-SNE from dataset arguments
     parser.add_argument("--dataset", type=str, help="Dataset name (e.g., CIFAR100, DTD, ImageNet)")
+    parser.add_argument("--datasets", nargs="+", type=str, help="Multiple dataset names for combined t-SNE plot")
     parser.add_argument("--data-location", type=str, default="./data", help="Root directory for datasets")
     parser.add_argument("--split", type=str, default="test", choices=["train", "test"], help="Dataset split")
     parser.add_argument("--max-samples", type=int, default=None, help="Maximum samples to process from dataset")
@@ -887,8 +1007,25 @@ Available datasets:
     if args.tsne:
         assert args.save_path is not None, "Must provide --save-path for t-SNE"
 
-        # Priority: dataset > image_dir/image_paths/texts > embeddings
-        if args.dataset is not None:
+        # Priority: datasets (multiple) > dataset (single) > image_dir/image_paths/texts > embeddings
+        if args.datasets is not None:
+            # Use multiple datasets
+            plot_tsne_from_datasets(
+                dataset_names=args.datasets,
+                model_path=args.model_path,
+                model_name=args.model_name,
+                data_location=args.data_location,
+                device=args.device,
+                split=args.split,
+                max_samples=args.max_samples,
+                max_classes=args.max_classes,
+                include_text=args.include_text,
+                save_path=args.save_path,
+                title=args.title,
+                perplexity=args.perplexity,
+                batch_size=args.batch_size,
+            )
+        elif args.dataset is not None:
             # Use dataset loader (recommended)
             plot_tsne_from_dataset(
                 dataset_name=args.dataset,
@@ -946,7 +1083,7 @@ Available datasets:
             )
         else:
             raise ValueError(
-                "Must provide one of: --dataset, --image-dir, --image-paths, --texts, --text-file, or --embeddings"
+                "Must provide one of: --datasets, --dataset, --image-dir, --image-paths, --texts, --text-file, or --embeddings"
             )
 
     elif args.single:
