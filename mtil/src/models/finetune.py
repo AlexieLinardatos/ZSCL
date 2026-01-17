@@ -156,8 +156,12 @@ def finetune(args):
     prev_L2_loss = None
     prev_ZSCL_loss = None
     args_ref = args
-    model, train_preprocess, val_preprocess = clip.load(args.model, jit=False)
-    
+    if args.untrained:
+        model, train_preprocess, val_preprocess = clip.load(args.model, jit=False, pretrained=True)
+    else:
+        model, train_preprocess, val_preprocess = clip.load(args.model, jit=False, pretrained=False)
+
+        
     model_iteration_count = 0
     if args.load is not None:
         utils.torch_load(model, args.load)

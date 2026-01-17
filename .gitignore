@@ -5,3 +5,11 @@
 /mtil/src/datasets/__pycache__/
 /mtil/src/models/__pycache__/
 /mtil/src/templates/__pycache__/
+/mtil/thesis_results/
+/myenv/
+/zscl_env/
+/mtil/src/ui/
+mtil/clip/__pycache__/
+**/__pycache__/
+__pycache__/
+/jobs/
