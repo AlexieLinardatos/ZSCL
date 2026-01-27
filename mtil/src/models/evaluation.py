@@ -10,7 +10,8 @@ import tkinter
 from .. import datasets
 from ..datasets.common import get_dataloader, maybe_dictionarize
 from PIL import Image
-from .training import EncoderProbes
+from .probes import ProbeLayer, EncoderProbes
+
 
 
 
