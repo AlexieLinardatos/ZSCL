@@ -58,6 +58,18 @@ class GradientTracker:
             return True
         return False
 
+    @staticmethod
+    def is_raw_gradients(data: Dict) -> bool:
+        """Check if loaded data contains raw gradients (list) vs SVD basis (tensor).
+
+        Raw gradients are stored as Dict[str, List[Tensor]].
+        SVD basis is stored as Dict[str, Tensor] where each tensor is 2D.
+        """
+        if not data:
+            return False
+        first_value = next(iter(data.values()))
+        return isinstance(first_value, list)
+
     def create_gradient_hook(self, layer_name: str):
         """Create a hook function to capture gradients for a specific layer."""
         def hook_fn(grad):
@@ -74,10 +86,52 @@ class GradientTracker:
                 self.gradients_per_layer[name] = []
                 param.register_hook(self.create_gradient_hook(name))
 
-    def load_existing_gradients(self, path: str):
-        """Load previously saved gradients from disk."""
+    def load_existing_gradients(self, path: str) -> bool:
+        """Load previously saved gradients from disk.
+
+        Returns:
+            True if raw gradients were loaded, False otherwise.
+        """
         if os.path.exists(path):
-            self.gradients_per_layer = torch.load(path, weights_only=False)
+            data = torch.load(path, weights_only=False)
+            if self.is_raw_gradients(data):
+                self.gradients_per_layer = data
+                return True
+        return False
+
+    def load_gradients_as_basis(self, path: str, energy: float = 0.97) -> Dict[str, torch.Tensor]:
+        """Load gradients from disk, converting to SVD basis if needed.
+
+        This handles the case where training was interrupted midway and only
+        raw gradients were saved (not yet converted to SVD basis).
+
+        Args:
+            path: Path to the gradient file (can be raw gradients or SVD basis)
+            energy: Energy threshold for SVD truncation (only used if converting)
+
+        Returns:
+            Dict mapping layer names to SVD basis tensors, or empty dict if file doesn't exist.
+        """
+        if not os.path.exists(path):
+            return {}
+
+        data = torch.load(path, weights_only=False)
+
+        if self.is_raw_gradients(data):
+            print(f"[GradientTracker] Found raw gradients at {path}, converting to SVD basis...")
+            # Temporarily store the loaded gradients
+            old_gradients = self.gradients_per_layer
+            self.gradients_per_layer = data
+            # Compute SVD basis
+            basis = self.compute_svd_basis(energy)
+            # Restore original gradients
+            self.gradients_per_layer = old_gradients
+            print(f"[GradientTracker] Converted {len(basis)} layers to SVD basis")
+            return basis
+        else:
+            # Already SVD basis format
+            print(f"[GradientTracker] Loaded SVD basis from {path}")
+            return data
 
     def save_gradients(self, path: str):
         """Save current gradients to disk."""
@@ -753,9 +807,10 @@ def custom_finetune(args):
             gradient_tracker.load_existing_gradients(grad_path)
 
     # Load previous task basis for OGD (single file with concatenated bases)
+    # This handles both pre-computed SVD basis and raw gradients from interrupted training
     prev_basis = {}
     if args.orthogonal_gradients_path is not None:
-        prev_basis = torch.load(args.orthogonal_gradients_path, weights_only=False)
+        prev_basis = gradient_tracker.load_gradients_as_basis(args.orthogonal_gradients_path)
 
     # Initialize loss tracking
     prev_L2_loss = None
