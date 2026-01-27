@@ -68,7 +68,8 @@ This document provides a comprehensive reference for all command-line arguments 
 | Argument | Type | Default | Description |
 |----------|------|---------|-------------|
 | `--method` | str | `finetune` | Training method. **Choices:** `finetune`, `lwf`, `ZSCL`, `icarl` |
-| `--train-mode` | str | `whole` | Which parts of the model to train. **Choices:** `whole`, `text`, `image`, `image-fc`, `image-fc-fixed`, `fc` |
+| `--train-mode` | str | `whole` | Which parts of the model to train. **Choices:** `whole`, `text`, `image`, `image-fc`, `image-fc-fixed`, `fc`, `image_text_probe` |
+| `--added-layer` | flag | `False` | Add trainable linear layers after each encoder (for `image_text_probe` mode) |
 | `--data-location` | str | `./data` | Root directory for datasets |
 | `--train-dataset` | str | `None` | Dataset to train on (e.g., `DTD`, `CIFAR100`, `ImageNet`) |
 | `--eval-datasets` | str | `None` | Comma-separated list of datasets for evaluation |
@@ -90,6 +91,7 @@ This document provides a comprehensive reference for all command-line arguments 
 - **`image-fc`**: Train image encoder and classification head
 - **`image-fc-fixed`**: Train image encoder with fixed classification head
 - **`fc`**: Train only the classification head (linear probe)
+- **`image_text_probe`**: Train with probing layers on both encoders. Use `--added-layer` to add trainable linear layers after each encoder
 
 ---
 

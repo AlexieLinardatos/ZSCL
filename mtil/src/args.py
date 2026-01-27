@@ -43,8 +43,14 @@ def parse_arguments():
         "--train-mode",
         type=str,
         default="whole",
-        choices=["whole", "text", "image", "image-fc", "image-fc-fixed", "fc"],
+        choices=["whole", "text", "image", "image-fc", "image-fc-fixed", "fc", "image_text_probe"],
         help="Train mode to use.",
+    )
+    parser.add_argument(
+        "--added-layer",
+        action="store_true",
+        default=False,
+        help="Add trainable linear layers after each encoder for image_text_probe mode.",
     )
     parser.add_argument("--data-location", type=str, default="./data")
     parser.add_argument("--train-dataset", default=None)
