@@ -45,7 +45,7 @@ def main(args):
         else:
             model = finetune_fc(args)
     else:
-        assert args.train_mode in ["whole", "text", "image"]
+        assert args.train_mode in ["whole", "text", "image", "image_text_probe"]
         # assert args.method in ["finetune"]
         if args.eval_only:
             model, _, val_preprocess = clip.load(args.model, jit=False)
