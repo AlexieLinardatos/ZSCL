@@ -716,9 +716,56 @@ def apply_wise_merge(args, model):
 # Main Training Function
 # =============================================================================
 
+def print_args(args):
+    """Print arguments in a readable format."""
+    print("\n" + "=" * 60)
+    print("TRAINING CONFIGURATION")
+    print("=" * 60)
+
+    # Group arguments by category for better readability
+    categories = {
+        "Model": ["model", "load", "save", "untrained"],
+        "Training": ["method", "train_mode", "train_dataset", "iterations", "epochs",
+                     "batch_size", "batch_size_eval", "lr", "wd", "beta2", "warmup_length",
+                     "ls", "start_iteration"],
+        "ZSCL": ["ref_model", "ref_dataset", "ref_sentences", "ref_wise", "ref_wise_alpha",
+                 "T", "image_loss", "text_loss", "ablation_loss_2", "feature_mse", "weight_adjust"],
+        "Regularization": ["l2", "freeze"],
+        "Weight Averaging": ["we", "we_wise", "we_wise_alpha", "moving_avg", "mv_avg_model",
+                            "mv_avg_decay", "avg_freq", "wise_merge", "wise_ft_model", "wise_ft_alpha"],
+        "OGD": ["orthogonal_gradients", "orthogonal_gradients_path"],
+        "Probes": ["image_probe", "text_probe"],
+        "Evaluation": ["eval_datasets", "eval_interval", "eval_every_epoch", "loss_interval"],
+        "Data": ["data_location", "template", "text_datasets", "num"],
+    }
+
+    args_dict = vars(args)
+    printed_keys = set()
+
+    for category, keys in categories.items():
+        category_args = {k: args_dict[k] for k in keys if k in args_dict and args_dict[k] is not None}
+        if category_args:
+            print(f"\n[{category}]")
+            for key, value in category_args.items():
+                print(f"  {key}: {value}")
+                printed_keys.add(key)
+
+    # Print any remaining arguments not in categories
+    remaining = {k: v for k, v in args_dict.items() if k not in printed_keys and v is not None}
+    if remaining:
+        print(f"\n[Other]")
+        for key, value in remaining.items():
+            print(f"  {key}: {value}")
+
+    print("\n" + "=" * 60 + "\n")
+
+
 def custom_finetune(args):
     """Main training function with modular organization."""
     global _training_state
+
+    # Print arguments
+    print_args(args)
 
     # Initialize signal handler
     setup_signal_handler()
