@@ -840,7 +840,7 @@ def custom_finetune(args):
             loss_dict = {"ZSCL": prev_ZSCL_loss, "L2": prev_L2_loss}
 
             with torch.no_grad():
-                evaluate_and_save(args, model, val_preprocess, iteration, loss_dict)
+                evaluate_and_save(args, model, val_preprocess, iteration+model_iteration_count, loss_dict)
             torch.cuda.empty_cache()
 
         # Reset data iterator at epoch boundary
