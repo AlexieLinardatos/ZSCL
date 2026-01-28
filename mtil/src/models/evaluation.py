@@ -24,8 +24,14 @@ def accuracy(output, target, topk=(1,)):
     ]
 
 
-def load_probes_from_checkpoint(checkpoint_path, model):
-    """Load probe layers from a checkpoint if they exist."""
+def load_probes_from_checkpoint(checkpoint_path, model, args=None):
+    """Load probe layers from a checkpoint if they exist.
+
+    Args:
+        checkpoint_path: Path to checkpoint file.
+        model: The CLIP model to get embedding dimension from.
+        args: Optional args to determine which probes to load. If None, infers from checkpoint.
+    """
     if checkpoint_path is None:
         return None
 
@@ -44,11 +50,27 @@ def load_probes_from_checkpoint(checkpoint_path, model):
     else:
         embed_dim = m.visual.proj.shape[1]
 
-    probes = EncoderProbes(embed_dim)
-    probes.load_state_dict(checkpoint["probes_state_dict"])
+    # Determine which probes to load from args or infer from checkpoint
+    probes_state = checkpoint["probes_state_dict"]
+    if args is not None:
+        use_image_probe = args.image_probe
+        use_text_probe = args.text_probe
+    else:
+        # Infer from checkpoint state dict keys
+        use_image_probe = any("image_probe" in k for k in probes_state.keys())
+        use_text_probe = any("text_probe" in k for k in probes_state.keys())
+
+    probes = EncoderProbes(embed_dim, use_image_probe=use_image_probe, use_text_probe=use_text_probe)
+    probes.load_state_dict(probes_state, strict=False)
     probes = probes.cuda()
     probes.eval()
-    print(f"[Evaluation] Loaded probe layers with embedding dim: {embed_dim}")
+
+    probe_info = []
+    if use_image_probe:
+        probe_info.append("image")
+    if use_text_probe:
+        probe_info.append("text")
+    print(f"[Evaluation] Loaded {' + '.join(probe_info)} probe(s) with embedding dim: {embed_dim}")
     return probes
 
 
@@ -142,8 +164,8 @@ def evaluate(image_classifier, args, val_preprocess):
 
     # Load probes if they exist in checkpoint
     probes = None
-    if args.added_layer and args.load is not None:
-        probes = load_probes_from_checkpoint(args.load, image_classifier)
+    if (args.image_probe or args.text_probe) and args.load is not None:
+        probes = load_probes_from_checkpoint(args.load, image_classifier, args)
 
     for i, dataset_name in enumerate(args.eval_datasets):
         print("Evaluating on", dataset_name)
@@ -188,8 +210,8 @@ def eval_single_image(image_classifier, args, val_preprocess):
 
     # Load probes if they exist in checkpoint
     probes = None
-    if args.added_layer and args.load is not None:
-        probes = load_probes_from_checkpoint(args.load, model)
+    if (args.image_probe or args.text_probe) and args.load is not None:
+        probes = load_probes_from_checkpoint(args.load, model, args)
 
     #loading image
     image = val_preprocess(Image.open(image_path)).unsqueeze(0).to("cuda")
@@ -277,8 +299,8 @@ def evaluate_2(image_classifier, args, val_preprocess):
 
     # Load probes if they exist in checkpoint
     probes = None
-    if args.added_layer and args.load is not None:
-        probes = load_probes_from_checkpoint(args.load, image_classifier)
+    if (args.image_probe or args.text_probe) and args.load is not None:
+        probes = load_probes_from_checkpoint(args.load, image_classifier, args)
 
     for i, dataset_name in enumerate(args.eval_datasets):
         print("Evaluating on", dataset_name)

@@ -314,10 +314,10 @@ def get_trainable_params(args, model, probes=None):
         print("[Training mode] Image Encoder")
         params = list(model.visual.parameters())
     elif args.train_mode == "image_text_probe":
-        print("[Training mode] Image & Text Probe Layers")
-        if probes is None:
-            raise ValueError("Probes must be provided for image_text_probe mode")
-        params = list(probes.parameters())
+        print("[Training mode] Probe Layers Only (encoders frozen)")
+        if probes is None or not probes.has_trainable_params():
+            raise ValueError("At least one probe (--image-probe or --text-probe) must be enabled for image_text_probe mode")
+        params = [p for p in probes.parameters() if p is not None]
     else:
         assert args.train_mode == "whole"
         print("[Training mode] Both Encoders")
@@ -732,21 +732,26 @@ def custom_finetune(args):
     we_model, we_n = setup_averaging_model(args, model)
     l2_model = setup_l2_model(args, model)
 
-    # Setup probe layers if added_layer is enabled
+    # Setup probe layers if any probe is enabled
     probes = None
-    if args.added_layer:
+    if args.image_probe or args.text_probe:
         # Get embedding dimension from the model
         embed_dim = model.visual.output_dim if hasattr(model.visual, 'output_dim') else model.visual.proj.shape[1]
-        probes = EncoderProbes(embed_dim)
+        probes = EncoderProbes(embed_dim, use_image_probe=args.image_probe, use_text_probe=args.text_probe)
         probes = probes.cuda()
-        print(f"[Added Layer] Created probe layers with embedding dim: {embed_dim}")
+        probe_info = []
+        if args.image_probe:
+            probe_info.append("image")
+        if args.text_probe:
+            probe_info.append("text")
+        print(f"[Probe Layers] Created {' + '.join(probe_info)} probe(s) with embedding dim: {embed_dim}")
 
         # Load probe weights if checkpoint exists
         if args.load is not None:
             checkpoint = torch.load(args.load, weights_only=False)
             if "probes_state_dict" in checkpoint:
-                probes.load_state_dict(checkpoint["probes_state_dict"])
-                print(f"[Added Layer] Loaded probe weights from checkpoint")
+                probes.load_state_dict(checkpoint["probes_state_dict"], strict=False)
+                print(f"[Probe Layers] Loaded probe weights from checkpoint")
 
     # Setup dataset
     dataset = setup_train_dataset(args, train_preprocess)

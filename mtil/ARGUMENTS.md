@@ -69,7 +69,8 @@ This document provides a comprehensive reference for all command-line arguments 
 |----------|------|---------|-------------|
 | `--method` | str | `finetune` | Training method. **Choices:** `finetune`, `lwf`, `ZSCL`, `icarl` |
 | `--train-mode` | str | `whole` | Which parts of the model to train. **Choices:** `whole`, `text`, `image`, `image-fc`, `image-fc-fixed`, `fc`, `image_text_probe` |
-| `--added-layer` | flag | `False` | Add trainable linear layers after each encoder (for `image_text_probe` mode) |
+| `--image-probe` | flag | `False` | Add trainable linear probe layer after image encoder |
+| `--text-probe` | flag | `False` | Add trainable linear probe layer after text encoder |
 | `--data-location` | str | `./data` | Root directory for datasets |
 | `--train-dataset` | str | `None` | Dataset to train on (e.g., `DTD`, `CIFAR100`, `ImageNet`) |
 | `--eval-datasets` | str | `None` | Comma-separated list of datasets for evaluation |
@@ -91,7 +92,7 @@ This document provides a comprehensive reference for all command-line arguments 
 - **`image-fc`**: Train image encoder and classification head
 - **`image-fc-fixed`**: Train image encoder with fixed classification head
 - **`fc`**: Train only the classification head (linear probe)
-- **`image_text_probe`**: Train with probing layers on both encoders. Use `--added-layer` to add trainable linear layers after each encoder
+- **`image_text_probe`**: Freeze encoders and train probe layers only. Use `--image-probe` and/or `--text-probe` to add trainable linear layers after respective encoders
 
 ---
 
@@ -339,6 +340,27 @@ python -m src.main \
     --n_class 100 \
     --iterations 5000 \
     --save ckpt/cifar100_probe
+```
+
+### Encoder Probe Training
+```bash
+# Image probe only (freeze encoders, train image probe)
+python -m src.main \
+    --method finetune \
+    --train-mode image_text_probe \
+    --image-probe \
+    --train-dataset DTD \
+    --iterations 1000 \
+    --save ckpt/dtd_image_probe
+
+# Both probes (freeze encoders, train both probes)
+python -m src.main \
+    --method finetune \
+    --train-mode image_text_probe \
+    --image-probe --text-probe \
+    --train-dataset DTD \
+    --iterations 1000 \
+    --save ckpt/dtd_both_probes
 ```
 
 ---
