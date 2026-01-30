@@ -43,20 +43,8 @@ def parse_arguments():
         "--train-mode",
         type=str,
         default="whole",
-        choices=["whole", "text", "image", "image-fc", "image-fc-fixed", "fc", "image_text_probe"],
+        choices=["whole", "text", "image", "image-fc", "image-fc-fixed", "fc"],
         help="Train mode to use.",
-    )
-    parser.add_argument(
-        "--image-probe",
-        action="store_true",
-        default=False,
-        help="Add trainable linear probe layer after image encoder.",
-    )
-    parser.add_argument(
-        "--text-probe",
-        action="store_true",
-        default=False,
-        help="Add trainable linear probe layer after text encoder.",
     )
     parser.add_argument("--data-location", type=str, default="./data")
     parser.add_argument("--train-dataset", default=None)

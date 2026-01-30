@@ -31,7 +31,6 @@ from .helpers import (
     get_datasets_text, merge_we, wise_we, moving_avg,
     l2_loss, virtual_vocab, distillation
 )
-from .probes import ProbeLayer, EncoderProbes
 
 
 # =============================================================================
@@ -235,9 +234,7 @@ def setup_signal_handler():
 
 def load_base_model(args):
     """Load the base CLIP model and optionally restore from checkpoint."""
-    print("TEST UNTRAINED BEFORE")
     if args.untrained:
-        print("TEST UNTRAINED")
         model, train_preprocess, val_preprocess = clip.load(args.model, jit=False, pretrained=False)
     else:
         model, train_preprocess, val_preprocess = clip.load(args.model, jit=False, pretrained=True)
@@ -300,7 +297,7 @@ def setup_optimizer(args, params, total_iterations):
     return optimizer, scheduler
 
 
-def get_trainable_params(args, model, probes=None):
+def get_trainable_params(args, model):
     """Get trainable parameters based on training mode."""
     if args.train_mode == "text":
         print("[Training mode] Text Encoder")
@@ -313,11 +310,6 @@ def get_trainable_params(args, model, probes=None):
     elif args.train_mode == "image":
         print("[Training mode] Image Encoder")
         params = list(model.visual.parameters())
-    elif args.train_mode == "image_text_probe":
-        print("[Training mode] Probe Layers Only (encoders frozen)")
-        if probes is None or not probes.has_trainable_params():
-            raise ValueError("At least one probe (--image-probe or --text-probe) must be enabled for image_text_probe mode")
-        params = [p for p in probes.parameters() if p is not None]
     else:
         assert args.train_mode == "whole"
         print("[Training mode] Both Encoders")
@@ -468,24 +460,16 @@ def get_next_batch(data_iter, dataset, args):
     return images.cuda(), labels.cuda(), data_iter
 
 
-def compute_ce_loss(model, images, texts, embeddings, logit_scale, labels, args, probes=None):
+def compute_ce_loss(model, images, texts, embeddings, logit_scale, labels, args):
     """Compute cross-entropy loss."""
     # Get text embeddings if not in text-only mode
     if args.train_mode != "text":
         embeddings = model(None, texts)
         embeddings = embeddings / embeddings.norm(dim=-1, keepdim=True)
-        # Apply text probe if available
-        if probes is not None:
-            embeddings = probes.forward_text(embeddings)
-            embeddings = embeddings / embeddings.norm(dim=-1, keepdim=True)
 
     # Get image embeddings
     out = model(images, None)
     out = out / out.norm(dim=-1, keepdim=True)
-    # Apply image probe if available
-    if probes is not None:
-        out = probes.forward_image(out)
-        out = out / out.norm(dim=-1, keepdim=True)
 
     # Compute cross-entropy loss
     logits_per_image = logit_scale.exp() * out @ embeddings.t()
@@ -666,7 +650,7 @@ def evaluate_and_save(args, model, val_preprocess, iteration, loss_dict=None):
     torch.cuda.empty_cache()
 
 
-def save_final_model(args, model, we_model, iteration, probes=None):
+def save_final_model(args, model, we_model, iteration):
     """Save the final model checkpoint."""
     if args.save is None:
         return
@@ -681,16 +665,10 @@ def save_final_model(args, model, we_model, iteration, probes=None):
         "state_dict": to_save_model.state_dict(),
     }
 
-    # Save probe layers if they exist
-    if probes is not None:
-        checkpoint["probes_state_dict"] = probes.state_dict()
-
     path = os.path.join(args.save, f"{args.train_dataset}.pth")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     torch.save(checkpoint, path)
     print(f"Saved model to {path}")
-    if probes is not None:
-        print(f"Saved probe layers to {path}")
 
 
 def apply_wise_merge(args, model):
@@ -734,7 +712,6 @@ def print_args(args):
         "Weight Averaging": ["we", "we_wise", "we_wise_alpha", "moving_avg", "mv_avg_model",
                             "mv_avg_decay", "avg_freq", "wise_merge", "wise_ft_model", "wise_ft_alpha"],
         "OGD": ["orthogonal_gradients", "orthogonal_gradients_path"],
-        "Probes": ["image_probe", "text_probe"],
         "Evaluation": ["eval_datasets", "eval_interval", "eval_every_epoch", "loss_interval"],
         "Data": ["data_location", "template", "text_datasets", "num"],
     }
@@ -779,27 +756,6 @@ def custom_finetune(args):
     we_model, we_n = setup_averaging_model(args, model)
     l2_model = setup_l2_model(args, model)
 
-    # Setup probe layers if any probe is enabled
-    probes = None
-    if args.image_probe or args.text_probe:
-        # Get embedding dimension from the model
-        embed_dim = model.visual.output_dim if hasattr(model.visual, 'output_dim') else model.visual.proj.shape[1]
-        probes = EncoderProbes(embed_dim, use_image_probe=args.image_probe, use_text_probe=args.text_probe)
-        probes = probes.cuda()
-        probe_info = []
-        if args.image_probe:
-            probe_info.append("image")
-        if args.text_probe:
-            probe_info.append("text")
-        print(f"[Probe Layers] Created {' + '.join(probe_info)} probe(s) with embedding dim: {embed_dim}")
-
-        # Load probe weights if checkpoint exists
-        if args.load is not None:
-            checkpoint = torch.load(args.load, weights_only=False)
-            if "probes_state_dict" in checkpoint:
-                probes.load_state_dict(checkpoint["probes_state_dict"], strict=False)
-                print(f"[Probe Layers] Loaded probe weights from checkpoint")
-
     # Setup dataset
     dataset = setup_train_dataset(args, train_preprocess)
 
@@ -815,7 +771,7 @@ def custom_finetune(args):
     loss_interval = args.loss_interval
 
     # Setup trainable parameters and optimizer
-    params = get_trainable_params(args, model, probes)
+    params = get_trainable_params(args, model)
     optimizer, scheduler = setup_optimizer(args, params, total_iterations)
 
     # Move model to GPU and wrap with DataParallel
@@ -824,12 +780,6 @@ def custom_finetune(args):
     devices = list(range(torch.cuda.device_count()))
     print("Using devices", devices)
     model = torch.nn.DataParallel(model, device_ids=devices)
-
-    # Freeze the base model if using image_text_probe mode
-    if args.train_mode == "image_text_probe":
-        print("[Freezing] Base CLIP model frozen for image_text_probe mode")
-        for param in model.parameters():
-            param.requires_grad = False
 
     # Prepare text embeddings
     texts = [template(x) for x in dataset.classnames]
@@ -911,7 +861,7 @@ def custom_finetune(args):
 
         # Compute CE loss
         loss, embeddings = compute_ce_loss(
-            model, images, texts, embeddings, logit_scale, labels, args, probes
+            model, images, texts, embeddings, logit_scale, labels, args
         )
 
         # Add L2 regularization
@@ -994,4 +944,4 @@ def custom_finetune(args):
         print(f"Saved gradient basis to {basis_path}")
 
     # Save final model
-    save_final_model(args, model, we_model, _training_state.iteration, probes)
+    save_final_model(args, model, we_model, _training_state.iteration)
