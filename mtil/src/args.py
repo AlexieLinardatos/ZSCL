@@ -321,6 +321,44 @@ def parse_arguments():
     parser.add_argument("--custom-finetune", action="store_true", default=False)
     parser.add_argument("--max-evaluation-size", type=int, default=None)
 
+    # LoRA (Low-Rank Adaptation)
+    parser.add_argument(
+        "--lora",
+        action="store_true",
+        default=False,
+        help="Enable LoRA (Low-Rank Adaptation) training. Freezes base model and trains LoRA layers only.",
+    )
+    parser.add_argument(
+        "--lora-r",
+        type=int,
+        default=8,
+        help="LoRA rank (dimension of low-rank matrices).",
+    )
+    parser.add_argument(
+        "--lora-alpha",
+        type=int,
+        default=16,
+        help="LoRA alpha (scaling factor). Effective scaling is alpha/r.",
+    )
+    parser.add_argument(
+        "--lora-dropout",
+        type=float,
+        default=0.1,
+        help="Dropout probability for LoRA layers.",
+    )
+    parser.add_argument(
+        "--lora-target-modules",
+        type=lambda x: x.split(","),
+        default=None,
+        help="Comma-separated list of module names to apply LoRA to. Default: q_proj,v_proj,k_proj,out_proj for attention layers.",
+    )
+    parser.add_argument(
+        "--lora-bias",
+        type=str,
+        default="none",
+        choices=["none", "all", "lora_only"],
+        help="Which biases to train: 'none', 'all', or 'lora_only'.",
+    )
 
     args = parser.parse_args()
     args.device = "cuda" if torch.cuda.is_available() else "cpu"

@@ -21,6 +21,7 @@ This document provides a comprehensive reference for all command-line arguments 
 - [Baseline & TRIO](#baseline--trio)
 - [Fisher Weighting](#fisher-weighting)
 - [Thesis-Specific Arguments](#thesis-specific-arguments)
+- [LoRA (Low-Rank Adaptation)](#lora-low-rank-adaptation)
 
 ---
 
@@ -68,9 +69,7 @@ This document provides a comprehensive reference for all command-line arguments 
 | Argument | Type | Default | Description |
 |----------|------|---------|-------------|
 | `--method` | str | `finetune` | Training method. **Choices:** `finetune`, `lwf`, `ZSCL`, `icarl` |
-| `--train-mode` | str | `whole` | Which parts of the model to train. **Choices:** `whole`, `text`, `image`, `image-fc`, `image-fc-fixed`, `fc`, `image_text_probe` |
-| `--image-probe` | flag | `False` | Add trainable linear probe layer after image encoder |
-| `--text-probe` | flag | `False` | Add trainable linear probe layer after text encoder |
+| `--train-mode` | str | `whole` | Which parts of the model to train. **Choices:** `whole`, `text`, `image`, `image-fc`, `image-fc-fixed`, `fc` |
 | `--data-location` | str | `./data` | Root directory for datasets |
 | `--train-dataset` | str | `None` | Dataset to train on (e.g., `DTD`, `CIFAR100`, `ImageNet`) |
 | `--eval-datasets` | str | `None` | Comma-separated list of datasets for evaluation |
@@ -92,7 +91,6 @@ This document provides a comprehensive reference for all command-line arguments 
 - **`image-fc`**: Train image encoder and classification head
 - **`image-fc-fixed`**: Train image encoder with fixed classification head
 - **`fc`**: Train only the classification head (linear probe)
-- **`image_text_probe`**: Freeze encoders and train probe layers only. Use `--image-probe` and/or `--text-probe` to add trainable linear layers after respective encoders
 
 ---
 
@@ -283,6 +281,34 @@ final_weights = alpha * finetuned_weights + (1 - alpha) * zeroshot_weights
 
 ---
 
+## LoRA (Low-Rank Adaptation)
+
+LoRA enables parameter-efficient fine-tuning by freezing the base CLIP model and training small low-rank adapter layers. This significantly reduces memory usage and training time while maintaining good performance.
+
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `--lora` | flag | `False` | Enable LoRA training. Freezes base model and trains only LoRA adapter layers. |
+| `--lora-r` | int | `8` | LoRA rank (dimension of low-rank matrices). Higher = more capacity but more parameters. |
+| `--lora-alpha` | int | `16` | LoRA scaling factor. Effective scaling is `alpha/r`. |
+| `--lora-dropout` | float | `0.1` | Dropout probability applied to LoRA layers. |
+| `--lora-target-modules` | str | `None` | Comma-separated module names to apply LoRA. Default: attention and MLP layers. ("q_proj", "k_proj", "v_proj", "out_proj") |
+| `--lora-bias` | str | `none` | Which biases to train. **Choices:** `none`, `all`, `lora_only` |
+
+### LoRA Concepts
+
+- **Rank (`r`)**: Controls the capacity of LoRA adapters. Typical values: 4, 8, 16, 32. Lower rank = fewer parameters but potentially less expressive.
+- **Alpha**: Scaling factor for LoRA updates. The effective learning rate scaling is `alpha/r`.
+- **Target Modules**: By default, LoRA is applied to attention projections and MLP layers in both visual and text encoders.
+
+### Requirements
+
+LoRA requires the `peft` library:
+```bash
+pip install peft
+```
+
+---
+
 ## Common Usage Examples
 
 ### Basic Fine-tuning
@@ -342,25 +368,41 @@ python -m src.main \
     --save ckpt/cifar100_probe
 ```
 
-### Encoder Probe Training
+### LoRA Fine-tuning
 ```bash
-# Image probe only (freeze encoders, train image probe)
+# Basic LoRA training (default settings)
 python -m src.main \
     --method finetune \
-    --train-mode image_text_probe \
-    --image-probe \
+    --train-mode whole \
+    --lora \
     --train-dataset DTD \
     --iterations 1000 \
-    --save ckpt/dtd_image_probe
+    --lr 1e-4 \
+    --save ckpt/dtd_lora
 
-# Both probes (freeze encoders, train both probes)
+# LoRA with custom configuration
 python -m src.main \
     --method finetune \
-    --train-mode image_text_probe \
-    --image-probe --text-probe \
+    --train-mode whole \
+    --lora \
+    --lora-r 16 \
+    --lora-alpha 32 \
+    --lora-dropout 0.05 \
     --train-dataset DTD \
     --iterations 1000 \
-    --save ckpt/dtd_both_probes
+    --lr 1e-4 \
+    --save ckpt/dtd_lora_r16
+
+# LoRA with ZSCL (continual learning)
+python -m src.main \
+    --method ZSCL \
+    --train-mode whole \
+    --lora \
+    --lora-r 8 \
+    --train-dataset DTD \
+    --ref-dataset ImageNet \
+    --iterations 1000 \
+    --save ckpt/dtd_lora_zscl
 ```
 
 ---
