@@ -291,8 +291,12 @@ LoRA enables parameter-efficient fine-tuning by freezing the base CLIP model and
 | `--lora-r` | int | `8` | LoRA rank (dimension of low-rank matrices). Higher = more capacity but more parameters. |
 | `--lora-alpha` | int | `16` | LoRA scaling factor. Effective scaling is `alpha/r`. |
 | `--lora-dropout` | float | `0.1` | Dropout probability applied to LoRA layers. |
-| `--lora-target-modules` | str | `None` | Comma-separated module names to apply LoRA. Default: attention and MLP layers. ("q_proj", "k_proj", "v_proj", "out_proj") |
+| `--lora-target-modules` | str | `None` | Comma-separated module names to apply LoRA. Default: attention and MLP layers. |
 | `--lora-bias` | str | `none` | Which biases to train. **Choices:** `none`, `all`, `lora_only` |
+
+### CLIP target modules
+- Attention only: attn.in_proj_weight,attn.out_proj.weight 
+- MLP only: mlp.c_fc.weight,mlp.c_proj.weight
 
 ### LoRA Concepts
 
