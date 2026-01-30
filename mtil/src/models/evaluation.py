@@ -10,7 +10,6 @@ import tkinter
 from .. import datasets
 from ..datasets.common import get_dataloader, maybe_dictionarize
 from PIL import Image
-from .probes import ProbeLayer, EncoderProbes
 
 
 
@@ -24,58 +23,8 @@ def accuracy(output, target, topk=(1,)):
     ]
 
 
-def load_probes_from_checkpoint(checkpoint_path, model, args=None):
-    """Load probe layers from a checkpoint if they exist.
-
-    Args:
-        checkpoint_path: Path to checkpoint file.
-        model: The CLIP model to get embedding dimension from.
-        args: Optional args to determine which probes to load. If None, infers from checkpoint.
-    """
-    if checkpoint_path is None:
-        return None
-
-    checkpoint = torch.load(checkpoint_path, weights_only=False)
-    if "probes_state_dict" not in checkpoint:
-        return None
-
-    # Get embedding dimension from model
-    if hasattr(model, "module"):
-        m = model.module
-    else:
-        m = model
-
-    if hasattr(m.visual, 'output_dim'):
-        embed_dim = m.visual.output_dim
-    else:
-        embed_dim = m.visual.proj.shape[1]
-
-    # Determine which probes to load from args or infer from checkpoint
-    probes_state = checkpoint["probes_state_dict"]
-    if args is not None:
-        use_image_probe = args.image_probe
-        use_text_probe = args.text_probe
-    else:
-        # Infer from checkpoint state dict keys
-        use_image_probe = any("image_probe" in k for k in probes_state.keys())
-        use_text_probe = any("text_probe" in k for k in probes_state.keys())
-
-    probes = EncoderProbes(embed_dim, use_image_probe=use_image_probe, use_text_probe=use_text_probe)
-    probes.load_state_dict(probes_state, strict=False)
-    probes = probes.cuda()
-    probes.eval()
-
-    probe_info = []
-    if use_image_probe:
-        probe_info.append("image")
-    if use_text_probe:
-        probe_info.append("text")
-    print(f"[Evaluation] Loaded {' + '.join(probe_info)} probe(s) with embedding dim: {embed_dim}")
-    return probes
-
-
 @torch.no_grad()
-def zeroshot_classifier(classnames, templates, model, probes=None):
+def zeroshot_classifier(classnames, templates, model):
     if not isinstance(templates, list):
         templates = [templates]
     zeroshot_weights = []
@@ -84,11 +33,6 @@ def zeroshot_classifier(classnames, templates, model, probes=None):
         texts = clip.tokenize(texts).cuda()  # tokenize
         class_embeddings = model.encode_text(texts)  # embed with text encoder
         class_embeddings /= class_embeddings.norm(dim=-1, keepdim=True)
-
-        # Apply text probe if available
-        if probes is not None:
-            class_embeddings = probes.forward_text(class_embeddings)
-            class_embeddings /= class_embeddings.norm(dim=-1, keepdim=True)
 
         class_embedding = class_embeddings.mean(dim=0)
         class_embedding /= class_embedding.norm()
@@ -102,7 +46,7 @@ def zeroshot_classifier(classnames, templates, model, probes=None):
 
 
 @torch.no_grad()
-def zeroshot_eval(model, loader, zeroshot_weights, args=None, probes=None):
+def zeroshot_eval(model, loader, zeroshot_weights, args=None):
     top1, top5, n = 0.0, 0.0, 0.0
     for i, data in enumerate(tqdm(loader)):
         if args is not None:
@@ -117,11 +61,6 @@ def zeroshot_eval(model, loader, zeroshot_weights, args=None, probes=None):
         image_features = model.encode_image(images)
         image_features /= image_features.norm(dim=-1, keepdim=True)
 
-        # Apply image probe if available
-        if probes is not None:
-            image_features = probes.forward_image(image_features)
-            image_features /= image_features.norm(dim=-1, keepdim=True)
-
         logits = 100.0 * image_features @ zeroshot_weights
 
         # measure accuracy
@@ -135,7 +74,7 @@ def zeroshot_eval(model, loader, zeroshot_weights, args=None, probes=None):
     return top1, top5
 
 
-def eval_single_dataset(image_classifier, dataset, args, probes=None):
+def eval_single_dataset(image_classifier, dataset, args):
     model = image_classifier
     input_key = "images"
     image_enc = None
@@ -143,14 +82,14 @@ def eval_single_dataset(image_classifier, dataset, args, probes=None):
     model.eval()
 
     zeroshot_weights = zeroshot_classifier(
-        dataset.classnames, dataset.templates, model, probes=probes
+        dataset.classnames, dataset.templates, model
     )
 
     dataloader = get_dataloader(
         dataset, is_train=False, args=args, image_encoder=image_enc
     )
 
-    top1, top5 = zeroshot_eval(model, dataloader, zeroshot_weights, probes=probes)
+    top1, top5 = zeroshot_eval(model, dataloader, zeroshot_weights)
 
     print(f"Top-1 accuracy: {top1:.2f}")
     print(f"Top-5 accuracy: {top5:.2f}")
@@ -162,11 +101,6 @@ def evaluate(image_classifier, args, val_preprocess):
     if args.eval_datasets is None:
         return
 
-    # Load probes if they exist in checkpoint
-    probes = None
-    if (args.image_probe or args.text_probe) and args.load is not None:
-        probes = load_probes_from_checkpoint(args.load, image_classifier, args)
-
     for i, dataset_name in enumerate(args.eval_datasets):
         print("Evaluating on", dataset_name)
         dataset_class = getattr(datasets, dataset_name)
@@ -176,7 +110,7 @@ def evaluate(image_classifier, args, val_preprocess):
             batch_size=args.batch_size,
             batch_size_eval=args.batch_size_eval,
         )
-        top1, top5 = eval_single_dataset(image_classifier, dataset, args, probes=probes)
+        top1, top5 = eval_single_dataset(image_classifier, dataset, args)
 
         path = os.path.dirname(args.load) + "/" + "evaluate_all_results.csv"
 
@@ -208,11 +142,6 @@ def eval_single_image(image_classifier, args, val_preprocess):
     model = image_classifier
     model.eval()
 
-    # Load probes if they exist in checkpoint
-    probes = None
-    if (args.image_probe or args.text_probe) and args.load is not None:
-        probes = load_probes_from_checkpoint(args.load, model, args)
-
     #loading image
     image = val_preprocess(Image.open(image_path)).unsqueeze(0).to("cuda")
 
@@ -237,19 +166,10 @@ def eval_single_image(image_classifier, args, val_preprocess):
         text_feat = model.encode_text(text)
         text_feat = text_feat / text_feat.norm(dim=-1, keepdim=True)
 
-        # Apply probes if available
-        if probes is not None:
-            image_feat = probes.forward_image(image_feat)
-            image_feat = image_feat / image_feat.norm(dim=-1, keepdim=True)
-            text_feat = probes.forward_text(text_feat)
-            text_feat = text_feat / text_feat.norm(dim=-1, keepdim=True)
-
-        # Compute logits manually with probed features
         logit_scale = model.logit_scale.exp()
         logits_per_image = logit_scale * image_feat @ text_feat.t()
         probs = logits_per_image.softmax(dim=-1).cpu().numpy()
 
-    # print(probs.tolist()[0])
     result = dict(zip(prompts, probs.tolist()[0]))
     result = dict(sorted(result.items(), key=lambda item: item[1]))
 
@@ -262,7 +182,7 @@ def eval_single_image(image_classifier, args, val_preprocess):
     
 
 
-def eval_single_dataset_2(image_classifier, dataset, args, probes=None):
+def eval_single_dataset_2(image_classifier, dataset, args):
     model = image_classifier
     input_key = "images"
     image_enc = None
@@ -273,16 +193,15 @@ def eval_single_dataset_2(image_classifier, dataset, args, probes=None):
         model = model.module
 
     zeroshot_weights = zeroshot_classifier(
-        dataset.classnames, dataset.templates, model, probes=probes
+        dataset.classnames, dataset.templates, model
     )
 
     dataloader = get_dataloader(
         dataset, is_train=False, args=args, image_encoder=image_enc
     )
 
-    top1, top5 = zeroshot_eval(model, dataloader, zeroshot_weights, args=args, probes=probes)
+    top1, top5 = zeroshot_eval(model, dataloader, zeroshot_weights, args=args)
     print(f"Top-1 accuracy: {top1:.2f}")
-    # print(f"Top-5 accuracy: {top5:.2f}")
     del dataloader, zeroshot_weights
     torch.cuda.empty_cache()
     gc.collect()
@@ -297,11 +216,6 @@ def evaluate_2(image_classifier, args, val_preprocess):
     if args.eval_datasets is None:
         return
 
-    # Load probes if they exist in checkpoint
-    probes = None
-    if (args.image_probe or args.text_probe) and args.load is not None:
-        probes = load_probes_from_checkpoint(args.load, image_classifier, args)
-
     for i, dataset_name in enumerate(args.eval_datasets):
         print("Evaluating on", dataset_name)
         dataset_class = getattr(datasets, dataset_name)
@@ -311,7 +225,7 @@ def evaluate_2(image_classifier, args, val_preprocess):
             batch_size=args.batch_size,
             batch_size_eval=args.batch_size_eval,
         )
-        tops = eval_single_dataset_2(image_classifier, dataset, args, probes=probes)
+        tops = eval_single_dataset_2(image_classifier, dataset, args)
         dict = {"dataset_name": dataset_name, "metrics": tops}
 
         result.append(dict)

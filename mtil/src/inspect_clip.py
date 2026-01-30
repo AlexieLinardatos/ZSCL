@@ -15,7 +15,6 @@ Usage:
 import argparse
 from collections import defaultdict
 
-import torch
 import clip.clip as clip
 
 

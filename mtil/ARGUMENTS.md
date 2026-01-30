@@ -397,6 +397,17 @@ python -m src.main \
     --lr 1e-4 \
     --save ckpt/dtd_lora_r16
 
+# LoRA targeting only attention layers
+python -m src.main \
+    --method finetune \
+    --train-mode whole \
+    --lora \
+    --lora-target-modules "attn.in_proj_weight,attn.out_proj.weight" \
+    --train-dataset DTD \
+    --iterations 1000 \
+    --lr 1e-4 \
+    --save ckpt/dtd_lora_attn_only
+
 # LoRA with ZSCL (continual learning)
 python -m src.main \
     --method ZSCL \
