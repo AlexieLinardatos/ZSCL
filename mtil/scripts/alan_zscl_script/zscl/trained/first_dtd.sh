@@ -41,10 +41,10 @@ export PIP_CACHE_DIR="$SLURM_TMPDIR/pip-cache"
 
 # If your code uses a DATA_LOCATION, set it explicitly for the cluster
 # (Change this path to wherever you stage datasets on Sharknet)
-export DATA_LOCATION="/scratch/alanz21/data"
+export DATA_LOCATION="/scratch/alexie/data"
 mkdir -p "$DATA_LOCATION"
 
-cd /scratch/alanz21/thesis/mtil
+cd /scratch/alexie/ZSCL/mtil
 mkdir -p logs ckpt/clean/5000_iter/zscl/trained
 
 # ---- Python deps ----
