@@ -4,7 +4,7 @@
 #SBATCH --mem=32GB                      # memory
 #SBATCH --cpus-per-task=4               # number of CPU cores
 #SBATCH --gres=gpu:h100:1
-#SBATCH --output=/scratch/alanz21/thesis/mtil/logs/%x-%j.out  # output log file
+#SBATCH --output=/scratch/alexie/ZSCL/mtil/logs/%x-%j.out  # output log file
 #SBATCH --signal=USR1@60
 #SBATCH --requeue
 
@@ -12,7 +12,7 @@ set -euo pipefail
 
 # IMPORTANT:
 # Make sure this exists BEFORE you submit (Slurm won't create parent dirs for --output):
-#   mkdir -p /scratch/alanz21/thesis/mtil/logs
+#   mkdir -p /scratch/alexie/ZSCL/mtil/logs
 
 # Handle Slurm's warning signal (USR1) 60s before walltime: requeue instead of dying silently
 handle_usr1 () {
@@ -44,17 +44,22 @@ export PIP_CACHE_DIR="$SLURM_TMPDIR/pip-cache"
 export DATA_LOCATION="/scratch/alexie/data"
 mkdir -p "$DATA_LOCATION"
 
+# Make expected dataset aliases
+ln -sfn "$DATA_LOCATION/imagenet_10classes" "$DATA_LOCATION/ImageNet"
+
+# Quick sanity checks (fail early with a clear message)
+test -d "$DATA_LOCATION/ImageNet/Data/CLS-LOC/train" || { echo "Missing ImageNet train at $DATA_LOCATION/ImageNet/Data/CLS-LOC/train"; exit 2; }
+test -d "$DATA_LOCATION/conceptual_captions/cc_data/val" || { echo "Missing CC at $DATA_LOCATION/conceptual_captions/cc_data/val"; exit 2; }
+test -f "$DATA_LOCATION/conceptual_captions/Validation_GCC-1.1.0-Validation_output.csv" || { echo "Missing CC CSV in $DATA_LOCATION/conceptual_captions"; exit 2; }
+test -f "$DATA_LOCATION/MNIST/raw/train-images-idx3-ubyte.gz" || { echo "Missing MNIST raw gz in $DATA_LOCATION/MNIST/raw"; exit 2; }
+
+
 cd /scratch/alexie/ZSCL/mtil
 mkdir -p logs ckpt/clean/5000_iter/zscl/trained
 
 # ---- Python deps ----
 # NOTE: If compute nodes have no internet, these installs will fail.
 # In that case, you should build an env once on a login node and reuse it.
-pip install --upgrade pip
-
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
-pip install tqdm ftfy regex wilds pandas
-pip install git+https://github.com/modestyachts/ImageNetV2_pytorch
 
 # ---- Experiment config ----
 TARGET_DATASET="DTD"
