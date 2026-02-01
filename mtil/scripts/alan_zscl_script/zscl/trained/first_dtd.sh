@@ -1,88 +1,125 @@
 #!/bin/bash
 #SBATCH --job-name=zscl_Dtd
-#SBATCH --time=02:30:00                 # max time
-#SBATCH --mem=32GB                      # memory
-#SBATCH --cpus-per-task=4               # number of CPU cores
+#SBATCH --time=02:30:00
+#SBATCH --mem=32GB
+#SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:h100:1
 #SBATCH --output=/scratch/alexie/logs/%x-%j.out
 #SBATCH --signal=USR1@60
-#SBATCH --requeue
 
 set -euo pipefail
 mkdir -p /scratch/alexie/logs
 
-# IMPORTANT:
-# Make sure this exists BEFORE you submit (Slurm won't create parent dirs for --output):
-#   mkdir -p /scratch/alexie/ZSCL/mtil/logs
-
-# Handle Slurm's warning signal (USR1) 60s before walltime: requeue instead of dying silently
-handle_usr1 () {
-  echo "[`date`] Caught USR1 (about to hit walltime). Requeuing job ${SLURM_JOB_ID}..."
-  scontrol requeue "$SLURM_JOB_ID"
-}
-trap 'handle_usr1' USR1
-
-echo "[`date`] Job starting on host: $(hostname)"
+echo "[`date`] Host: $(hostname)"
 nvidia-smi
 
-module load python/3.11.5
 module load cuda/12.6
+module load python/3.11.5
 
-source /scratch/alexie/venvs/zscl/bin/activate
+# ----------------------------
+# Per-job environment (fresh)
+# ----------------------------
+ENV_DIR="$SLURM_TMPDIR/env"
 
-# Optional sanity checks
+echo "[`date`] Checking whether module Python has tkinter..."
+if python -c "import tkinter" >/dev/null 2>&1; then
+  echo "[`date`] tkinter OK on module Python. Creating venv..."
+  python -m venv "$ENV_DIR"
+  source "$ENV_DIR/bin/activate"
+else
+  echo "[`date`] tkinter missing on module Python."
+  echo "[`date`] Falling back to conda env with tk (reliable on HPC)."
+
+  # Try to load a conda module (names vary)
+  if module avail 2>&1 | egrep -qi "miniconda|anaconda"; then
+    # Prefer miniconda if present, else anaconda
+    if module avail 2>&1 | egrep -qi "miniconda"; then
+      module load miniconda3 || true
+    else
+      module load anaconda3 || true
+    fi
+  fi
+
+  if ! command -v conda >/dev/null 2>&1; then
+    echo "[`date`] ERROR: conda not available, and module Python lacks tkinter."
+    echo "Ask your cluster admins for a Python module built with Tk, or use a conda module."
+    exit 3
+  fi
+
+  # Create a per-job conda env inside SLURM_TMPDIR
+  # Using -p avoids name collisions and keeps it job-local.
+  CONDA_ENV_DIR="$SLURM_TMPDIR/conda-env"
+  conda create -y -p "$CONDA_ENV_DIR" python=3.11 tk pip
+
+  # Activate (conda needs shell hook)
+  source "$(conda info --base)/etc/profile.d/conda.sh"
+  conda activate "$CONDA_ENV_DIR"
+
+  python -c "import tkinter; print('tkinter ok via conda')"
+fi
+
 which python
 python -V
 which pip
 
-# Cache pip downloads per-job (reduces repeated downloads)
-export PIP_CACHE_DIR="$SLURM_TMPDIR/pip-cache"
+# ----------------------------
+# Python deps (og style)
+# ----------------------------
+# If compute nodes have restricted internet, these may fail.
+# In that case, build once on a login node, or use wheels/cache.
+pip install --upgrade pip
 
-# If your code uses a DATA_LOCATION, set it explicitly for the cluster
-# (Change this path to wherever you stage datasets on Sharknet)
-export DATA_LOCATION="/scratch/alexie/data"
-mkdir -p "$DATA_LOCATION"
+# PyTorch cu126
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
 
-# Make expected dataset aliases
-ln -sfn "$DATA_LOCATION/imagenet_10classes" "$DATA_LOCATION/ImageNet"
+# Other deps
+pip install tqdm ftfy regex wilds pandas
+pip install git+https://github.com/modestyachts/ImageNetV2_pytorch
 
-# Quick sanity checks (fail early with a clear message)
-test -d "$DATA_LOCATION/ImageNet/Data/CLS-LOC/train" || { echo "Missing ImageNet train at $DATA_LOCATION/ImageNet/Data/CLS-LOC/train"; exit 2; }
-test -d "$DATA_LOCATION/conceptual_captions/cc_data/val" || { echo "Missing CC at $DATA_LOCATION/conceptual_captions/cc_data/val"; exit 2; }
-test -f "$DATA_LOCATION/conceptual_captions/Validation_GCC-1.1.0-Validation_output.csv" || { echo "Missing CC CSV in $DATA_LOCATION/conceptual_captions"; exit 2; }
-test -f "$DATA_LOCATION/MNIST/raw/train-images-idx3-ubyte.gz" || { echo "Missing MNIST raw gz in $DATA_LOCATION/MNIST/raw"; exit 2; }
-
-
+# ----------------------------
+# Go to repo (adjust if needed)
+# ----------------------------
 REPO_ROOT="$HOME/projects/def-fqureshi/alexie/ZSCL"
 cd "$REPO_ROOT/mtil"
-mkdir -p logs ckpt/clean/5000_iter/zscl/trained
 
-# ---- Python deps ----
-# NOTE: If compute nodes have no internet, these installs will fail.
-# In that case, you should build an env once on a login node and reuse it.
+mkdir -p logs
 
-# ---- Experiment config ----
 TARGET_DATASET="DTD"
-
 SAVE_PATH="ckpt/clean/5000_iter/zscl/trained"
 MODEL_PATH="${SAVE_PATH}/DTD_trained"
 mkdir -p "${SAVE_PATH}" "${MODEL_PATH}"
 
 MODEL_NAME="${TARGET_DATASET}.pth"
-BASE_CKPT="${SAVE_PATH}/${MODEL_NAME}"
+CKPT_PATH="${SAVE_PATH}/${MODEL_NAME}"
 
-DATASETS="DTD,MNIST,EuroSAT,Flowers"
+DATASETS="DTD,MNIST,EuroSAT,Flowers,ObjectNet"
 
-# ---- Stage 1: create an initial checkpoint + quick eval ----
-# (We use iterations=1 instead of 0 to ensure a checkpoint file is actually written.)
-echo "[`date`] Stage 1: warm start + eval (writing ${BASE_CKPT})"
+# ----------------------------
+# OG-ish load logic
+# ----------------------------
+LOAD_ARGS=""
+START_ITERATION_ARGS=""
 
+if [ -f "${CKPT_PATH}" ]; then
+  echo "[`date`] Found existing checkpoint: ${CKPT_PATH}"
+  LOAD_ARGS="--load ${CKPT_PATH}"
+  # START_ITERATION_ARGS left empty on purpose for "resume-ish" behavior
+else
+  echo "[`date`] No checkpoint found at ${CKPT_PATH}. Starting fresh."
+  # No --load when starting from scratch (safer than undefined PREV_LOAD_PATH)
+  START_ITERATION_ARGS="--start-iteration 0"
+fi
+
+# ----------------------------
+# Stage 1 (og: iterations 0)
+# ----------------------------
+echo "[`date`] Stage 1: init/eval"
 srun python -m src.main \
   --train-mode=whole \
   --train-dataset="${TARGET_DATASET}" \
   --lr=1e-5 \
   --ls 0.2 \
-  --iterations 1 \
+  --iterations 0 \
   --method ZSCL \
   --image_loss \
   --text_loss \
@@ -97,16 +134,10 @@ srun python -m src.main \
   --custom-finetune \
   --max-evaluation-size 500
 
-# Confirm the checkpoint exists before stage 2
-if [ ! -f "${BASE_CKPT}" ]; then
-  echo "[`date`] ERROR: Expected checkpoint not found: ${BASE_CKPT}"
-  echo "Your code may not be writing checkpoints at iterations=1. Check src.main saving logic."
-  exit 1
-fi
-
-# ---- Stage 2: full training run ----
-echo "[`date`] Stage 2: training 5000 iterations (loading ${BASE_CKPT})"
-
+# ----------------------------
+# Stage 2 (train 5000)
+# ----------------------------
+echo "[`date`] Stage 2: train"
 srun python -m src.main \
   --train-mode=whole \
   --train-dataset="${TARGET_DATASET}" \
@@ -126,7 +157,7 @@ srun python -m src.main \
   --eval-interval 250 \
   --custom-finetune \
   --max-evaluation-size 500 \
-  --load "${BASE_CKPT}" \
+  --load "${CKPT_PATH}" \
   --start-iteration 0
 
-echo "[`date`] Job finished."
+echo "[`date`] Done."
