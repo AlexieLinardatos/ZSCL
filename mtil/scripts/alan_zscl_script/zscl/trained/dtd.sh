@@ -4,7 +4,7 @@
 #SBATCH --mem=32GB                # memory
 #SBATCH --cpus-per-task=4        # number of CPU cores
 #SBATCH --gres=gpu:h100:1
-#SBATCH --output=/scratch/alanz21/thesis/mtil/logs/%x-%j.out  # output log file
+#SBATCH --output=/scratch/alexie/logs/%x-%j.out
 #SBATCH --signal=USR1@60
 
 nvidia-smi
@@ -20,7 +20,8 @@ pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu12
 pip install tqdm ftfy regex wilds pandas
 pip install git+https://github.com/modestyachts/ImageNetV2_pytorch
 
-cd /scratch/alanz21/thesis/mtil
+REPO_ROOT="$HOME/projects/def-fqureshi/alexie/ZSCL"
+cd "$REPO_ROOT/mtil"
 
 mkdir -p logs
 
@@ -35,7 +36,7 @@ mkdir -p ${SAVE_PATH}
 
 MODEL_NAME="${TARGET_DATASET}.pth"
 
-DATASETS="DTD,MNIST,EuroSAT,Flowers,ObjectNet"
+DATASETS="DTD,MNIST,EuroSAT,Flowers"
 
 #check if model exists
 LOAD=""
