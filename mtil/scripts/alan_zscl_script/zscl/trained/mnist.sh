@@ -34,7 +34,7 @@ mkdir -p ${SAVE_PATH}
 
 MODEL_NAME="${TARGET_DATASET}.pth"
 
-DATASETS="DTD,MNIST,EuroSAT,Flowers,ObjectNet"
+DATASETS="DTD,MNIST,EuroSAT,Flowers"
 
 #check if model exists
 LOAD=""
