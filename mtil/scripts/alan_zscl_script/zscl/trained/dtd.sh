@@ -29,7 +29,7 @@ TARGET_DATASET="DTD"
 
 SAVE_PATH="ckpt/clean/gradient_zscl/trained/DTD_trained"
 
-PREV_LOAD_PATH="ckpt/clean/gradient_zscl/trained/DTD_trained/DTD.pth"
+PREV_LOAD_PATH="ckpt/clean/5000_iter/zscl/trained/DTD.pth"
 # PREV_GRADIENT_PATH="ckpt/clean/gradient_zscl/trained/DTD_trained/grad_DTD.pth"
 
 mkdir -p ${SAVE_PATH}
