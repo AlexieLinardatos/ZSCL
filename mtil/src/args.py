@@ -46,7 +46,7 @@ def parse_arguments():
         choices=["whole", "text", "image", "image-fc", "image-fc-fixed", "fc"],
         help="Train mode to use.",
     )
-    parser.add_argument("--data-location", type=str, default="./data")
+    parser.add_argument("--data-location", type=str, default="/scratch/alexie/data")
     parser.add_argument("--train-dataset", default=None)
     parser.add_argument("--eval-datasets", default=None, type=lambda x: x.split(","))
     parser.add_argument("--text-datasets", default=None, type=lambda x: x.split(","))
