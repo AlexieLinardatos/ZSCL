@@ -77,6 +77,7 @@ pip install tqdm ftfy regex wilds pandas
 pip install git+https://github.com/modestyachts/ImageNetV2_pytorch
 
 # ----------------------------
+
 # Go to repo (adjust if needed)
 # ----------------------------
 REPO_ROOT="$HOME/projects/def-fqureshi/alexie/ZSCL"
@@ -92,7 +93,7 @@ mkdir -p "${SAVE_PATH}" "${MODEL_PATH}"
 MODEL_NAME="${TARGET_DATASET}.pth"
 CKPT_PATH="${SAVE_PATH}/${MODEL_NAME}"
 
-DATASETS="DTD,MNIST,EuroSAT,Flowers,ObjectNet"
+DATASETS="DTD,MNIST,EuroSAT,Flowers"
 
 # ----------------------------
 # OG-ish load logic
