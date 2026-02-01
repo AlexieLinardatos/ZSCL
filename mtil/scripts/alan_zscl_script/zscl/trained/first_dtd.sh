@@ -4,11 +4,12 @@
 #SBATCH --mem=32GB                      # memory
 #SBATCH --cpus-per-task=4               # number of CPU cores
 #SBATCH --gres=gpu:h100:1
-#SBATCH --output=/scratch/alexie/ZSCL/mtil/logs/%x-%j.out  # output log file
+#SBATCH --output=/scratch/alexie/logs/%x-%j.out
 #SBATCH --signal=USR1@60
 #SBATCH --requeue
 
 set -euo pipefail
+mkdir -p /scratch/alexie/logs
 
 # IMPORTANT:
 # Make sure this exists BEFORE you submit (Slurm won't create parent dirs for --output):
@@ -27,9 +28,7 @@ nvidia-smi
 module load python/3.11.5
 module load cuda/12.6
 
-# Use venv (more reliable than virtualenv on many clusters)
-python -m venv "$SLURM_TMPDIR/env"
-source "$SLURM_TMPDIR/env/bin/activate"
+source /scratch/alexie/venvs/zscl/bin/activate
 
 # Optional sanity checks
 which python
@@ -54,7 +53,8 @@ test -f "$DATA_LOCATION/conceptual_captions/Validation_GCC-1.1.0-Validation_outp
 test -f "$DATA_LOCATION/MNIST/raw/train-images-idx3-ubyte.gz" || { echo "Missing MNIST raw gz in $DATA_LOCATION/MNIST/raw"; exit 2; }
 
 
-cd /scratch/alexie/ZSCL/mtil
+REPO_ROOT="$HOME/projects/def-fqureshi/alexie/ZSCL"
+cd "$REPO_ROOT/mtil"
 mkdir -p logs ckpt/clean/5000_iter/zscl/trained
 
 # ---- Python deps ----
@@ -71,7 +71,7 @@ mkdir -p "${SAVE_PATH}" "${MODEL_PATH}"
 MODEL_NAME="${TARGET_DATASET}.pth"
 BASE_CKPT="${SAVE_PATH}/${MODEL_NAME}"
 
-DATASETS="DTD,MNIST,EuroSAT,Flowers,ObjectNet"
+DATASETS="DTD,MNIST,EuroSAT,Flowers"
 
 # ---- Stage 1: create an initial checkpoint + quick eval ----
 # (We use iterations=1 instead of 0 to ensure a checkpoint file is actually written.)
