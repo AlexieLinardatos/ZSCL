@@ -1,0 +1,274 @@
+[Sat Jan 31 21:38:49 EST 2026] Host: g24.nibi.sharcnet
+Sat Jan 31 21:38:49 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.82.07              Driver Version: 580.82.07      CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA H100 80GB HBM3          On  |   00000000:4C:00.0 Off |                    0 |
+| N/A   31C    P0             69W /  700W |       0MiB /  81559MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+[Sat Jan 31 21:38:50 EST 2026] Checking whether module Python has tkinter...
+[Sat Jan 31 21:38:50 EST 2026] tkinter OK on module Python. Creating venv...
+/local/scratch/alexie.7968225.0/env/bin/python
+Python 3.11.5
+/local/scratch/alexie.7968225.0/env/bin/pip
+Looking in links: /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/gentoo2023/x86-64-v4, /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/gentoo2023/x86-64-v3, /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/gentoo2023/generic, /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic
+Requirement already satisfied: pip in /local/scratch/alexie.7968225.0/env/lib/python3.11/site-packages (23.2.1)
+Collecting pip
+  Obtaining dependency information for pip from https://files.pythonhosted.org/packages/69/00/5ac7aa77688ec4d34148b423d34dc0c9bc4febe0d872a9a1ad9860b2f6f1/pip-26.0-py3-none-any.whl.metadata
+  Using cached pip-26.0-py3-none-any.whl.metadata (4.7 kB)
+Using cached pip-26.0-py3-none-any.whl (1.8 MB)
+Installing collected packages: pip
+  Attempting uninstall: pip
+    Found existing installation: pip 23.2.1
+    Uninstalling pip-23.2.1:
+      Successfully uninstalled pip-23.2.1
+Successfully installed pip-26.0
+Looking in indexes: https://download.pytorch.org/whl/cu126
+Looking in links: /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/gentoo2023/x86-64-v4, /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/gentoo2023/x86-64-v3, /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/gentoo2023/generic, /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/gentoo2023/x86-64-v3/torch-2.10.0+computecanada-cp311-cp311-linux_x86_64.whl
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/gentoo2023/generic/torchvision-0.25.0+computecanada-cp311-cp311-linux_x86_64.whl
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic/filelock-3.20.3+computecanada-py3-none-any.whl (from torch)
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic/typing_extensions-4.15.0+computecanada-py3-none-any.whl (from torch)
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic/sympy-1.14.0+computecanada-py3-none-any.whl (from torch)
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic/networkx-3.6.1+computecanada-py3-none-any.whl (from torch)
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic/jinja2-3.1.6+computecanada-py3-none-any.whl (from torch)
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic/fsspec-2026.1.0+computecanada-py3-none-any.whl (from torch)
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/gentoo2023/generic/numpy-2.3.3+computecanada-cp311-cp311-linux_x86_64.whl (from torchvision)
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/gentoo2023/x86-64-v3/Pillow_SIMD-9.5.0.post2+computecanada-cp311-cp311-linux_x86_64.whl (from torchvision)
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic/mpmath-1.3.0+computecanada-py3-none-any.whl (from sympy>=1.13.3->torch)
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic/MarkupSafe-3.0.2+computecanada-cp311-cp311-linux_x86_64.whl (from jinja2->torch)
+Installing collected packages: mpmath, typing-extensions, sympy, pillow-simd, numpy, networkx, MarkupSafe, fsspec, filelock, jinja2, torch, torchvision
+
+Successfully installed MarkupSafe-3.0.2+computecanada filelock-3.20.3+computecanada fsspec-2026.1.0+computecanada jinja2-3.1.6+computecanada mpmath-1.3.0+computecanada networkx-3.6.1+computecanada numpy-2.3.3+computecanada pillow-simd-9.5.0.post2+computecanada sympy-1.14.0+computecanada torch-2.10.0+computecanada torchvision-0.25.0+computecanada typing-extensions-4.15.0+computecanada
+Looking in links: /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/gentoo2023/x86-64-v4, /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/gentoo2023/x86-64-v3, /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/gentoo2023/generic, /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic
+Collecting tqdm
+  Using cached tqdm-4.67.2-py3-none-any.whl.metadata (57 kB)
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic/ftfy-6.3.1+computecanada-py3-none-any.whl
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic/regex-2024.11.6+computecanada-cp311-cp311-linux_x86_64.whl
+Collecting wilds
+  Using cached wilds-2.0.0-py3-none-any.whl.metadata (22 kB)
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/gentoo2023/x86-64-v3/pandas-2.3.3+computecanada-cp311-cp311-linux_x86_64.whl
+Collecting wcwidth (from ftfy)
+  Using cached wcwidth-0.5.3-py3-none-any.whl.metadata (30 kB)
+Requirement already satisfied: numpy>=1.19.1 in /local/scratch/alexie.7968225.0/env/lib/python3.11/site-packages (from wilds) (2.3.3+computecanada)
+Collecting ogb>=1.2.6 (from wilds)
+  Using cached ogb-1.3.6-py3-none-any.whl.metadata (6.2 kB)
+Collecting outdated>=0.2.0 (from wilds)
+  Using cached outdated-0.2.2-py2.py3-none-any.whl.metadata (4.7 kB)
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/gentoo2023/x86-64-v3/pillow-12.1.0+computecanada-cp311-cp311-linux_x86_64.whl (from wilds)
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic/pytz-2025.2+computecanada-py2.py3-none-any.whl (from wilds)
+Requirement already satisfied: torch>=1.7.0 in /local/scratch/alexie.7968225.0/env/lib/python3.11/site-packages (from wilds) (2.10.0+computecanada)
+Requirement already satisfied: torchvision>=0.8.2 in /local/scratch/alexie.7968225.0/env/lib/python3.11/site-packages (from wilds) (0.25.0+computecanada)
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/gentoo2023/generic/scikit_learn-1.7.1+computecanada-cp311-cp311-linux_x86_64.whl (from wilds)
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/gentoo2023/generic/scipy-1.16.2+computecanada-cp311-cp311-linux_x86_64.whl (from wilds)
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic/python_dateutil-2.9.0.post0+computecanada-py2.py3-none-any.whl (from pandas)
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic/tzdata-2025.3+computecanada-py2.py3-none-any.whl (from pandas)
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic/six-1.17.0+computecanada-py2.py3-none-any.whl (from ogb>=1.2.6->wilds)
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic/urllib3-2.6.3+computecanada-py3-none-any.whl (from ogb>=1.2.6->wilds)
+Requirement already satisfied: setuptools>=44 in /local/scratch/alexie.7968225.0/env/lib/python3.11/site-packages (from outdated>=0.2.0->wilds) (65.5.0)
+Collecting littleutils (from outdated>=0.2.0->wilds)
+  Using cached littleutils-0.2.4-py3-none-any.whl.metadata (679 bytes)
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic/requests-2.32.5+computecanada-py3-none-any.whl (from outdated>=0.2.0->wilds)
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic/joblib-1.5.3+computecanada-py3-none-any.whl (from scikit-learn>=0.20.0->wilds)
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic/threadpoolctl-3.6.0+computecanada-py3-none-any.whl (from scikit-learn>=0.20.0->wilds)
+Requirement already satisfied: filelock in /local/scratch/alexie.7968225.0/env/lib/python3.11/site-packages (from torch>=1.7.0->wilds) (3.20.3+computecanada)
+Requirement already satisfied: typing-extensions>=4.10.0 in /local/scratch/alexie.7968225.0/env/lib/python3.11/site-packages (from torch>=1.7.0->wilds) (4.15.0+computecanada)
+Requirement already satisfied: sympy>=1.13.3 in /local/scratch/alexie.7968225.0/env/lib/python3.11/site-packages (from torch>=1.7.0->wilds) (1.14.0+computecanada)
+Requirement already satisfied: networkx>=2.5.1 in /local/scratch/alexie.7968225.0/env/lib/python3.11/site-packages (from torch>=1.7.0->wilds) (3.6.1+computecanada)
+Requirement already satisfied: jinja2 in /local/scratch/alexie.7968225.0/env/lib/python3.11/site-packages (from torch>=1.7.0->wilds) (3.1.6+computecanada)
+Requirement already satisfied: fsspec>=0.8.5 in /local/scratch/alexie.7968225.0/env/lib/python3.11/site-packages (from torch>=1.7.0->wilds) (2026.1.0+computecanada)
+Requirement already satisfied: mpmath<1.4,>=1.1.0 in /local/scratch/alexie.7968225.0/env/lib/python3.11/site-packages (from sympy>=1.13.3->torch>=1.7.0->wilds) (1.3.0+computecanada)
+Requirement already satisfied: pillow-simd!=8.3.*,>=5.3.0 in /local/scratch/alexie.7968225.0/env/lib/python3.11/site-packages (from torchvision>=0.8.2->wilds) (9.5.0.post2+computecanada)
+Requirement already satisfied: MarkupSafe>=2.0 in /local/scratch/alexie.7968225.0/env/lib/python3.11/site-packages (from jinja2->torch>=1.7.0->wilds) (3.0.2+computecanada)
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic/charset_normalizer-3.4.4+computecanada-py3-none-any.whl (from requests->outdated>=0.2.0->wilds)
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic/idna-3.11+computecanada-py3-none-any.whl (from requests->outdated>=0.2.0->wilds)
+Processing /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic/certifi-2026.1.4+computecanada-py3-none-any.whl (from requests->outdated>=0.2.0->wilds)
+Using cached tqdm-4.67.2-py3-none-any.whl (78 kB)
+Using cached wilds-2.0.0-py3-none-any.whl (126 kB)
+Using cached ogb-1.3.6-py3-none-any.whl (78 kB)
+Using cached outdated-0.2.2-py2.py3-none-any.whl (7.5 kB)
+Using cached littleutils-0.2.4-py3-none-any.whl (8.1 kB)
+Using cached wcwidth-0.5.3-py3-none-any.whl (92 kB)
+Installing collected packages: pytz, wcwidth, urllib3, tzdata, tqdm, threadpoolctl, six, scipy, regex, pillow, littleutils, joblib, idna, charset-normalizer, certifi, scikit-learn, requests, python-dateutil, ftfy, pandas, outdated, ogb, wilds
+
+Successfully installed certifi-2026.1.4+computecanada charset-normalizer-3.4.4+computecanada ftfy-6.3.1+computecanada idna-3.11+computecanada joblib-1.5.3+computecanada littleutils-0.2.4 ogb-1.3.6 outdated-0.2.2 pandas-2.3.3+computecanada pillow-12.1.0+computecanada python-dateutil-2.9.0.post0+computecanada pytz-2025.2+computecanada regex-2024.11.6+computecanada requests-2.32.5+computecanada scikit-learn-1.7.1+computecanada scipy-1.16.2+computecanada six-1.17.0+computecanada threadpoolctl-3.6.0+computecanada tqdm-4.67.2 tzdata-2025.3+computecanada urllib3-2.6.3+computecanada wcwidth-0.5.3 wilds-2.0.0
+Looking in links: /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/gentoo2023/x86-64-v4, /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/gentoo2023/x86-64-v3, /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/gentoo2023/generic, /cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic
+Collecting git+https://github.com/modestyachts/ImageNetV2_pytorch
+  Cloning https://github.com/modestyachts/ImageNetV2_pytorch to /tmp/pip-req-build-w96e8c2u
+  Running command git clone --filter=blob:none --quiet https://github.com/modestyachts/ImageNetV2_pytorch /tmp/pip-req-build-w96e8c2u
+  Resolved https://github.com/modestyachts/ImageNetV2_pytorch to commit 14d4456c39fe7f02a665544dd9fc37c1a5f8b635
+  Installing build dependencies: started
+  Installing build dependencies: finished with status 'done'
+  Getting requirements to build wheel: started
+  Getting requirements to build wheel: finished with status 'done'
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Building wheels for collected packages: imagenetv2_pytorch
+  Building wheel for imagenetv2_pytorch (pyproject.toml): started
+  Building wheel for imagenetv2_pytorch (pyproject.toml): finished with status 'done'
+  Created wheel for imagenetv2_pytorch: filename=imagenetv2_pytorch-0.1-py3-none-any.whl size=2687 sha256=6e2e11983d56e64d9bec0912136277ee0833a7417be8f56af6fe1179cb66632a
+  Stored in directory: /tmp/pip-ephem-wheel-cache-k9gq_6xm/wheels/eb/61/f3/007769f94191be99678049fc34bfce389459b3752fb7f27c78
+Successfully built imagenetv2_pytorch
+Installing collected packages: imagenetv2_pytorch
+Successfully installed imagenetv2_pytorch-0.1
+[Sat Jan 31 21:39:37 EST 2026] No checkpoint found at ckpt/clean/5000_iter/zscl/trained/DTD.pth. Starting fresh.
+[Sat Jan 31 21:39:37 EST 2026] Stage 1: init/eval
+Namespace(test=False, model='ViT-B/16', batch_size=8, batch_size_eval=32, lr=1e-05, wd=0.0, ls=0.2, warmup_length=100, beta2=0.999, seed=42, epochs=None, iterations=0, eval_interval=250, loss_interval=1000, eval_every_epoch=False, eval_only=False, save_eval=False, start_iteration=None, method='ZSCL', train_mode='whole', data_location='./data', train_dataset='DTD', eval_datasets=['DTD', 'MNIST', 'EuroSAT', 'Flowers', 'ObjectNet'], text_datasets=None, template=None, eval_single=None, prompt=None, class_names=None, save='ckpt/clean/5000_iter/zscl/trained', load=None, load_federate=None, fair=False, we=True, we_wise=False, we_wise_alpha=0.98, moving_avg=False, avg_freq=100, mv_avg_decay=0.999, mv_avg_model='n', l2=1.0, fc_init=False, fc_setnone=False, dataset_shift=False, n_class=10, ref_wise_alpha=0.8, ref_wise=False, ref_dataset='ImageNet', ref_model=None, ref_sentences='conceptual_captions', T=2.0, num=64, dataset_order=None, memory_size=10000, weight_adjust=False, feature_mse=False, image_loss=True, text_loss=True, ablation_loss_2=False, wise_merge=False, wise_ft=False, wise_ft_model='n', wise_ft_alpha=0.8, exp_name=None, results_db='results.jsonl', cache_dir=None, freeze_encoder=False, freeze_fc=0, lwf=False, basic_model_load=None, fc_load=None, keep_old_heads=0, baseline=False, trio=False, control_dataset=None, control_dataset_add=None, noise=True, rff=False, alpha=0.5, fisher=None, fisher_floor=1e-08, freeze=False, mixup=None, orthogonal_gradients=None, orthogonal_gradients_path=None, untrained=False, custom_finetune=True, max_evaluation_size=500, lora=False, lora_r=8, lora_alpha=16, lora_dropout=0.1, lora_target_modules=None, lora_bias='none', device='cuda')
+
+============================================================
+TRAINING CONFIGURATION
+============================================================
+
+[Model]
+  model: ViT-B/16
+  save: ckpt/clean/5000_iter/zscl/trained
+  untrained: False
+
+[Training]
+  method: ZSCL
+  train_mode: whole
+  train_dataset: DTD
+  iterations: 0
+  batch_size: 8
+  batch_size_eval: 32
+  lr: 1e-05
+  wd: 0.0
+  beta2: 0.999
+  warmup_length: 100
+  ls: 0.2
+
+[ZSCL]
+  ref_dataset: ImageNet
+  ref_sentences: conceptual_captions
+  ref_wise: False
+  ref_wise_alpha: 0.8
+  T: 2.0
+  image_loss: True
+  text_loss: True
+  ablation_loss_2: False
+  feature_mse: False
+  weight_adjust: False
+
+[Regularization]
+  l2: 1.0
+  freeze: False
+
+[Weight Averaging]
+  we: True
+  we_wise: False
+  we_wise_alpha: 0.98
+  moving_avg: False
+  mv_avg_model: n
+  mv_avg_decay: 0.999
+  avg_freq: 100
+  wise_merge: False
+  wise_ft_model: n
+  wise_ft_alpha: 0.8
+
+[LoRA]
+  lora: False
+  lora_r: 8
+  lora_alpha: 16
+  lora_dropout: 0.1
+  lora_bias: none
+
+[Evaluation]
+  eval_datasets: ['DTD', 'MNIST', 'EuroSAT', 'Flowers', 'ObjectNet']
+  eval_interval: 250
+  eval_every_epoch: False
+  loss_interval: 1000
+
+[Data]
+  data_location: ./data
+  num: 64
+
+[Other]
+  test: False
+  seed: 42
+  eval_only: False
+  save_eval: False
+  fair: False
+  fc_init: False
+  fc_setnone: False
+  dataset_shift: False
+  n_class: 10
+  memory_size: 10000
+  wise_ft: False
+  results_db: results.jsonl
+  freeze_encoder: False
+  freeze_fc: 0
+  lwf: False
+  keep_old_heads: 0
+  baseline: False
+  trio: False
+  noise: True
+  rff: False
+  alpha: 0.5
+  fisher_floor: 1e-08
+  custom_finetune: True
+  max_evaluation_size: 500
+  device: cuda
+
+============================================================
+
+  0%|                                               | 0.00/351M [00:00<?, ?iB/s]  3%|▉                                     | 9.22M/351M [00:00<00:03, 92.0MiB/s]  7%|██▉                                    | 26.3M/351M [00:00<00:02, 138MiB/s] 12%|████▋                                  | 41.7M/351M [00:00<00:02, 145MiB/s] 16%|██████▎                                | 56.3M/351M [00:00<00:02, 132MiB/s] 20%|███████▋                               | 69.6M/351M [00:00<00:02, 120MiB/s] 23%|█████████                              | 81.9M/351M [00:00<00:02, 114MiB/s] 27%|██████████▍                            | 93.4M/351M [00:00<00:02, 113MiB/s] 30%|███████████▋                           | 105M/351M [00:00<00:02, 87.1MiB/s] 33%|████████████▊                          | 115M/351M [00:01<00:02, 90.9MiB/s] 36%|██████████████                         | 126M/351M [00:01<00:02, 96.2MiB/s] 39%|███████████████▏                       | 137M/351M [00:01<00:02, 94.4MiB/s] 42%|████████████████▎                      | 146M/351M [00:01<00:02, 90.4MiB/s] 46%|██████████████████▏                     | 160M/351M [00:01<00:01, 102MiB/s] 49%|███████████████████▍                    | 170M/351M [00:01<00:01, 101MiB/s] 51%|████████████████████▌                   | 180M/351M [00:01<00:01, 101MiB/s] 55%|█████████████████████▊                  | 192M/351M [00:01<00:01, 104MiB/s] 58%|███████████████████████                 | 202M/351M [00:01<00:01, 105MiB/s] 62%|████████████████████████▋               | 217M/351M [00:02<00:01, 114MiB/s] 65%|██████████████████████████              | 228M/351M [00:02<00:01, 103MiB/s] 69%|███████████████████████████▋            | 243M/351M [00:02<00:00, 112MiB/s] 72%|████████████████████████████▉           | 254M/351M [00:02<00:00, 110MiB/s] 76%|██████████████████████████████▌         | 268M/351M [00:02<00:00, 118MiB/s] 80%|███████████████████████████████▉        | 281M/351M [00:02<00:00, 120MiB/s] 84%|█████████████████████████████████▍      | 294M/351M [00:02<00:00, 124MiB/s] 87%|██████████████████████████████████▉     | 306M/351M [00:02<00:00, 107MiB/s] 91%|████████████████████████████████████▎   | 319M/351M [00:02<00:00, 111MiB/s] 94%|█████████████████████████████████████▋  | 330M/351M [00:03<00:00, 103MiB/s] 98%|███████████████████████████████████████▏| 343M/351M [00:03<00:00, 111MiB/s]100%|████████████████████████████████████████| 351M/351M [00:03<00:00, 109MiB/s]
+Averaging training
+L2 norm
+  0%|          | 0.00/625M [00:00<?, ?B/s]  0%|          | 65.5k/625M [00:00<44:37, 233kB/s]  0%|          | 262k/625M [00:00<16:34, 628kB/s]   0%|          | 950k/625M [00:00<05:34, 1.87MB/s]  1%|          | 3.34M/625M [00:00<01:46, 5.85MB/s]  1%|          | 6.16M/625M [00:00<00:57, 10.7MB/s]  1%|          | 7.80M/625M [00:01<01:01, 10.1MB/s]  2%|▏         | 10.3M/625M [00:01<00:46, 13.2MB/s]  2%|▏         | 12.2M/625M [00:01<00:44, 13.8MB/s]  2%|▏         | 13.8M/625M [00:01<00:47, 12.8MB/s]  3%|▎         | 16.1M/625M [00:01<00:40, 15.0MB/s]  3%|▎         | 18.0M/625M [00:01<00:37, 16.1MB/s]  3%|▎         | 19.8M/625M [00:01<00:44, 13.7MB/s]  3%|▎         | 21.9M/625M [00:01<00:39, 15.3MB/s]  4%|▍         | 23.8M/625M [00:02<00:36, 16.4MB/s]  4%|▍         | 25.6M/625M [00:02<00:43, 13.9MB/s]  4%|▍         | 27.3M/625M [00:02<00:40, 14.7MB/s]  5%|▍         | 29.6M/625M [00:02<00:35, 16.7MB/s]  5%|▌         | 31.4M/625M [00:02<00:35, 16.7MB/s]  5%|▌         | 33.2M/625M [00:02<00:41, 14.2MB/s]  6%|▌         | 35.4M/625M [00:02<00:36, 16.2MB/s]  6%|▌         | 37.2M/625M [00:02<00:35, 16.4MB/s]  6%|▌         | 38.9M/625M [00:03<00:41, 14.0MB/s]  7%|▋         | 40.7M/625M [00:03<00:38, 15.0MB/s]  7%|▋         | 42.6M/625M [00:03<00:36, 15.9MB/s]  7%|▋         | 44.4M/625M [00:03<00:35, 16.3MB/s]  7%|▋         | 46.1M/625M [00:03<00:34, 16.7MB/s]  8%|▊         | 47.9M/625M [00:03<00:40, 14.1MB/s]  8%|▊         | 49.6M/625M [00:03<00:38, 14.9MB/s]  8%|▊         | 51.4M/625M [00:03<00:36, 15.7MB/s]  9%|▊         | 53.2M/625M [00:04<00:35, 16.3MB/s]  9%|▉         | 55.0M/625M [00:04<00:34, 16.6MB/s]  9%|▉         | 56.7M/625M [00:04<00:40, 14.1MB/s]  9%|▉         | 58.4M/625M [00:04<00:38, 14.6MB/s] 10%|▉         | 60.2M/625M [00:04<00:36, 15.6MB/s] 10%|▉         | 62.0M/625M [00:04<00:34, 16.3MB/s] 10%|█         | 63.8M/625M [00:04<00:33, 16.6MB/s] 10%|█         | 65.5M/625M [00:04<00:39, 14.2MB/s] 11%|█         | 67.0M/625M [00:04<00:38, 14.4MB/s] 11%|█         | 68.6M/625M [00:05<00:37, 15.0MB/s] 11%|█         | 70.3M/625M [00:05<00:36, 15.4MB/s] 12%|█▏        | 72.4M/625M [00:05<00:33, 16.7MB/s] 12%|█▏        | 74.2M/625M [00:05<00:37, 14.7MB/s] 12%|█▏        | 75.8M/625M [00:05<00:37, 14.5MB/s] 12%|█▏        | 77.4M/625M [00:05<00:36, 15.0MB/s] 13%|█▎        | 79.6M/625M [00:05<00:32, 16.7MB/s] 13%|█▎        | 81.3M/625M [00:05<00:32, 17.0MB/s] 13%|█▎        | 83.1M/625M [00:05<00:38, 14.2MB/s] 14%|█▎        | 84.6M/625M [00:06<00:37, 14.5MB/s] 14%|█▍        | 86.7M/625M [00:06<00:33, 16.1MB/s] 14%|█▍        | 88.5M/625M [00:06<00:32, 16.7MB/s] 14%|█▍        | 90.2M/625M [00:06<00:38, 14.1MB/s] 15%|█▍        | 91.8M/625M [00:06<00:37, 14.4MB/s] 15%|█▍        | 93.7M/625M [00:06<00:33, 15.7MB/s] 15%|█▌        | 95.5M/625M [00:06<00:32, 16.1MB/s] 16%|█▌        | 97.4M/625M [00:06<00:35, 14.8MB/s] 16%|█▌        | 99.0M/625M [00:07<00:36, 14.6MB/s] 16%|█▌        | 101M/625M [00:07<00:35, 14.7MB/s]  16%|█▋        | 102M/625M [00:07<00:33, 15.5MB/s] 17%|█▋        | 104M/625M [00:07<00:31, 16.4MB/s] 17%|█▋        | 106M/625M [00:07<00:35, 14.8MB/s] 17%|█▋        | 108M/625M [00:07<00:34, 15.1MB/s] 17%|█▋        | 109M/625M [00:07<00:35, 14.7MB/s] 18%|█▊        | 111M/625M [00:07<00:33, 15.5MB/s] 18%|█▊        | 113M/625M [00:07<00:31, 16.4MB/s] 18%|█▊        | 115M/625M [00:08<00:34, 14.8MB/s] 19%|█▊        | 116M/625M [00:08<00:33, 15.0MB/s] 19%|█▉        | 118M/625M [00:08<00:32, 15.4MB/s] 19%|█▉        | 120M/625M [00:08<00:33, 15.1MB/s] 19%|█▉        | 121M/625M [00:08<00:33, 15.3MB/s] 20%|█▉        | 123M/625M [00:08<00:33, 14.9MB/s] 20%|█▉        | 125M/625M [00:08<00:33, 15.0MB/s] 20%|██        | 127M/625M [00:08<00:32, 15.4MB/s] 21%|██        | 128M/625M [00:08<00:31, 15.7MB/s] 21%|██        | 130M/625M [00:09<00:31, 16.0MB/s] 21%|██        | 131M/625M [00:09<00:31, 15.6MB/s] 21%|██▏       | 133M/625M [00:09<00:34, 14.1MB/s] 22%|██▏       | 135M/625M [00:09<00:34, 14.3MB/s] 22%|██▏       | 137M/625M [00:09<00:31, 15.3MB/s] 22%|██▏       | 138M/625M [00:09<00:30, 15.9MB/s] 22%|██▏       | 140M/625M [00:09<00:29, 16.3MB/s] 23%|██▎       | 142M/625M [00:09<00:30, 16.0MB/s] 23%|██▎       | 143M/625M [00:09<00:34, 13.9MB/s] 23%|██▎       | 145M/625M [00:10<00:32, 14.6MB/s] 23%|██▎       | 147M/625M [00:10<00:31, 15.4MB/s] 24%|██▍       | 149M/625M [00:10<00:29, 16.1MB/s] 24%|██▍       | 150M/625M [00:10<00:29, 16.2MB/s] 24%|██▍       | 152M/625M [00:10<00:29, 16.3MB/s] 25%|██▍       | 154M/625M [00:10<00:34, 13.8MB/s] 25%|██▍       | 155M/625M [00:10<00:32, 14.5MB/s] 25%|██▌       | 157M/625M [00:10<00:30, 15.2MB/s] 25%|██▌       | 159M/625M [00:10<00:28, 16.3MB/s] 26%|██▌       | 161M/625M [00:11<00:28, 16.4MB/s] 26%|██▌       | 162M/625M [00:11<00:32, 14.4MB/s] 26%|██▌       | 164M/625M [00:11<00:32, 14.4MB/s] 26%|██▋       | 165M/625M [00:11<00:31, 14.6MB/s] 27%|██▋       | 167M/625M [00:11<00:31, 14.8MB/s] 27%|██▋       | 169M/625M [00:11<00:28, 16.1MB/s] 27%|██▋       | 171M/625M [00:11<00:27, 16.5MB/s] 28%|██▊       | 172M/625M [00:11<00:30, 14.7MB/s] 28%|██▊       | 174M/625M [00:11<00:30, 14.8MB/s] 28%|██▊       | 176M/625M [00:12<00:30, 14.9MB/s] 28%|██▊       | 177M/625M [00:12<00:30, 14.9MB/s] 29%|██▊       | 179M/625M [00:12<00:28, 15.5MB/s] 29%|██▉       | 181M/625M [00:12<00:27, 16.3MB/s] 29%|██▉       | 183M/625M [00:12<00:29, 14.8MB/s] 29%|██▉       | 184M/625M [00:12<00:29, 14.9MB/s] 30%|██▉       | 186M/625M [00:12<00:29, 15.0MB/s] 30%|██▉       | 187M/625M [00:12<00:29, 14.9MB/s] 30%|███       | 189M/625M [00:12<00:28, 15.3MB/s] 30%|███       | 190M/625M [00:13<00:27, 15.6MB/s] 31%|███       | 192M/625M [00:13<00:25, 16.9MB/s] 31%|███       | 194M/625M [00:13<00:29, 14.8MB/s] 31%|███▏      | 196M/625M [00:13<00:29, 14.6MB/s] 32%|███▏      | 197M/625M [00:13<00:29, 14.7MB/s] 32%|███▏      | 199M/625M [00:13<00:28, 15.0MB/s] 32%|███▏      | 200M/625M [00:13<00:27, 15.3MB/s] 32%|███▏      | 202M/625M [00:13<00:25, 16.3MB/s] 33%|███▎      | 204M/625M [00:13<00:28, 14.6MB/s] 33%|███▎      | 206M/625M [00:14<00:26, 15.8MB/s] 33%|███▎      | 208M/625M [00:14<00:27, 15.1MB/s] 33%|███▎      | 209M/625M [00:14<00:27, 15.1MB/s] 34%|███▍      | 211M/625M [00:14<00:28, 14.4MB/s] 34%|███▍      | 213M/625M [00:14<00:26, 15.5MB/s] 34%|███▍      | 215M/625M [00:14<00:25, 16.3MB/s] 35%|███▍      | 217M/625M [00:14<00:26, 15.4MB/s] 35%|███▍      | 218M/625M [00:14<00:28, 14.1MB/s] 35%|███▌      | 220M/625M [00:14<00:26, 15.2MB/s] 36%|███▌      | 222M/625M [00:15<00:24, 16.4MB/s] 36%|███▌      | 224M/625M [00:15<00:25, 15.9MB/s] 36%|███▌      | 226M/625M [00:15<00:25, 15.8MB/s] 36%|███▋      | 227M/625M [00:15<00:28, 13.9MB/s] 37%|███▋      | 229M/625M [00:15<00:26, 15.0MB/s] 37%|███▋      | 231M/625M [00:15<00:24, 16.2MB/s] 37%|███▋      | 233M/625M [00:15<00:24, 16.3MB/s] 37%|███▋      | 234M/625M [00:15<00:24, 15.7MB/s] 38%|███▊      | 236M/625M [00:16<00:28, 13.9MB/s] 38%|███▊      | 237M/625M [00:16<00:26, 14.5MB/s] 38%|███▊      | 239M/625M [00:16<00:24, 16.0MB/s] 39%|███▊      | 241M/625M [00:16<00:23, 16.3MB/s] 39%|███▉      | 243M/625M [00:16<00:23, 16.4MB/s] 39%|███▉      | 245M/625M [00:16<00:24, 15.8MB/s] 39%|███▉      | 246M/625M [00:16<00:27, 13.8MB/s] 40%|███▉      | 248M/625M [00:16<00:25, 14.8MB/s] 40%|███▉      | 250M/625M [00:16<00:23, 15.7MB/s] 40%|████      | 252M/625M [00:16<00:22, 16.6MB/s] 41%|████      | 253M/625M [00:17<00:23, 16.1MB/s] 41%|████      | 255M/625M [00:17<00:26, 14.0MB/s] 41%|████      | 257M/625M [00:17<00:25, 14.4MB/s] 41%|████▏     | 259M/625M [00:17<00:23, 15.8MB/s] 42%|████▏     | 260M/625M [00:17<00:21, 16.6MB/s] 42%|████▏     | 262M/625M [00:17<00:22, 16.5MB/s] 42%|████▏     | 264M/625M [00:17<00:25, 14.0MB/s] 43%|████▎     | 266M/625M [00:17<00:23, 15.1MB/s] 43%|████▎     | 268M/625M [00:18<00:21, 16.5MB/s] 43%|████▎     | 270M/625M [00:18<00:21, 16.6MB/s] 43%|████▎     | 271M/625M [00:18<00:25, 13.9MB/s] 44%|████▎     | 273M/625M [00:18<00:22, 15.5MB/s] 44%|████▍     | 275M/625M [00:18<00:21, 16.4MB/s] 44%|████▍     | 277M/625M [00:18<00:23, 14.7MB/s] 45%|████▍     | 279M/625M [00:18<00:24, 14.2MB/s] 45%|████▍     | 280M/625M [00:18<00:23, 14.9MB/s] 45%|████▌     | 282M/625M [00:18<00:20, 16.8MB/s] 45%|████▌     | 284M/625M [00:19<00:22, 15.0MB/s] 46%|████▌     | 286M/625M [00:19<00:22, 15.0MB/s] 46%|████▌     | 287M/625M [00:19<00:23, 14.6MB/s] 46%|████▌     | 289M/625M [00:19<00:22, 15.2MB/s] 47%|████▋     | 291M/625M [00:19<00:20, 16.4MB/s] 47%|████▋     | 293M/625M [00:19<00:22, 15.0MB/s] 47%|████▋     | 294M/625M [00:19<00:22, 15.0MB/s] 47%|████▋     | 296M/625M [00:19<00:22, 14.8MB/s] 48%|████▊     | 298M/625M [00:20<00:22, 14.9MB/s] 48%|████▊     | 299M/625M [00:20<00:21, 15.0MB/s] 48%|████▊     | 301M/625M [00:20<00:20, 15.5MB/s] 48%|████▊     | 303M/625M [00:20<00:21, 14.8MB/s] 49%|████▊     | 305M/625M [00:20<00:20, 15.5MB/s] 49%|████▉     | 306M/625M [00:20<00:20, 15.5MB/s] 49%|████▉     | 308M/625M [00:20<00:20, 15.3MB/s] 49%|████▉     | 309M/625M [00:20<00:20, 15.2MB/s] 50%|████▉     | 311M/625M [00:20<00:20, 15.2MB/s] 50%|█████     | 313M/625M [00:21<00:21, 14.4MB/s] 50%|█████     | 315M/625M [00:21<00:20, 15.5MB/s] 51%|█████     | 316M/625M [00:21<00:19, 15.6MB/s] 51%|█████     | 318M/625M [00:21<00:19, 16.0MB/s] 51%|█████     | 320M/625M [00:21<00:19, 15.4MB/s] 51%|█████▏    | 321M/625M [00:21<00:19, 15.6MB/s] 52%|█████▏    | 323M/625M [00:21<00:21, 14.0MB/s] 52%|█████▏    | 325M/625M [00:21<00:20, 14.9MB/s] 52%|█████▏    | 326M/625M [00:21<00:19, 15.4MB/s] 52%|█████▏    | 328M/625M [00:22<00:18, 16.0MB/s] 53%|█████▎    | 330M/625M [00:22<00:18, 16.3MB/s] 53%|█████▎    | 331M/625M [00:22<00:18, 15.7MB/s] 53%|█████▎    | 333M/625M [00:22<00:20, 13.9MB/s] 54%|█████▎    | 335M/625M [00:22<00:19, 14.6MB/s] 54%|█████▍    | 336M/625M [00:22<00:18, 15.4MB/s] 54%|█████▍    | 338M/625M [00:22<00:18, 15.7MB/s] 54%|█████▍    | 340M/625M [00:22<00:17, 16.5MB/s] 55%|█████▍    | 342M/625M [00:22<00:17, 16.1MB/s] 55%|█████▍    | 343M/625M [00:23<00:20, 14.0MB/s] 55%|█████▌    | 345M/625M [00:23<00:19, 14.6MB/s] 55%|█████▌    | 347M/625M [00:23<00:17, 15.6MB/s] 56%|█████▌    | 349M/625M [00:23<00:16, 16.5MB/s] 56%|█████▌    | 350M/625M [00:23<00:16, 16.2MB/s] 56%|█████▋    | 352M/625M [00:23<00:19, 14.0MB/s] 57%|█████▋    | 354M/625M [00:23<00:18, 14.5MB/s] 57%|█████▋    | 356M/625M [00:23<00:16, 16.2MB/s] 57%|█████▋    | 358M/625M [00:23<00:16, 16.3MB/s] 57%|█████▋    | 359M/625M [00:24<00:16, 16.5MB/s] 58%|█████▊    | 361M/625M [00:24<00:18, 14.0MB/s] 58%|█████▊    | 363M/625M [00:24<00:18, 14.5MB/s] 58%|█████▊    | 364M/625M [00:24<00:16, 15.6MB/s] 59%|█████▊    | 366M/625M [00:24<00:15, 16.5MB/s] 59%|█████▉    | 368M/625M [00:24<00:15, 16.5MB/s] 59%|█████▉    | 370M/625M [00:24<00:18, 14.1MB/s] 59%|█████▉    | 371M/625M [00:24<00:17, 14.3MB/s] 60%|█████▉    | 373M/625M [00:24<00:16, 15.2MB/s] 60%|█████▉    | 375M/625M [00:25<00:15, 15.9MB/s] 60%|██████    | 377M/625M [00:25<00:14, 16.6MB/s] 61%|██████    | 378M/625M [00:25<00:17, 14.1MB/s] 61%|██████    | 380M/625M [00:25<00:16, 14.6MB/s] 61%|██████    | 382M/625M [00:25<00:16, 15.1MB/s] 61%|██████▏   | 383M/625M [00:25<00:15, 15.4MB/s] 62%|██████▏   | 385M/625M [00:25<00:16, 14.8MB/s] 62%|██████▏   | 387M/625M [00:25<00:15, 15.4MB/s] 62%|██████▏   | 389M/625M [00:25<00:15, 14.9MB/s] 62%|██████▏   | 390M/625M [00:26<00:15, 14.9MB/s] 63%|██████▎   | 392M/625M [00:26<00:15, 15.1MB/s] 63%|██████▎   | 394M/625M [00:26<00:15, 14.5MB/s] 63%|██████▎   | 396M/625M [00:26<00:15, 15.2MB/s] 64%|██████▎   | 397M/625M [00:26<00:13, 16.3MB/s] 64%|██████▍   | 399M/625M [00:26<00:14, 15.3MB/s] 64%|██████▍   | 401M/625M [00:26<00:15, 14.2MB/s] 64%|██████▍   | 403M/625M [00:26<00:14, 15.1MB/s] 65%|██████▍   | 405M/625M [00:27<00:13, 16.2MB/s] 65%|██████▍   | 406M/625M [00:27<00:13, 15.9MB/s] 65%|██████▌   | 408M/625M [00:27<00:14, 15.5MB/s] 66%|██████▌   | 410M/625M [00:27<00:15, 13.9MB/s] 66%|██████▌   | 411M/625M [00:27<00:14, 14.6MB/s] 66%|██████▌   | 413M/625M [00:27<00:13, 15.6MB/s] 66%|██████▋   | 415M/625M [00:27<00:12, 16.6MB/s] 67%|██████▋   | 417M/625M [00:27<00:13, 16.0MB/s] 67%|██████▋   | 418M/625M [00:27<00:14, 14.0MB/s] 67%|██████▋   | 420M/625M [00:28<00:13, 14.9MB/s] 68%|██████▊   | 422M/625M [00:28<00:12, 16.1MB/s] 68%|██████▊   | 424M/625M [00:28<00:12, 16.6MB/s] 68%|██████▊   | 426M/625M [00:28<00:12, 16.1MB/s] 68%|██████▊   | 427M/625M [00:28<00:14, 14.0MB/s] 69%|██████▊   | 429M/625M [00:28<00:13, 15.1MB/s] 69%|██████▉   | 431M/625M [00:28<00:12, 16.1MB/s] 69%|██████▉   | 433M/625M [00:28<00:11, 16.2MB/s] 69%|██████▉   | 434M/625M [00:28<00:11, 16.1MB/s] 70%|██████▉   | 436M/625M [00:29<00:13, 13.8MB/s] 70%|███████   | 438M/625M [00:29<00:12, 14.9MB/s] 70%|███████   | 440M/625M [00:29<00:11, 15.8MB/s] 71%|███████   | 441M/625M [00:29<00:11, 16.3MB/s] 71%|███████   | 443M/625M [00:29<00:11, 16.4MB/s] 71%|███████   | 445M/625M [00:29<00:13, 13.9MB/s] 71%|███████▏  | 447M/625M [00:29<00:12, 14.8MB/s] 72%|███████▏  | 449M/625M [00:29<00:10, 16.1MB/s] 72%|███████▏  | 450M/625M [00:29<00:10, 16.5MB/s] 72%|███████▏  | 452M/625M [00:30<00:12, 14.1MB/s] 73%|███████▎  | 454M/625M [00:30<00:11, 14.3MB/s] 73%|███████▎  | 455M/625M [00:30<00:11, 14.7MB/s] 73%|███████▎  | 457M/625M [00:30<00:10, 15.7MB/s] 73%|███████▎  | 459M/625M [00:30<00:10, 16.6MB/s] 74%|███████▎  | 461M/625M [00:30<00:11, 14.7MB/s] 74%|███████▍  | 462M/625M [00:30<00:11, 14.6MB/s] 74%|███████▍  | 464M/625M [00:30<00:10, 14.7MB/s] 74%|███████▍  | 465M/625M [00:31<00:10, 14.8MB/s] 75%|███████▍  | 467M/625M [00:31<00:10, 15.7MB/s] 75%|███████▌  | 469M/625M [00:31<00:09, 16.4MB/s] 75%|███████▌  | 471M/625M [00:31<00:10, 15.0MB/s] 76%|███████▌  | 472M/625M [00:31<00:10, 14.9MB/s] 76%|███████▌  | 474M/625M [00:31<00:10, 14.7MB/s] 76%|███████▌  | 476M/625M [00:31<00:09, 15.2MB/s] 76%|███████▋  | 477M/625M [00:31<00:09, 15.9MB/s] 77%|███████▋  | 480M/625M [00:31<00:09, 15.4MB/s] 77%|███████▋  | 481M/625M [00:32<00:09, 15.0MB/s] 77%|███████▋  | 483M/625M [00:32<00:09, 14.9MB/s] 77%|███████▋  | 484M/625M [00:32<00:09, 15.1MB/s] 78%|███████▊  | 486M/625M [00:32<00:08, 15.6MB/s] 78%|███████▊  | 488M/625M [00:32<00:09, 15.0MB/s] 78%|███████▊  | 490M/625M [00:32<00:08, 15.6MB/s] 79%|███████▊  | 492M/625M [00:32<00:08, 15.3MB/s] 79%|███████▉  | 493M/625M [00:32<00:08, 15.3MB/s] 79%|███████▉  | 495M/625M [00:32<00:08, 15.3MB/s] 79%|███████▉  | 497M/625M [00:33<00:08, 14.8MB/s] 80%|███████▉  | 499M/625M [00:33<00:07, 15.9MB/s] 80%|████████  | 500M/625M [00:33<00:07, 15.9MB/s] 80%|████████  | 502M/625M [00:33<00:08, 15.3MB/s] 81%|████████  | 503M/625M [00:33<00:07, 15.4MB/s] 81%|████████  | 505M/625M [00:33<00:08, 14.3MB/s] 81%|████████  | 507M/625M [00:33<00:07, 15.7MB/s] 81%|████████▏ | 509M/625M [00:33<00:07, 15.8MB/s] 82%|████████▏ | 511M/625M [00:33<00:07, 16.0MB/s] 82%|████████▏ | 512M/625M [00:34<00:07, 15.5MB/s] 82%|████████▏ | 514M/625M [00:34<00:07, 15.5MB/s] 82%|████████▏ | 515M/625M [00:34<00:07, 13.9MB/s] 83%|████████▎ | 517M/625M [00:34<00:07, 14.9MB/s] 83%|████████▎ | 519M/625M [00:34<00:06, 15.8MB/s] 83%|████████▎ | 521M/625M [00:34<00:06, 16.0MB/s] 84%|████████▎ | 522M/625M [00:34<00:06, 16.1MB/s] 84%|████████▍ | 524M/625M [00:34<00:06, 15.5MB/s] 84%|████████▍ | 526M/625M [00:34<00:07, 13.8MB/s] 84%|████████▍ | 527M/625M [00:35<00:06, 14.7MB/s] 85%|████████▍ | 529M/625M [00:35<00:06, 15.2MB/s] 85%|████████▍ | 531M/625M [00:35<00:05, 16.0MB/s] 85%|████████▌ | 533M/625M [00:35<00:05, 16.6MB/s] 85%|████████▌ | 534M/625M [00:35<00:06, 14.1MB/s] 86%|████████▌ | 536M/625M [00:35<00:06, 14.4MB/s] 86%|████████▌ | 537M/625M [00:35<00:05, 14.9MB/s] 86%|████████▌ | 539M/625M [00:35<00:05, 15.7MB/s] 87%|████████▋ | 541M/625M [00:35<00:05, 16.4MB/s] 87%|████████▋ | 543M/625M [00:36<00:04, 16.8MB/s] 87%|████████▋ | 545M/625M [00:36<00:05, 14.4MB/s] 87%|████████▋ | 546M/625M [00:36<00:05, 14.4MB/s] 88%|████████▊ | 548M/625M [00:36<00:05, 15.3MB/s] 88%|████████▊ | 550M/625M [00:36<00:04, 16.0MB/s] 88%|████████▊ | 552M/625M [00:36<00:04, 16.8MB/s] 89%|████████▊ | 553M/625M [00:36<00:04, 14.4MB/s] 89%|████████▉ | 555M/625M [00:36<00:04, 14.5MB/s] 89%|████████▉ | 556M/625M [00:36<00:04, 14.7MB/s] 89%|████████▉ | 558M/625M [00:37<00:04, 15.4MB/s] 90%|████████▉ | 560M/625M [00:37<00:03, 16.4MB/s] 90%|████████▉ | 562M/625M [00:37<00:03, 16.9MB/s] 90%|█████████ | 564M/625M [00:37<00:04, 14.4MB/s] 90%|█████████ | 565M/625M [00:37<00:04, 14.5MB/s] 91%|█████████ | 567M/625M [00:37<00:03, 15.1MB/s] 91%|█████████ | 569M/625M [00:37<00:03, 15.7MB/s] 91%|█████████▏| 571M/625M [00:37<00:03, 16.5MB/s] 92%|█████████▏| 572M/625M [00:38<00:03, 15.2MB/s] 92%|█████████▏| 574M/625M [00:38<00:03, 14.9MB/s] 92%|█████████▏| 576M/625M [00:38<00:03, 14.7MB/s] 92%|█████████▏| 577M/625M [00:38<00:03, 15.1MB/s] 93%|█████████▎| 579M/625M [00:38<00:02, 16.3MB/s] 93%|█████████▎| 581M/625M [00:38<00:03, 14.6MB/s] 93%|█████████▎| 583M/625M [00:38<00:02, 15.6MB/s] 93%|█████████▎| 584M/625M [00:38<00:02, 15.2MB/s] 94%|█████████▎| 586M/625M [00:38<00:02, 14.9MB/s] 94%|█████████▍| 588M/625M [00:38<00:02, 15.8MB/s] 94%|█████████▍| 589M/625M [00:39<00:02, 14.5MB/s] 94%|█████████▍| 591M/625M [00:39<00:02, 14.6MB/s] 95%|█████████▍| 593M/625M [00:39<00:02, 15.8MB/s] 95%|█████████▌| 594M/625M [00:39<00:01, 16.1MB/s] 95%|█████████▌| 596M/625M [00:39<00:01, 15.2MB/s] 96%|█████████▌| 598M/625M [00:39<00:01, 15.4MB/s] 96%|█████████▌| 599M/625M [00:39<00:01, 13.8MB/s] 96%|█████████▌| 601M/625M [00:39<00:01, 15.4MB/s] 96%|█████████▋| 603M/625M [00:40<00:01, 16.2MB/s] 97%|█████████▋| 605M/625M [00:40<00:01, 16.2MB/s] 97%|█████████▋| 607M/625M [00:40<00:01, 13.8MB/s] 97%|█████████▋| 608M/625M [00:40<00:01, 15.0MB/s] 98%|█████████▊| 610M/625M [00:40<00:00, 15.9MB/s] 98%|█████████▊| 612M/625M [00:40<00:00, 16.4MB/s] 98%|█████████▊| 614M/625M [00:40<00:00, 16.0MB/s] 98%|█████████▊| 615M/625M [00:40<00:00, 14.0MB/s] 99%|█████████▊| 617M/625M [00:40<00:00, 15.2MB/s] 99%|█████████▉| 619M/625M [00:41<00:00, 15.8MB/s] 99%|█████████▉| 621M/625M [00:41<00:00, 16.2MB/s]100%|█████████▉| 622M/625M [00:41<00:00, 16.4MB/s]100%|█████████▉| 624M/625M [00:41<00:00, 13.9MB/s]100%|██████████| 625M/625M [00:41<00:00, 15.1MB/s]
+/local/scratch/alexie.7968225.0/env/lib/python3.11/site-packages/torch/utils/data/dataloader.py:424: UserWarning: This DataLoader will create 16 worker processes in total. Our suggested max number of worker in current system is 4, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  self.check_worker_number_rationality()
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/project/6001346/alexie/ZSCL/mtil/src/main.py", line 79, in <module>
+    main(args)
+  File "/project/6001346/alexie/ZSCL/mtil/src/main.py", line 72, in main
+    model = custom_finetune(args)
+            ^^^^^^^^^^^^^^^^^^^^^
+  File "/project/6001346/alexie/ZSCL/mtil/src/models/training.py", line 867, in custom_finetune
+    ref_dataset, ref_iter = setup_zscl_reference_dataset(args, test_preprocess)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/project/6001346/alexie/ZSCL/mtil/src/models/training.py", line 470, in setup_zscl_reference_dataset
+    ref_dataset = ref_dataset_cls(
+                  ^^^^^^^^^^^^^^^^
+  File "/project/6001346/alexie/ZSCL/mtil/src/datasets/imagenet.py", line 27, in __init__
+    self.populate_train()
+  File "/project/6001346/alexie/ZSCL/mtil/src/datasets/imagenet.py", line 32, in populate_train
+    self.train_dataset = ImageFolderWithPaths(
+                         ^^^^^^^^^^^^^^^^^^^^^
+  File "/project/6001346/alexie/ZSCL/mtil/src/datasets/common.py", line 26, in __init__
+    super().__init__(path, transform)
+  File "/local/scratch/alexie.7968225.0/env/lib/python3.11/site-packages/torchvision/datasets/folder.py", line 328, in __init__
+    super().__init__(
+  File "/local/scratch/alexie.7968225.0/env/lib/python3.11/site-packages/torchvision/datasets/folder.py", line 149, in __init__
+    classes, class_to_idx = self.find_classes(self.root)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/local/scratch/alexie.7968225.0/env/lib/python3.11/site-packages/torchvision/datasets/folder.py", line 234, in find_classes
+    return find_classes(directory)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/local/scratch/alexie.7968225.0/env/lib/python3.11/site-packages/torchvision/datasets/folder.py", line 41, in find_classes
+    classes = sorted(entry.name for entry in os.scandir(directory) if entry.is_dir())
+                                             ^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: './data/ImageNet/train'
+Iterations per epoch: 235
+Total iterations: 0
+[Training mode] Both Encoders
+Using devices [0]
+[Method] ZSCL
+[ref_model] Zero-shot
+[Ref Dataset] ImageNet
+srun: error: g24: task 0: Exited with exit code 1
+srun: Terminating StepId=7968225.0
