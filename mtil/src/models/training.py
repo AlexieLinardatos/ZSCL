@@ -31,13 +31,7 @@ from .helpers import (
     get_datasets_text, merge_we, wise_we, moving_avg,
     l2_loss, virtual_vocab, distillation
 )
-
-# Optional LoRA import
-try:
-    from peft import LoraConfig, get_peft_model
-    PEFT_AVAILABLE = True
-except ImportError:
-    PEFT_AVAILABLE = False
+from .lora import apply_lora_if_enabled, get_trainable_params as get_lora_params
 
 
 # =============================================================================
@@ -246,6 +240,9 @@ def load_base_model(args):
     else:
         model, train_preprocess, val_preprocess = clip.load(args.model, jit=False, pretrained=True)
 
+    # Apply LoRA before loading checkpoints to allow loading LoRA weights if present.
+    model = apply_lora_if_enabled(args, model)
+
     model_iteration_count = 0
     if args.load is not None:
         utils.torch_load(model, args.load)
@@ -307,13 +304,9 @@ def setup_optimizer(args, params, total_iterations):
 def get_trainable_params(args, model):
     """Get trainable parameters based on training mode."""
     # If using LoRA, only return LoRA parameters
-    if args.lora:
+    if args.use_lora:
         print("[Training mode] LoRA Adapter")
-        params = [p for p in model.parameters() if p.requires_grad]
-        trainable_count = sum(p.numel() for p in params)
-        total_count = sum(p.numel() for p in model.parameters())
-        print(f"[LoRA] Trainable parameters: {trainable_count:,} / {total_count:,} ({100 * trainable_count / total_count:.2f}%)")
-        return params
+        return get_lora_params(model)
 
     if args.train_mode == "text":
         print("[Training mode] Text Encoder")
@@ -337,58 +330,8 @@ def get_trainable_params(args, model):
 
 
 def setup_lora(args, model):
-    """Set up LoRA (Low-Rank Adaptation) for the model.
-
-    Args:
-        args: Command-line arguments containing LoRA configuration.
-        model: The CLIP model to apply LoRA to.
-
-    Returns:
-        The model wrapped with LoRA adapters.
-    """
-    if not args.lora:
-        return model
-
-    if not PEFT_AVAILABLE:
-        raise ImportError(
-            "LoRA requires the 'peft' library. Install it with: pip install peft"
-        )
-
-    print("[LoRA] Setting up Low-Rank Adaptation")
-
-    # Default target modules for CLIP's attention layers
-    if args.lora_target_modules is None:
-        # Target the attention projection layers in both visual and text encoders
-        target_modules = [
-            "attn.in_proj_weight",
-            "attn.out_proj.weight",
-            "mlp.c_fc.weight",
-            "mlp.c_proj.weight",
-        ]
-    else:
-        target_modules = args.lora_target_modules
-
-    print(f"[LoRA] Target modules: {target_modules}")
-    print(f"[LoRA] Rank (r): {args.lora_r}")
-    print(f"[LoRA] Alpha: {args.lora_alpha}")
-    print(f"[LoRA] Dropout: {args.lora_dropout}")
-    print(f"[LoRA] Bias: {args.lora_bias}")
-
-    lora_config = LoraConfig(
-        r=args.lora_r,
-        lora_alpha=args.lora_alpha,
-        lora_dropout=args.lora_dropout,
-        target_modules=target_modules,
-        bias=args.lora_bias,
-    )
-
-    # Apply LoRA to the model
-    model = get_peft_model(model, lora_config)
-
-    # Print trainable parameters info
-    model.print_trainable_parameters()
-
-    return model
+    """Set up LoRA (Low-Rank Adaptation) for the model."""
+    return apply_lora_if_enabled(args, model)
 
 
 # =============================================================================
@@ -783,7 +726,7 @@ def print_args(args):
         "Weight Averaging": ["we", "we_wise", "we_wise_alpha", "moving_avg", "mv_avg_model",
                             "mv_avg_decay", "avg_freq", "wise_merge", "wise_ft_model", "wise_ft_alpha"],
         "OGD": ["orthogonal_gradients", "orthogonal_gradients_path"],
-        "LoRA": ["lora", "lora_r", "lora_alpha", "lora_dropout", "lora_target_modules", "lora_bias"],
+        "LoRA": ["use_lora", "lora_r", "lora_alpha", "lora_dropout", "lora_target_modules", "lora_bias"],
         "Evaluation": ["eval_datasets", "eval_interval", "eval_every_epoch", "loss_interval"],
         "Data": ["data_location", "template", "text_datasets", "num"],
     }
@@ -823,8 +766,7 @@ def custom_finetune(args):
     # Load base model
     model, train_preprocess, val_preprocess, model_iteration_count = load_base_model(args)
 
-    # Setup LoRA if enabled (before auxiliary models to ensure they use base model)
-    model = setup_lora(args, model)
+    # LoRA is applied during base model load (see load_base_model).
 
     # Setup auxiliary models
     model_fix = setup_wise_model(args, model)

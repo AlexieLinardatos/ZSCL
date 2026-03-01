@@ -12,6 +12,7 @@ from .evaluation import evaluate, zeroshot_classifier
 from .finetune import get_datasets_text, merge_we, wise_we, moving_avg, l2_loss, virtual_vocab, distillation
 from .finetune import finetune as pure_finetune
 from .helpers import batch
+from .lora import apply_lora_if_enabled, get_trainable_params as get_lora_params
 
 from ..dynamic_dataset import DynamicDataset
 
@@ -45,6 +46,7 @@ def iCaRL(args):
         
 def finetune(args, ref_images):
     model, train_preprocess, val_preprocess = clip.load(args.model, jit=False)
+    model = apply_lora_if_enabled(args, model)
     if args.load is not None:
         utils.torch_load(model, args.load)
 
@@ -81,10 +83,14 @@ def finetune(args, ref_images):
     # get params
     assert args.train_mode == "whole"
     print("[Training mode] Both Encoders")
-    exclude_params_name = ["logit_scale"]
-    params = [
-        v for k, v in model.named_parameters() if k not in exclude_params_name
-    ]
+    if args.use_lora:
+        print("[Training mode] LoRA Adapter")
+        params = get_lora_params(model)
+    else:
+        exclude_params_name = ["logit_scale"]
+        params = [
+            v for k, v in model.named_parameters() if k not in exclude_params_name
+        ]
 
     # optimizer
     optimizer = torch.optim.AdamW(

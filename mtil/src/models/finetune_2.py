@@ -9,6 +9,7 @@ from tqdm import tqdm
 from .. import datasets, templates, utils
 from .evaluation import evaluate, zeroshot_classifier
 from .helpers import get_datasets_text, merge_we, wise_we, moving_avg, l2_loss, virtual_vocab, distillation
+from .lora import apply_lora_if_enabled, get_trainable_params as get_lora_params
 
 
 import signal, torch, sys
@@ -46,12 +47,14 @@ signal.signal(signal.SIGUSR1, handle_signal)
 def finetune(args):
     global model_ref, args_ref, iteration_save
     model, train_preprocess, val_preprocess = clip.load(args.model, jit=False)
+    model = apply_lora_if_enabled(args, model)
     if args.load is not None:
         utils.torch_load(model, args.load)
 
     if args.we_wise or (args.wise_merge and args.wise_ft_model != "zeroshot"):
         print("Using WiSE-FT with Loaded Model")
         model_fix, train_preprocess, val_preprocess = clip.load(args.model, jit=False)
+        model_fix = apply_lora_if_enabled(args, model_fix)
         if args.load is not None:
             utils.torch_load(model_fix, args.load)
 
@@ -59,6 +62,7 @@ def finetune(args):
         print("Averaging training")
         if args.moving_avg and args.mv_avg_model == "zeroshot": # mv+zeroshot
             we_model, _, _ =  clip.load(args.model, jit=False)
+            we_model = apply_lora_if_enabled(args, we_model)
             we_model.cuda()
             we_n = 0
         else: #we; mv+m; mv+t; we_wise
@@ -100,7 +104,10 @@ def finetune(args):
     print("Total iterations:", total_iterations)
 
     # get params
-    if args.train_mode == "text":
+    if args.use_lora:
+        print("[Training mode] LoRA Adapter")
+        params = get_lora_params(model)
+    elif args.train_mode == "text":
         print("[Training mode] Text Encoder")
         visual_params_name = [k for k, v in model.visual.named_parameters()]
         exclude_params_name = visual_params_name + ["logit_scale"]

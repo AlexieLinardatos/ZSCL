@@ -323,41 +323,59 @@ def parse_arguments():
 
     # LoRA (Low-Rank Adaptation)
     parser.add_argument(
-        "--lora",
+        "--use_lora",
+        "--use-lora",
+        dest="use_lora",
         action="store_true",
         default=False,
         help="Enable LoRA (Low-Rank Adaptation) training. Freezes base model and trains LoRA layers only.",
     )
     parser.add_argument(
+        "--lora",
+        dest="use_lora",
+        action="store_true",
+        help="Alias for --use_lora.",
+    )
+    parser.add_argument(
+        "--lora_r",
         "--lora-r",
+        dest="lora_r",
         type=int,
         default=8,
         help="LoRA rank (dimension of low-rank matrices).",
     )
     parser.add_argument(
+        "--lora_alpha",
         "--lora-alpha",
+        dest="lora_alpha",
         type=int,
         default=16,
         help="LoRA alpha (scaling factor). Effective scaling is alpha/r.",
     )
     parser.add_argument(
+        "--lora_dropout",
         "--lora-dropout",
+        dest="lora_dropout",
         type=float,
         default=0.1,
         help="Dropout probability for LoRA layers.",
     )
     parser.add_argument(
+        "--lora_target_modules",
         "--lora-target-modules",
+        dest="lora_target_modules",
         type=lambda x: x.split(","),
         default=None,
-        help="Comma-separated list of module names to apply LoRA to. Default: q_proj,v_proj,k_proj,out_proj for attention layers.",
+        help="Comma-separated list of module names to apply LoRA to. Default: attn,q_proj,k_proj,v_proj,c_fc,c_proj.",
     )
     parser.add_argument(
+        "--lora_bias",
         "--lora-bias",
+        dest="lora_bias",
         type=str,
         default="none",
         choices=["none", "all", "lora_only"],
-        help="Which biases to train: 'none', 'all', or 'lora_only'.",
+        help="(Unused) Which biases to train: 'none', 'all', or 'lora_only'.",
     )
 
     args = parser.parse_args()
