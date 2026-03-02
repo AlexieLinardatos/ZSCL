@@ -7,8 +7,6 @@ import torch
 
 from . import utils
 from .args import parse_arguments
-from .models import evaluate, evaluate_fc, evaluate_wise_ft, finetune, finetune_fc, finetune_icarl, test, eval_single_image, custom_finetune
-from .models.modeling import create_image_classifier
 
 
 def merge(model_0, model_1, alpha=0.95):
@@ -21,14 +19,23 @@ def merge(model_0, model_1, alpha=0.95):
 def main(args):
     print(args)
     utils.seed_all(args.seed)
+
+    if args.smoke_test:
+        from .models.smoke_test import smoke_test
+        smoke_test(args)
+        return
+
     if args.test:
         print("test")
-
+        from .models import test
         test.test(args)
 
         exit(0)
 
     if "fc" in args.train_mode:
+        from .models.evaluation_fc import evaluate_fc
+        from .models.finetune_fc import finetune_fc
+        from .models.modeling import create_image_classifier
         assert args.train_mode in ["image-fc", "image-fc-fixed"]
         if args.eval_only:
             model = create_image_classifier(
@@ -45,6 +52,10 @@ def main(args):
         else:
             model = finetune_fc(args)
     else:
+        from .models.evaluation import evaluate, eval_single_image
+        from .models.finetune import finetune
+        from .models.icarl import iCaRL as finetune_icarl
+        from .models.training import custom_finetune
         assert args.train_mode in ["whole", "text", "image"]
         # assert args.method in ["finetune"]
         if args.eval_only:

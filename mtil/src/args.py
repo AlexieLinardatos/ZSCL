@@ -378,8 +378,73 @@ def parse_arguments():
         help="(Unused) Which biases to train: 'none', 'all', or 'lora_only'.",
     )
 
+    # Local smoke-test mode (offline synthetic run for quick validation)
+    parser.add_argument(
+        "--smoke_test",
+        "--smoke-test",
+        dest="smoke_test",
+        action="store_true",
+        default=False,
+        help="Run a local synthetic CLIP/LoRA smoke test without dataset files.",
+    )
+    parser.add_argument(
+        "--smoke_steps",
+        "--smoke-steps",
+        dest="smoke_steps",
+        type=int,
+        default=15,
+        help="Number of synthetic optimization steps in smoke-test mode.",
+    )
+    parser.add_argument(
+        "--smoke_batch_size",
+        "--smoke-batch-size",
+        dest="smoke_batch_size",
+        type=int,
+        default=1,
+        help="Synthetic batch size for smoke-test mode.",
+    )
+    parser.add_argument(
+        "--smoke_device",
+        "--smoke-device",
+        dest="smoke_device",
+        type=str,
+        default="cpu",
+        choices=["cpu", "cuda", "auto"],
+        help="Device for smoke-test mode. Default is CPU.",
+    )
+    parser.add_argument(
+        "--smoke_num_workers",
+        "--smoke-num-workers",
+        dest="smoke_num_workers",
+        type=int,
+        default=0,
+        help="Dataloader workers for smoke-test mode (default: 0).",
+    )
+    parser.add_argument(
+        "--smoke_save_adapter",
+        "--smoke-save-adapter",
+        dest="smoke_save_adapter",
+        action="store_true",
+        default=False,
+        help="Save and reload LoRA adapter weights during smoke-test mode.",
+    )
+    parser.add_argument(
+        "--smoke_output_dir",
+        "--smoke-output-dir",
+        dest="smoke_output_dir",
+        type=str,
+        default="./outputs/smoke_test_adapter",
+        help="Output directory for smoke-test adapter save/load checks.",
+    )
+
     args = parser.parse_args()
-    args.device = "cuda" if torch.cuda.is_available() else "cpu"
+    if args.smoke_test:
+        if args.smoke_device == "auto":
+            args.device = "cuda" if torch.cuda.is_available() else "cpu"
+        else:
+            args.device = args.smoke_device
+    else:
+        args.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     assert (
         args.epochs is None or args.iterations is None

@@ -1,4 +1,5 @@
 import math
+import os
 from typing import List, Sequence, Tuple
 
 import torch
@@ -247,3 +248,26 @@ def apply_lora_if_enabled(args, model: nn.Module) -> nn.Module:
     print(f"[LoRA] Replaced modules: {replaced}")
     log_trainable_params(model, prefix="[LoRA]")
     return model
+
+
+def get_lora_state_dict(model: nn.Module) -> dict:
+    return {k: v.detach().cpu() for k, v in model.state_dict().items() if "lora_" in k}
+
+
+def save_lora_adapter(model: nn.Module, save_path: str) -> None:
+    lora_state = get_lora_state_dict(model)
+    if os.path.dirname(save_path):
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    torch.save({"state_dict": lora_state}, save_path)
+    print(f"[LoRA] Saved adapter state to {save_path} ({len(lora_state)} tensors)")
+
+
+def load_lora_adapter(model: nn.Module, load_path: str):
+    checkpoint = torch.load(load_path, map_location="cpu")
+    state_dict = checkpoint.get("state_dict", checkpoint)
+    missing, unexpected = model.load_state_dict(state_dict, strict=False)
+    print(
+        f"[LoRA] Loaded adapter state from {load_path} "
+        f"(missing={len(missing)}, unexpected={len(unexpected)})"
+    )
+    return missing, unexpected
