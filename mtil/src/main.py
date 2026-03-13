@@ -56,6 +56,7 @@ def main(args):
         from .models.finetune import finetune
         from .models.icarl import iCaRL as finetune_icarl
         from .models.training import custom_finetune
+        from .models.finetune_replay import finetune_multi_task_replay
         assert args.train_mode in ["whole", "text", "image"]
         # assert args.method in ["finetune"]
         if args.eval_only:
@@ -77,7 +78,10 @@ def main(args):
             else:
                 evaluate(model, args, val_preprocess)
         elif args.method in ["icarl"]:
-            model = finetune_icarl(args) 
+            model = finetune_icarl(args)
+        elif getattr(args, "use_replay", False) and args.dataset_order:
+            # Multi-task sequential training with replay buffer (Phase 2)
+            finetune_multi_task_replay(args)
         else:
             if args.custom_finetune:
                 model = custom_finetune(args)

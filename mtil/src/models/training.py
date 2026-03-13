@@ -22,6 +22,7 @@ from typing import Optional, Dict, List, Any
 
 import torch
 import torch.nn.functional as F
+from torch.utils.data import DataLoader, RandomSampler
 from tqdm import tqdm
 
 import clip.clip as clip
@@ -705,6 +706,72 @@ def apply_wise_merge(args, model):
 
 
 # =============================================================================
+# Replay Loss
+# =============================================================================
+
+def compute_replay_loss(model, replay_batch, logit_scale, replay_buffer, args):
+    """
+    Compute cross-entropy loss on a batch sampled from the replay buffer.
+
+    Samples in the batch may come from different tasks.  For each unique task
+    in the batch we recompute the text embeddings on-the-fly (with the current
+    model) using that task's classnames and template, then compute CE loss
+    against the stored integer labels.
+
+    Args:
+        model:         The fine-tuned model (DataParallel-wrapped).
+        replay_batch:  Tuple of (images, labels, task_ids) from FlatReplayDataset.
+        logit_scale:   Scalar logit scale (from model.logit_scale).
+        replay_buffer: ReplayBuffer instance (for task metadata).
+        args:          Training arguments (uses args.ls for label smoothing).
+
+    Returns:
+        Scalar loss tensor (mean over all replay samples).
+    """
+    replay_images, replay_labels, task_ids = replay_batch
+    replay_images = replay_images.cuda()
+    replay_labels = replay_labels.cuda()
+    task_ids = task_ids.cuda()
+
+    unique_tasks = task_ids.unique().tolist()
+    total_loss = torch.tensor(0.0, device="cuda")
+    total_samples = 0
+
+    for tid in unique_tasks:
+        tid_int = int(tid)
+        mask = task_ids == tid_int
+        task_images = replay_images[mask]
+        task_labels = replay_labels[mask]
+
+        task_info = replay_buffer.get_task_info(tid_int)
+        classnames = task_info["classnames"]
+        template = task_info["template"]
+
+        # Build text tokens for this task's classes
+        texts = clip.tokenize([template(c) for c in classnames]).cuda()
+
+        # Text embeddings (with grad — same as main CE loss)
+        text_emb = model(None, texts)
+        text_emb = text_emb / text_emb.norm(dim=-1, keepdim=True)
+
+        # Image embeddings
+        img_emb = model(task_images, None)
+        img_emb = img_emb / img_emb.norm(dim=-1, keepdim=True)
+
+        # CE loss for this task group
+        logits = logit_scale.exp() * img_emb @ text_emb.t()
+        task_loss = F.cross_entropy(logits, task_labels, label_smoothing=args.ls)
+
+        n = mask.sum().float()
+        total_loss = total_loss + task_loss * n
+        total_samples += mask.sum().item()
+
+    if total_samples > 0:
+        return total_loss / total_samples
+    return total_loss
+
+
+# =============================================================================
 # Main Training Function
 # =============================================================================
 
@@ -752,8 +819,16 @@ def print_args(args):
     print("\n" + "=" * 60 + "\n")
 
 
-def custom_finetune(args):
-    """Main training function with modular organization."""
+def custom_finetune(args, replay_buffer=None):
+    """
+    Main training function with modular organization.
+
+    Args:
+        args:          Parsed CLI arguments.
+        replay_buffer: Optional ReplayBuffer.  When provided and non-empty,
+                       a weighted replay CE loss is added to the training
+                       objective at every step.
+    """
     global _training_state
 
     # Print arguments
@@ -834,6 +909,30 @@ def custom_finetune(args):
     # Initialize loss tracking
     prev_L2_loss = None
     prev_ZSCL_loss = None
+    prev_replay_loss = None
+
+    # Setup replay DataLoader (infinite, sampling with replacement)
+    replay_loader = None
+    replay_iter_inf = None
+    if replay_buffer is not None and len(replay_buffer) > 0:
+        print(f"[Replay] {replay_buffer}")
+        replay_dataset = replay_buffer.get_combined_dataset()
+        # RandomSampler with replacement acts as an infinite source
+        replay_sampler = RandomSampler(
+            replay_dataset,
+            replacement=True,
+            num_samples=(total_iterations + 1) * getattr(args, "replay_batch_size", 32),
+        )
+        replay_loader = DataLoader(
+            replay_dataset,
+            batch_size=getattr(args, "replay_batch_size", 32),
+            sampler=replay_sampler,
+            num_workers=0,
+        )
+        replay_iter_inf = iter(replay_loader)
+        print(f"[Replay] Loader ready: {len(replay_dataset)} exemplars, "
+              f"batch_size={getattr(args, 'replay_batch_size', 32)}, "
+              f"loss_weight={getattr(args, 'replay_loss_weight', 1.0)}")
 
     # Data iterator
     data_iter = None
@@ -910,6 +1009,20 @@ def custom_finetune(args):
             )
             loss += zscl_loss
 
+        # Replay CE loss (Phase 2)
+        if replay_iter_inf is not None:
+            try:
+                replay_batch = next(replay_iter_inf)
+            except StopIteration:
+                replay_iter_inf = iter(replay_loader)
+                replay_batch = next(replay_iter_inf)
+
+            replay_ce = compute_replay_loss(
+                model, replay_batch, logit_scale, replay_buffer, args
+            )
+            replay_weight = getattr(args, "replay_loss_weight", 1.0)
+            loss = loss + replay_weight * replay_ce
+
         # Backward pass
         optimizer.zero_grad()
         loss.backward()
@@ -935,6 +1048,9 @@ def custom_finetune(args):
             if args.l2 > 0:
                 prev_L2_loss = loss_l2.item()
                 print("Loss L2:", prev_L2_loss)
+            if replay_iter_inf is not None:
+                prev_replay_loss = replay_ce.item()
+                print("Loss Replay:", prev_replay_loss)
 
     # Post-training: WiSE merge
     apply_wise_merge(args, model)

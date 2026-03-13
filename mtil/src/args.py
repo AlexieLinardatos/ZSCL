@@ -311,6 +311,41 @@ def parse_arguments():
         help="TODO",
     )
 
+    # --------- #
+    # Replay Buffer (Phase 2)
+    parser.add_argument(
+        "--use_replay",
+        "--use-replay",
+        dest="use_replay",
+        action="store_true",
+        default=False,
+        help="Enable fixed-budget exemplar replay alongside ZSCL training.",
+    )
+    parser.add_argument(
+        "--replay_budget",
+        "--replay-budget",
+        dest="replay_budget",
+        type=int,
+        default=500,
+        help="Total number of exemplars stored across all tasks in the replay buffer.",
+    )
+    parser.add_argument(
+        "--replay_loss_weight",
+        "--replay-loss-weight",
+        dest="replay_loss_weight",
+        type=float,
+        default=1.0,
+        help="Weight of the replay CE loss relative to the task CE loss.",
+    )
+    parser.add_argument(
+        "--replay_batch_size",
+        "--replay-batch-size",
+        dest="replay_batch_size",
+        type=int,
+        default=32,
+        help="Number of replay exemplars sampled per training step.",
+    )
+
     #THESIS ARGS
     parser.add_argument("--freeze", action="store_true", default=False)
     parser.add_argument("--mixup", type=int, default=None)
