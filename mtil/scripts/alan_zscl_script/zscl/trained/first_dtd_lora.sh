@@ -82,6 +82,30 @@ CKPT_PATH="${SAVE_PATH}/${MODEL_NAME}"
 DATASETS="DTD,MNIST,EuroSAT,Flowers"
 
 # ----------------------------
+# OGD options (LoRA-only OGD)
+# ----------------------------
+# For first task, keep OGD_MEMORY_IN empty so projection is a no-op
+# (there is no previous-task subspace yet). Memory will be saved at task end.
+USE_OGD=1
+OGD_MEMORY_IN=""
+OGD_MEMORY_OUT="${MODEL_PATH}/ogd_memory.pth"
+OGD_ARGS=""
+if [ "${USE_OGD}" -eq 1 ]; then
+  OGD_ARGS="\
+  --ogd-enable \
+  --ogd-params-scope lora \
+  --ogd-memory-budget-per-task 32 \
+  --ogd-sample-batches 8 \
+  --ogd-basis-method qr \
+  --ogd-projection-mode basis \
+  --ogd-log-interval 200 \
+  --ogd-save-path ${OGD_MEMORY_OUT}"
+  if [ -n "${OGD_MEMORY_IN}" ]; then
+    OGD_ARGS="${OGD_ARGS} --ogd-memory-path ${OGD_MEMORY_IN}"
+  fi
+fi
+
+# ----------------------------
 # Stage 1 (init/eval)
 # ----------------------------
 echo "[`date`] Stage 1: init/eval (LoRA)"
@@ -136,6 +160,7 @@ srun python -m src.main \
   --lora_r 8 \
   --lora_alpha 16 \
   --lora_dropout 0.1 \
+  ${OGD_ARGS} \
   --load "${CKPT_PATH}" \
   --start-iteration 0
 

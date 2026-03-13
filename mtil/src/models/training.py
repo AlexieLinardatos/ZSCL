@@ -32,6 +32,8 @@ from .helpers import (
     l2_loss, virtual_vocab, distillation
 )
 from .lora import apply_lora_if_enabled, get_trainable_params as get_lora_params
+from .ogd_lora import LoRAOGD
+from .replay_distill import ReplayMemory, MixedDistillationSampler
 
 
 # =============================================================================
@@ -618,6 +620,42 @@ def apply_layer_freezing(model, args):
             param.requires_grad = False
 
 
+def collect_ogd_task_gradients(
+    model,
+    dataset,
+    args,
+    texts,
+    embeddings,
+    logit_scale,
+    ogd_helper: LoRAOGD,
+    num_batches: int,
+):
+    """Collect task-end gradient vectors used to update OGD memory.
+
+    Uses the task's CE objective on sampled training batches.
+    """
+    gradient_vectors = []
+    skipped_once = None
+    data_iter = iter(dataset.train_loader)
+    sample_count = max(0, num_batches)
+
+    for _ in range(sample_count):
+        model.zero_grad(set_to_none=True)
+        images, labels, data_iter = get_next_batch(data_iter, dataset, args)
+        loss, embeddings = compute_ce_loss(
+            model, images, texts, embeddings, logit_scale, labels, args
+        )
+        loss.backward()
+        flat_grad, skipped = ogd_helper.collect_current_gradient_vector()
+        if flat_grad is not None:
+            gradient_vectors.append(flat_grad.detach().cpu())
+        if skipped_once is None:
+            skipped_once = skipped
+
+    model.zero_grad(set_to_none=True)
+    return gradient_vectors, (skipped_once or [])
+
+
 # =============================================================================
 # Evaluation and Saving Functions
 # =============================================================================
@@ -726,6 +764,29 @@ def print_args(args):
         "Weight Averaging": ["we", "we_wise", "we_wise_alpha", "moving_avg", "mv_avg_model",
                             "mv_avg_decay", "avg_freq", "wise_merge", "wise_ft_model", "wise_ft_alpha"],
         "OGD": ["orthogonal_gradients", "orthogonal_gradients_path"],
+        "OGD-LoRA": [
+            "ogd_enable",
+            "ogd_params_scope",
+            "ogd_memory_budget_per_task",
+            "ogd_sample_batches",
+            "ogd_basis_method",
+            "ogd_projection_mode",
+            "ogd_svd_energy",
+            "ogd_memory_path",
+            "ogd_save_path",
+            "ogd_log_interval",
+        ],
+        "Replay-Distill": [
+            "enable_replay_distill",
+            "replay_mix_alpha",
+            "distill_buffer_size",
+            "memory_per_task",
+            "replay_sampling_strategy",
+            "replay_store_strategy",
+            "public_min_ratio",
+            "replay_memory_path",
+            "replay_save_path",
+        ],
         "LoRA": ["use_lora", "lora_r", "lora_alpha", "lora_dropout", "lora_target_modules", "lora_bias"],
         "Evaluation": ["eval_datasets", "eval_interval", "eval_every_epoch", "loss_interval"],
         "Data": ["data_location", "template", "text_datasets", "num"],
@@ -809,6 +870,30 @@ def custom_finetune(args):
         ref_dataset, ref_iter = setup_zscl_reference_dataset(args, test_preprocess)
         ref_texts = setup_zscl_reference_texts(args, ref_dataset, test_preprocess)
 
+    # Setup replay-distill (public + replay mixed distillation buffer)
+    replay_memory = ReplayMemory()
+    mixed_distill_sampler = None
+    if args.enable_replay_distill:
+        if args.method != "ZSCL":
+            print("[ReplayDistill] WARNING: enabled outside ZSCL; it will be ignored.")
+        else:
+            mixed_distill_sampler = MixedDistillationSampler(
+                replay_memory=replay_memory,
+                replay_mix_alpha=args.replay_mix_alpha,
+                distill_buffer_size=args.distill_buffer_size,
+                replay_sampling_strategy=args.replay_sampling_strategy,
+                public_min_ratio=args.public_min_ratio,
+            )
+            replay_load_path = args.replay_memory_path
+            if replay_load_path is not None:
+                loaded = replay_memory.load(replay_load_path)
+                if loaded:
+                    print(f"[ReplayDistill] Loaded replay memory from {replay_load_path}")
+                else:
+                    print(f"[ReplayDistill] No replay memory loaded from {replay_load_path}")
+
+            print(f"[ReplayDistill] Per-task memory sizes: {replay_memory.size_per_task()}")
+
     # Setup embeddings for text-only training
     embeddings = None
     if args.train_mode == "text":
@@ -817,19 +902,44 @@ def custom_finetune(args):
     # Update global training state
     _training_state.model = model
 
-    # Setup gradient tracking for OGD
+    # Setup legacy gradient tracking for original OGD implementation
     gradient_tracker = _training_state.gradient_tracker
-    if args.orthogonal_gradients is not None:
+    if args.orthogonal_gradients is not None and not args.ogd_enable:
         gradient_tracker.register_hooks(model.module)
         if args.save is not None:
             grad_path = os.path.join(args.save, f"grad_{args.train_dataset}.pth")
             gradient_tracker.load_existing_gradients(grad_path)
 
-    # Load previous task basis for OGD (single file with concatenated bases)
-    # This handles both pre-computed SVD basis and raw gradients from interrupted training
+    # Legacy OGD basis loading (kept for backwards compatibility)
     prev_basis = {}
-    if args.orthogonal_gradients_path is not None:
+    if args.orthogonal_gradients_path is not None and not args.ogd_enable:
         prev_basis = gradient_tracker.load_gradients_as_basis(args.orthogonal_gradients_path)
+
+    # LoRA-only OGD setup
+    ogd_helper = None
+    if args.ogd_enable:
+        if args.ogd_params_scope == "lora" and not args.use_lora:
+            print("[OGD] WARNING: --ogd-params-scope lora is set but --use_lora is disabled.")
+        ogd_helper = LoRAOGD(
+            model=model.module,
+            params_scope=args.ogd_params_scope,
+            projection_mode=args.ogd_projection_mode,
+            basis_method=args.ogd_basis_method,
+            memory_budget_per_task=args.ogd_memory_budget_per_task,
+            svd_energy=args.ogd_svd_energy,
+        )
+        print(f"[OGD] Trainable params in scope '{args.ogd_params_scope}': {ogd_helper.trainable_param_count():,}")
+        print(f"[OGD] Gradient vector dimension: {ogd_helper.vector_dim:,}")
+        if args.ogd_params_scope == "lora" and ogd_helper.trainable_param_count() == 0:
+            print("[OGD] WARNING: No LoRA trainable parameters found. Projection will be skipped.")
+
+        if args.ogd_memory_path is not None:
+            loaded = ogd_helper.load_memory(args.ogd_memory_path)
+            if loaded:
+                print(f"[OGD] Loaded memory from {args.ogd_memory_path}")
+                print(f"[OGD] Stored basis vectors: {ogd_helper.num_basis_vectors()}")
+            else:
+                print(f"[OGD] No compatible memory loaded from {args.ogd_memory_path}")
 
     # Initialize loss tracking
     prev_L2_loss = None
@@ -837,12 +947,14 @@ def custom_finetune(args):
 
     # Data iterator
     data_iter = None
+    epoch_public_used = 0
+    epoch_replay_used = 0
 
     # Main training loop
     for iteration in tqdm(range(model_iteration_count, total_iterations + 1)):
         # Update gradient tracking flag
         gradient_tracker.is_tracking = False
-        if args.orthogonal_gradients is not None:
+        if args.orthogonal_gradients is not None and not args.ogd_enable:
             if iteration % (total_iterations // args.orthogonal_gradients) == 0:
                 gradient_tracker.is_tracking = True
 
@@ -864,6 +976,16 @@ def custom_finetune(args):
 
         # Reset data iterator at epoch boundary
         if iteration % num_batches == 0:
+            if iteration > 0 and args.enable_replay_distill and args.method == "ZSCL":
+                total_used = epoch_public_used + epoch_replay_used
+                ratio = (epoch_replay_used / total_used) if total_used > 0 else 0.0
+                print(
+                    f"[ReplayDistill][EpochSummary] public={epoch_public_used}, replay={epoch_replay_used}, "
+                    f"effective_replay_ratio={ratio:.4f}"
+                )
+                print(f"[ReplayDistill] Per-task replay counts: {replay_memory.size_per_task()}")
+                epoch_public_used = 0
+                epoch_replay_used = 0
             data_iter = iter(dataset.train_loader)
 
         # Prepare model for training
@@ -888,22 +1010,34 @@ def custom_finetune(args):
 
         # Add ZSCL loss
         if args.method == "ZSCL":
-            # Get reference batch
-            if args.ref_dataset in ["ImageNet", "ImageNetSM", "ImageNetSUB"]:
-                try:
-                    ref_batch = next(ref_iter)
-                except StopIteration:
-                    ref_iter = iter(ref_dataset.train_loader)
-                    ref_batch = next(ref_iter)
-                ref_images, ref_labels = ref_batch["images"], ref_batch["labels"]
+            if args.enable_replay_distill and mixed_distill_sampler is not None:
+                # Mixed-source distillation batch is formed here.
+                # Source-1: public/reference dataset; Source-2: replay memory from prior tasks.
+                ref_images, ref_iter, mix_stats = mixed_distill_sampler.sample_mixed_batch(
+                    ref_iter=ref_iter,
+                    ref_loader=ref_dataset.train_loader,
+                    current_task=args.train_dataset,
+                    device=images.device,
+                )
+                epoch_public_used += mix_stats.public_count
+                epoch_replay_used += mix_stats.replay_count
             else:
-                try:
-                    ref_images, ref_labels = next(ref_iter)
-                except StopIteration:
-                    ref_iter = iter(ref_dataset.train_loader)
-                    ref_images, ref_labels = next(ref_iter)
-
-            ref_images = ref_images.cuda()
+                # Baseline behavior: public/reference dataset only.
+                if args.ref_dataset in ["ImageNet", "ImageNetSM", "ImageNetSUB"]:
+                    try:
+                        ref_batch = next(ref_iter)
+                    except StopIteration:
+                        ref_iter = iter(ref_dataset.train_loader)
+                        ref_batch = next(ref_iter)
+                    ref_images, ref_labels = ref_batch["images"], ref_batch["labels"]
+                else:
+                    try:
+                        ref_images, ref_labels = next(ref_iter)
+                    except StopIteration:
+                        ref_iter = iter(ref_dataset.train_loader)
+                        ref_images, ref_labels = next(ref_iter)
+                ref_images = ref_images.cuda()
+                epoch_public_used += int(ref_images.shape[0])
 
             zscl_loss, loss_zscl_item = compute_zscl_loss(
                 model, ref_model, ref_images, ref_texts, logit_scale, args
@@ -915,7 +1049,16 @@ def custom_finetune(args):
         loss.backward()
 
         # Apply OGD gradient projection
-        if prev_basis:
+        if ogd_helper is not None:
+            ogd_stats = ogd_helper.project_current_gradients()
+            if iteration % max(1, args.ogd_log_interval) == 0:
+                print(
+                    "[OGD] Projection "
+                    f"||g||={ogd_stats.grad_norm_before:.6f} -> {ogd_stats.grad_norm_after:.6f}, "
+                    f"||proj||={ogd_stats.proj_component_norm:.6f}, "
+                    f"skipped_params={ogd_stats.skipped_params}"
+                )
+        elif prev_basis:
             apply_ogd_gradient_projection(
                 model, gradient_tracker.gradients_per_layer, prev_basis
             )
@@ -932,6 +1075,13 @@ def custom_finetune(args):
             if args.method == "ZSCL":
                 prev_ZSCL_loss = loss_zscl_item.item()
                 print("Loss ZSCL:", prev_ZSCL_loss)
+                if args.enable_replay_distill:
+                    total_used = epoch_public_used + epoch_replay_used
+                    ratio = (epoch_replay_used / total_used) if total_used > 0 else 0.0
+                    print(
+                        f"[ReplayDistill] cumulative_public={epoch_public_used}, "
+                        f"cumulative_replay={epoch_replay_used}, replay_ratio={ratio:.4f}"
+                    )
             if args.l2 > 0:
                 prev_L2_loss = loss_l2.item()
                 print("Loss L2:", prev_L2_loss)
@@ -939,8 +1089,8 @@ def custom_finetune(args):
     # Post-training: WiSE merge
     apply_wise_merge(args, model)
 
-    # Save gradient basis (concatenated with previous bases)
-    if args.orthogonal_gradients:
+    # Save gradient basis (legacy OGD path)
+    if args.orthogonal_gradients and not args.ogd_enable:
         basis_per_layer = gradient_tracker.compute_svd_basis()
 
         # Concatenate with previous basis if it exists
@@ -959,6 +1109,55 @@ def custom_finetune(args):
         basis_path = os.path.join(args.save, f"grad_{args.train_dataset}.pth")
         torch.save(basis_per_layer, basis_path)
         print(f"Saved gradient basis to {basis_path}")
+
+    # Build and save LoRA OGD memory at task boundary
+    if ogd_helper is not None:
+        sampled_gradients, skipped_params = collect_ogd_task_gradients(
+            model=model,
+            dataset=dataset,
+            args=args,
+            texts=texts,
+            embeddings=embeddings,
+            logit_scale=logit_scale,
+            ogd_helper=ogd_helper,
+            num_batches=args.ogd_sample_batches,
+        )
+        print(f"[OGD] Sampled gradient vectors for task memory: {len(sampled_gradients)}")
+        if skipped_params:
+            print(f"[OGD] Parameters with missing gradients during memory sampling: {len(skipped_params)}")
+
+        num_basis = ogd_helper.add_task_gradients(sampled_gradients)
+        print(f"[OGD] Stored basis vectors after task: {num_basis}")
+
+        if args.ogd_save_path is not None:
+            ogd_save_path = args.ogd_save_path
+        elif args.save is not None:
+            ogd_save_path = os.path.join(args.save, "ogd_memory.pth")
+        else:
+            ogd_save_path = None
+
+        if ogd_save_path is not None:
+            ogd_helper.save_memory(ogd_save_path)
+            print(f"[OGD] Saved memory to {ogd_save_path}")
+
+    # Update replay memory at task boundary and persist for next tasks
+    if args.enable_replay_distill and args.method == "ZSCL":
+        stored = replay_memory.add_task_examples(
+            task_name=args.train_dataset,
+            data_loader=dataset.train_loader,
+            memory_per_task=args.memory_per_task,
+            store_strategy=args.replay_store_strategy,
+        )
+        print(f"[ReplayDistill] Stored {stored} examples for task '{args.train_dataset}'")
+        print(f"[ReplayDistill] Memory size per task: {replay_memory.size_per_task()}")
+
+        replay_save_path = args.replay_save_path
+        if replay_save_path is None and args.save is not None:
+            replay_save_path = os.path.join(args.save, "replay_memory.pth")
+
+        if replay_save_path is not None:
+            replay_memory.save(replay_save_path)
+            print(f"[ReplayDistill] Saved replay memory to {replay_save_path}")
 
     # Save final model
     save_final_model(args, model, we_model, _training_state.iteration)

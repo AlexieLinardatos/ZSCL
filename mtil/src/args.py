@@ -317,6 +317,125 @@ def parse_arguments():
     # parser.add_argument("--orthogonal-gradients", action="store_true", default=False)
     parser.add_argument("--orthogonal-gradients", type=int, default=None)
     parser.add_argument("--orthogonal-gradients-path", type=str, default=None)
+    parser.add_argument(
+        "--enable_replay_distill",
+        action="store_true",
+        default=False,
+        help="Enable mixed-source replay/public distillation for ZSCL.",
+    )
+    parser.add_argument(
+        "--replay_mix_alpha",
+        type=float,
+        default=0.0,
+        help="Replay proportion in distillation batch: 0=public only, 1=replay only.",
+    )
+    parser.add_argument(
+        "--distill_buffer_size",
+        type=int,
+        default=8,
+        help="Total number of images used for each distillation batch.",
+    )
+    parser.add_argument(
+        "--memory_per_task",
+        type=int,
+        default=128,
+        help="Number of examples stored per completed task in replay memory.",
+    )
+    parser.add_argument(
+        "--replay_sampling_strategy",
+        type=str,
+        default="uniform_tasks",
+        choices=["uniform_tasks", "proportional_examples"],
+        help="How replay samples are drawn across previous tasks.",
+    )
+    parser.add_argument(
+        "--replay_store_strategy",
+        type=str,
+        default="fixed_per_task",
+        choices=["fixed_per_task", "reservoir"],
+        help="How examples are stored into replay memory at task end.",
+    )
+    parser.add_argument(
+        "--public_min_ratio",
+        type=float,
+        default=0.25,
+        help="Minimum public/reference fraction retained in mixed distillation.",
+    )
+    parser.add_argument(
+        "--replay_memory_path",
+        type=str,
+        default=None,
+        help="Optional replay memory path to load before task training.",
+    )
+    parser.add_argument(
+        "--replay_save_path",
+        type=str,
+        default=None,
+        help="Optional replay memory path to save after task training.",
+    )
+    parser.add_argument(
+        "--ogd-enable",
+        action="store_true",
+        default=False,
+        help="Enable OGD projection during training.",
+    )
+    parser.add_argument(
+        "--ogd-params-scope",
+        type=str,
+        default="lora",
+        choices=["lora", "trainable"],
+        help="Parameter scope used for OGD vector construction.",
+    )
+    parser.add_argument(
+        "--ogd-memory-budget-per-task",
+        type=int,
+        default=32,
+        help="Maximum number of task gradients kept from each completed task.",
+    )
+    parser.add_argument(
+        "--ogd-sample-batches",
+        type=int,
+        default=8,
+        help="Number of batches sampled at task end to build OGD memory.",
+    )
+    parser.add_argument(
+        "--ogd-basis-method",
+        type=str,
+        default="qr",
+        choices=["qr", "svd"],
+        help="Method used to orthonormalize OGD memory vectors.",
+    )
+    parser.add_argument(
+        "--ogd-projection-mode",
+        type=str,
+        default="basis",
+        choices=["basis", "raw"],
+        help="Use compressed basis projection or exact projection from raw vectors.",
+    )
+    parser.add_argument(
+        "--ogd-svd-energy",
+        type=float,
+        default=0.97,
+        help="Energy retained when SVD compression is used for OGD basis.",
+    )
+    parser.add_argument(
+        "--ogd-memory-path",
+        type=str,
+        default=None,
+        help="Path to load OGD memory from previous tasks.",
+    )
+    parser.add_argument(
+        "--ogd-save-path",
+        type=str,
+        default=None,
+        help="Path to save updated OGD memory after the current task.",
+    )
+    parser.add_argument(
+        "--ogd-log-interval",
+        type=int,
+        default=200,
+        help="Interval (iterations) for OGD diagnostics logging.",
+    )
     parser.add_argument("--untrained", action="store_true", default=False)
     parser.add_argument("--custom-finetune", action="store_true", default=False)
     parser.add_argument("--max-evaluation-size", type=int, default=None)
