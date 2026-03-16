@@ -1,96 +1,62 @@
 """
-Phase 3 argument extensions.
+Phase 3 argument parsing.
 
-These are applied on top of the base MTIL args (from src/args.py).
-Call apply_phase3_args(args) after parse_arguments() to inject Phase 3
-defaults and parse any Phase 3 CLI overrides.
+The base MTIL parser (src/args.py) uses parse_args() which rejects unknown
+flags.  To avoid that, we pre-parse Phase 3-specific flags out of sys.argv
+first, then pass the remaining argv to parse_arguments() so it never sees
+the Phase 3 flags.
 """
 
 import argparse
+from src.args import parse_arguments
 
 
-def apply_phase3_args(args):
+def parse_phase3_arguments():
     """
-    Inject Phase 3 defaults into `args` and parse Phase 3 CLI overrides.
+    Parse all arguments for Phase 3.
 
-    Mutates `args` (an argparse.Namespace) in-place.  Must be called after
-    parse_arguments() so all base MTIL args are already set.
+    1. Strips Phase 3-specific flags from sys.argv via parse_known_args.
+    2. Passes the remaining argv to the base parse_arguments() so it never
+       sees unknown flags.
+    3. Merges Phase 3 defaults + overrides into the returned namespace.
 
-    Phase 3 flags (all optional, all have defaults):
+    Phase 3 flags (all optional):
 
-      --lambda_replay_teacher_distill FLOAT
-          Loss weight for replay teacher distillation.
-          Default: 0.5  (conservative start; tune up/down as needed)
-
-      --no_replay_teacher_distill
-          Disable replay teacher distillation entirely.
-          Default: enabled.
-
-      --no_existing_distill
-          Disable the existing ZSCL public/reference distillation branch.
-          Default: enabled (keep ZSCL branch active).
-
-      --no_replay_supervised_loss
-          Disable supervised CE loss on replay buffer samples.
-          Default: enabled.
-
-      --no_replay_teacher_same_batch
-          Sample a fresh replay minibatch for teacher distillation instead
-          of reusing the supervised-replay batch.
-          Default: reuse same batch (True).
+      --lambda_replay_teacher_distill FLOAT   default 0.5
+      --no_replay_teacher_distill             disable replay teacher distill
+      --no_existing_distill                   disable ZSCL distillation branch
+      --no_replay_supervised_loss             disable supervised replay CE
+      --no_replay_teacher_same_batch          use separate batch for teacher distill
     """
     # ------------------------------------------------------------------ #
-    # Defaults                                                             #
-    # ------------------------------------------------------------------ #
-    _defaults = {
-        "enable_replay_teacher_distill": True,
-        "lambda_replay_teacher_distill": 0.5,
-        "enable_existing_distill": True,
-        "enable_replay_supervised_loss": True,
-        "replay_teacher_same_batch_as_replay_sup": True,
-    }
-    for k, v in _defaults.items():
-        if not hasattr(args, k):
-            setattr(args, k, v)
-
-    # ------------------------------------------------------------------ #
-    # Parse Phase 3 CLI overrides (unknown-args tolerant)                 #
+    # Step 1: pre-parse Phase 3 flags, get remaining argv for base parser #
     # ------------------------------------------------------------------ #
     p3_parser = argparse.ArgumentParser(add_help=False)
+    p3_parser.add_argument("--lambda_replay_teacher_distill", type=float, default=None)
+    p3_parser.add_argument("--no_replay_teacher_distill", action="store_true", default=False)
+    p3_parser.add_argument("--no_existing_distill", action="store_true", default=False)
+    p3_parser.add_argument("--no_replay_supervised_loss", action="store_true", default=False)
+    p3_parser.add_argument("--no_replay_teacher_same_batch", action="store_true", default=False)
 
-    p3_parser.add_argument(
-        "--lambda_replay_teacher_distill",
-        type=float,
-        default=None,
-        help="Loss weight for replay teacher distillation (default 0.5).",
-    )
-    p3_parser.add_argument(
-        "--no_replay_teacher_distill",
-        action="store_true",
-        default=False,
-        help="Disable replay teacher distillation.",
-    )
-    p3_parser.add_argument(
-        "--no_existing_distill",
-        action="store_true",
-        default=False,
-        help="Disable existing ZSCL distillation branch.",
-    )
-    p3_parser.add_argument(
-        "--no_replay_supervised_loss",
-        action="store_true",
-        default=False,
-        help="Disable supervised CE loss on replay samples.",
-    )
-    p3_parser.add_argument(
-        "--no_replay_teacher_same_batch",
-        action="store_true",
-        default=False,
-        help="Sample a fresh replay batch for teacher distillation (default: reuse sup batch).",
-    )
+    p3_ns, remaining_argv = p3_parser.parse_known_args()
 
-    p3_ns, _ = p3_parser.parse_known_args()
+    # ------------------------------------------------------------------ #
+    # Step 2: parse base MTIL args from remaining argv (no unknown flags) #
+    # ------------------------------------------------------------------ #
+    args = parse_arguments(remaining_argv)
 
+    # ------------------------------------------------------------------ #
+    # Step 3: inject Phase 3 defaults                                     #
+    # ------------------------------------------------------------------ #
+    args.enable_replay_teacher_distill = True
+    args.lambda_replay_teacher_distill = 0.5
+    args.enable_existing_distill = True
+    args.enable_replay_supervised_loss = True
+    args.replay_teacher_same_batch_as_replay_sup = True
+
+    # ------------------------------------------------------------------ #
+    # Step 4: apply any Phase 3 CLI overrides                             #
+    # ------------------------------------------------------------------ #
     if p3_ns.lambda_replay_teacher_distill is not None:
         args.lambda_replay_teacher_distill = p3_ns.lambda_replay_teacher_distill
     if p3_ns.no_replay_teacher_distill:
@@ -101,3 +67,5 @@ def apply_phase3_args(args):
         args.enable_replay_supervised_loss = False
     if p3_ns.no_replay_teacher_same_batch:
         args.replay_teacher_same_batch_as_replay_sup = False
+
+    return args

@@ -47,17 +47,14 @@ if _MTIL_DIR not in sys.path:
     sys.path.insert(0, _MTIL_DIR)
 
 from src import utils
-from src.args import parse_arguments
-from .args_phase3 import apply_phase3_args
+from .args_phase3 import parse_phase3_arguments
 from .finetune_phase3 import finetune_multi_task_phase3
 
 
 def main():
-    # Parse all base MTIL args
-    args = parse_arguments()
-
-    # Inject Phase 3 defaults and parse Phase 3 overrides
-    apply_phase3_args(args)
+    # Parse base MTIL args + Phase 3 args together (Phase 3 flags are
+    # pre-stripped so the base parser never sees unknown arguments)
+    args = parse_phase3_arguments()
 
     # Seed
     utils.seed_all(args.seed)
