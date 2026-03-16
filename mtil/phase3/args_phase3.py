@@ -42,8 +42,16 @@ def parse_phase3_arguments():
 
     # ------------------------------------------------------------------ #
     # Step 2: parse base MTIL args from remaining argv (no unknown flags) #
+    # parse_arguments() reads sys.argv directly (no parameter), so we    #
+    # temporarily replace sys.argv with only the remaining args.          #
     # ------------------------------------------------------------------ #
-    args = parse_arguments(remaining_argv)
+    import sys
+    _orig_argv = sys.argv
+    sys.argv = [sys.argv[0]] + remaining_argv
+    try:
+        args = parse_arguments()
+    finally:
+        sys.argv = _orig_argv
 
     # ------------------------------------------------------------------ #
     # Step 3: inject Phase 3 defaults                                     #
