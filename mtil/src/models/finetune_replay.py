@@ -72,6 +72,10 @@ def finetune_multi_task_replay(args):
         args_task.train_dataset = task_name
 
         # Chain checkpoints: task N loads the saved model from task N-1.
+        # Always reset start_iteration to 0 so each task trains for the full
+        # args.iterations steps regardless of what iteration was stored in the
+        # checkpoint (which would be 5000 after the previous task finished).
+        args_task.start_iteration = 0
         if task_idx == 0:
             args_task.load = initial_load  # may be None (start from pretrained CLIP)
         else:
