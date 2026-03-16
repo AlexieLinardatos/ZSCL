@@ -951,7 +951,7 @@ def custom_finetune(args, replay_buffer=None):
             _training_state.model = we_model
 
         # Periodic evaluation
-        if iteration % args.eval_interval == 0:
+        if args.eval_interval is not None and iteration % args.eval_interval == 0:
             print("Saving accuracies...")
             torch.cuda.empty_cache()
 
