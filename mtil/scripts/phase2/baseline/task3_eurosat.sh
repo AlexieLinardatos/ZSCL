@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=p2_base_eurosat
-#SBATCH --time=02:45:00
+#SBATCH --time=01:15:00
 #SBATCH --mem=32GB
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:h100:1
@@ -63,8 +63,8 @@ cd "$REPO_ROOT/mtil"
 mkdir -p logs
 
 TARGET_DATASET="EuroSAT"
-SAVE_PATH="ckpt/phase2/baseline/DTD_trained/MNIST_trained/EuroSAT_trained"
-PREV_LOAD_PATH="ckpt/phase2/baseline/DTD_trained/MNIST_trained/MNIST.pth"
+SAVE_PATH="ckpt/phase2.1/baseline/DTD_trained/MNIST_trained/EuroSAT_trained"
+PREV_LOAD_PATH="ckpt/phase2.1/baseline/DTD_trained/MNIST_trained/MNIST.pth"
 mkdir -p "${SAVE_PATH}"
 
 MODEL_NAME="${TARGET_DATASET}.pth"
@@ -89,12 +89,12 @@ srun python -m src.main \
   --train-dataset="${TARGET_DATASET}" \
   --lr=1e-5 \
   --ls 0.2 \
-  --iterations 5000 \
+  --iterations 2000 \
   --method ZSCL \
   --image_loss \
   --text_loss \
   --we \
-  --avg_freq 100 \
+  --avg_freq 50 \
   --l2 1 \
   --ref-dataset ImageNet \
   --ref-sentences conceptual_captions \

@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=p2_base_dtd
-#SBATCH --time=02:30:00
+#SBATCH --time=01:30:00
 #SBATCH --mem=32GB
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:h100:1
@@ -63,7 +63,7 @@ cd "$REPO_ROOT/mtil"
 mkdir -p logs
 
 TARGET_DATASET="DTD"
-BASE_SAVE="ckpt/phase2/baseline"             # Stage 1 zero-shot checkpoint goes here
+BASE_SAVE="ckpt/phase2.1/baseline"            # Stage 1 zero-shot checkpoint goes here
 MODEL_PATH="${BASE_SAVE}/DTD_trained"         # Stage 2 trained checkpoint goes here
 mkdir -p "${BASE_SAVE}" "${MODEL_PATH}"
 
@@ -87,7 +87,7 @@ srun python -m src.main \
   --image_loss \
   --text_loss \
   --we \
-  --avg_freq 100 \
+  --avg_freq 50 \
   --l2 1 \
   --ref-dataset ImageNet \
   --ref-sentences conceptual_captions \
@@ -107,12 +107,12 @@ srun python -m src.main \
   --train-dataset="${TARGET_DATASET}" \
   --lr=1e-5 \
   --ls 0.2 \
-  --iterations 5000 \
+  --iterations 2000 \
   --method ZSCL \
   --image_loss \
   --text_loss \
   --we \
-  --avg_freq 100 \
+  --avg_freq 50 \
   --l2 1 \
   --ref-dataset ImageNet \
   --ref-sentences conceptual_captions \
