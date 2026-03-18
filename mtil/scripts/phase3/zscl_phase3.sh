@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=p2_replay
+#SBATCH --job-name=p3_replay_teacher
 #SBATCH --time=06:00:00
 #SBATCH --mem=48GB
 #SBATCH --cpus-per-task=4
@@ -7,11 +7,12 @@
 #SBATCH --output=/scratch/alexie/logs/%x-%j.out
 #SBATCH --signal=USR1@60
 
-# NOTE: This is ONE job that trains all 4 tasks back-to-back.
-# The replay buffer lives in Python memory across tasks, so it cannot
-# be split into separate jobs without extra serialization.
-# Phase 2.1: 2000 iter/task (was 5000), replay_budget 2000 (was 500).
-# Time budget: ~1h per task x 4 tasks + overhead = 6h requested.
+# Phase 3.1: ZSCL + Replay + Replay Teacher Distillation
+# Same parameter tweaks as Phase 2.1:
+#   - 2000 iter/task (was 5000)
+#   - replay_budget 2000 (was 500)
+#   - replay_loss_weight 0.75 (was 1.0)
+#   - avg_freq 50 (was 100)
 
 set -euo pipefail
 mkdir -p /scratch/alexie/logs
@@ -68,29 +69,18 @@ REPO_ROOT="$HOME/projects/def-fqureshi/alexie/ZSCL"
 cd "$REPO_ROOT/mtil"
 mkdir -p logs
 
-SAVE_PATH="ckpt/phase2.1/replay"
+SAVE_PATH="ckpt/phase3.1/replay_teacher"
 mkdir -p "${SAVE_PATH}"
 
 DATASETS="DTD,MNIST,EuroSAT,Flowers,ImageNet"
 LORA_ARGS="--use_lora --lora_r 8 --lora_alpha 16 --lora_dropout 0.1"
 
 # ----------------------------
-# Run all 4 tasks with replay
-#
-# Key differences from baseline scripts:
-#   --use_replay              activates the replay outer loop
-#   --dataset_order           defines the task sequence (handled by Python)
-#   --replay_budget 2000      total exemplar budget across all tasks (500/task)
-#   --replay_batch_size 32    replay samples mixed in each training step
-#   --replay_loss_weight 0.75 weight of replay CE loss
-#
-#   NO --custom-finetune      (routing is automatic when --use_replay is set)
-#   NO --train-dataset        (outer loop sets this per task from --dataset_order)
-#   NO --load                 (outer loop chains checkpoints automatically)
+# Run Phase 3: ZSCL + Replay + Replay Teacher Distillation
 # ----------------------------
-echo "[`date`] Starting ZSCL + Replay: DTD -> MNIST -> EuroSAT -> Flowers"
+echo "[`date`] Starting Phase 3.1: DTD -> MNIST -> EuroSAT -> Flowers"
 
-srun python -m src.main \
+srun python -m phase3.train_phase3 \
   --train-mode=whole \
   --lr=1e-5 \
   --ls 0.2 \
@@ -112,7 +102,8 @@ srun python -m src.main \
   --replay_budget 2000 \
   --replay_batch_size 32 \
   --replay_loss_weight 0.75 \
-  --dataset_order DTD,MNIST,EuroSAT,Flowers
+  --dataset_order DTD,MNIST,EuroSAT,Flowers \
+  --lambda_replay_teacher_distill 0.5
 
 echo "[`date`] Done."
 echo "[`date`] Checkpoints: ${SAVE_PATH}/{DTD,MNIST,EuroSAT,Flowers}.pth"

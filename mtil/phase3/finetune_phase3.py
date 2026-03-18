@@ -14,6 +14,7 @@ and Phase 3 results separate.
 """
 
 import copy
+import glob
 import os
 
 import torch
@@ -64,6 +65,16 @@ def _load_buffer_memory(save_dir, replay_buffer):
         f"across {len(replay_buffer.memory)} tasks."
     )
     return True
+
+
+def _clear_task_metrics(save_dir):
+    """Clear stale metrics CSVs when restarting a task from scratch."""
+    cleared = []
+    for f in glob.glob(os.path.join(save_dir, "metrics_*.csv")):
+        os.remove(f)
+        cleared.append(os.path.basename(f))
+    if cleared:
+        print(f"[Phase3] Cleared stale metrics: {', '.join(cleared)}")
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +175,11 @@ def finetune_multi_task_phase3(args):
         # ------------------------------------------------------------------
         # Train this task (Phase 3 trainer)
         # ------------------------------------------------------------------
+
+        # Clear stale metrics from a previous crashed run of this task
+        if args_task.start_iteration == 0:
+            _clear_task_metrics(args.save)
+
         current_replay = replay_buffer if task_idx > 0 else None
         if current_replay is not None:
             print(

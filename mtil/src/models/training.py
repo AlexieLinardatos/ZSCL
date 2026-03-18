@@ -421,7 +421,16 @@ def setup_zscl_reference_dataset(args, preprocess):
 
 
 def setup_zscl_reference_texts(args, ref_dataset, preprocess):
-    """Set up the reference texts for ZSCL."""
+    """Set up the reference texts for ZSCL.
+
+    For conceptual_captions: tokenized texts are cached to disk so that
+    training can resume even if the CC dataset becomes unavailable.
+    """
+    # CC caching path (shared across tasks in the same save directory)
+    cc_cache_path = None
+    if args.save is not None and args.ref_sentences == "conceptual_captions":
+        cc_cache_path = os.path.join(args.save, "cc_ref_texts_cache.pt")
+
     if args.text_datasets is not None:
         print("[Ref Sentences] Text-Datasets")
         ref_texts = get_datasets_text(args.text_datasets, args)
@@ -429,17 +438,16 @@ def setup_zscl_reference_texts(args, ref_dataset, preprocess):
         ref_texts = virtual_vocab()
         print("[Ref Sentences] Random Sentences")
     elif args.ref_sentences is not None:
-        ref_sentences_cls = getattr(datasets, args.ref_sentences)
-        print(f"[Ref Sentences] {args.ref_sentences}")
-        ref_sentences = ref_sentences_cls(
-            preprocess,
-            location=args.data_location,
-            batch_size=args.batch_size,
-        )
         if args.ref_sentences == "conceptual_captions":
-            ref_texts = ref_sentences.train_dataset.captions
-            ref_texts = clip.tokenize(ref_texts).cuda()
+            ref_texts = _load_cc_texts_with_cache(args, preprocess, cc_cache_path)
         else:
+            ref_sentences_cls = getattr(datasets, args.ref_sentences)
+            print(f"[Ref Sentences] {args.ref_sentences}")
+            ref_sentences = ref_sentences_cls(
+                preprocess,
+                location=args.data_location,
+                batch_size=args.batch_size,
+            )
             ref_template = ref_sentences.template
             ref_texts = [ref_template(x) for x in ref_sentences.classnames]
             ref_texts = clip.tokenize(ref_texts).cuda()
@@ -450,6 +458,50 @@ def setup_zscl_reference_texts(args, ref_dataset, preprocess):
         ref_texts = clip.tokenize(ref_texts).cuda()
 
     return ref_texts
+
+
+def _load_cc_texts_with_cache(args, preprocess, cache_path):
+    """Load conceptual_captions texts with disk caching and fallback.
+
+    Order of preference:
+    1. Load from CC dataset fresh (and update cache)
+    2. If CC loading fails, load from cache
+    3. If cache also missing, fall back to random sentences
+    """
+    # Try loading fresh from CC dataset
+    try:
+        ref_sentences_cls = getattr(datasets, "conceptual_captions")
+        print("[Ref Sentences] conceptual_captions (loading fresh)")
+        ref_sentences = ref_sentences_cls(
+            preprocess,
+            location=args.data_location,
+            batch_size=args.batch_size,
+        )
+        ref_texts = ref_sentences.train_dataset.captions
+        ref_texts = clip.tokenize(ref_texts).cuda()
+
+        # Cache for future use
+        if cache_path:
+            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+            torch.save(ref_texts.cpu(), cache_path)
+            print(f"[Ref Sentences] Cached CC texts to {cache_path} "
+                  f"({ref_texts.shape[0]} captions)")
+
+        return ref_texts
+
+    except Exception as e:
+        print(f"[WARNING] Failed to load conceptual_captions: {e}")
+
+        # Fallback to cache
+        if cache_path and os.path.exists(cache_path):
+            print(f"[WARNING] Loading CC texts from cache: {cache_path}")
+            ref_texts = torch.load(cache_path, weights_only=False).cuda()
+            print(f"[WARNING] Loaded {ref_texts.shape[0]} cached captions")
+            return ref_texts
+
+        # Last resort: random sentences
+        print("[WARNING] No CC cache available. Using random sentences as fallback.")
+        return virtual_vocab()
 
 
 # =============================================================================
@@ -651,8 +703,8 @@ def evaluate_and_save(args, model, val_preprocess, iteration, loss_dict=None):
             "top5": metrics["top5"],
         })
 
-        # Remove duplicates by iteration
-        unique = {row["iteration"]: row for row in rows}
+        # Remove duplicates by iteration (str() ensures int/string keys match)
+        unique = {str(row["iteration"]): row for row in rows}
 
         with open(path, mode="w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=["iteration", "top1", "top5"])
