@@ -9,7 +9,8 @@
 
 # 10-task ZSCL Paper Replica (no replay, no LoRA)
 # Matches paper exactly: 1000 iter/task, avg_freq=100, per-task lr
-# Order: Aircraft->Caltech101->CIFAR10->CIFAR100->DTD->EuroSAT->Flowers->Food->MNIST->OxfordPet
+# Order: Aircraft->Caltech101->CIFAR100->DTD->EuroSAT->Flowers->Food->MNIST->OxfordPet->StanfordCars
+# (ZSCL paper Order-I minus SUN397)
 
 set -euo pipefail
 mkdir -p /scratch/alexie/logs
@@ -58,11 +59,11 @@ mkdir -p logs
 SAVE_PATH="ckpt/10task/zscl_paper"
 mkdir -p "${SAVE_PATH}"
 
-EVAL_DATASETS="Aircraft,Caltech101,CIFAR10,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,ImageNet"
+EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,ImageNet"
 
 # Per-task learning rates (matches ZSCL paper)
-TASKS=(Aircraft Caltech101 CIFAR10 CIFAR100 DTD EuroSAT Flowers Food MNIST OxfordPet)
-LRS=(5e-5 1e-5 1e-5 1e-5 1e-5 1e-5 1e-5 1e-5 5e-5 1e-5)
+TASKS=(Aircraft Caltech101 CIFAR100 DTD EuroSAT Flowers Food MNIST OxfordPet StanfordCars)
+LRS=(5e-5 1e-5 1e-5 1e-5 1e-5 1e-5 1e-5 5e-5 1e-5 1e-5)
 
 # Zero-shot eval (before any training)
 echo "[`date`] Zero-shot evaluation..."
@@ -81,8 +82,7 @@ srun python -m src.main \
   --ref-dataset ImageNet \
   --ref-sentences conceptual_captions \
   --save "${SAVE_PATH}" \
-  --eval-datasets "${EVAL_DATASETS}" \
-  --max-evaluation-size 500
+  --eval-datasets "${EVAL_DATASETS}"
 
 PREV_CKPT="${SAVE_PATH}/Aircraft.pth"
 
@@ -97,7 +97,7 @@ for i in "${!TASKS[@]}"; do
     continue
   fi
 
-  echo "[`date`] Training task $((i+1))/10: ${TASK} (lr=${LR})"
+  echo "[`date`] Training task $((i+1))/${#TASKS[@]}: ${TASK} (lr=${LR})"
   srun python -m src.main \
     --train-mode=whole \
     --train-dataset="${TASK}" \
@@ -115,7 +115,6 @@ for i in "${!TASKS[@]}"; do
     --save "${SAVE_PATH}" \
     --eval-datasets "${EVAL_DATASETS}" \
     --eval-interval 250 \
-    --max-evaluation-size 500 \
     --custom-finetune \
     --load "${PREV_CKPT}" \
     --start-iteration 0
@@ -124,4 +123,4 @@ for i in "${!TASKS[@]}"; do
   echo "[`date`] Done: ${TASK}"
 done
 
-echo "[`date`] All 10 tasks complete. Checkpoints in ${SAVE_PATH}/"
+echo "[`date`] All ${#TASKS[@]} tasks complete. Checkpoints in ${SAVE_PATH}/"

@@ -57,8 +57,8 @@ mkdir -p logs
 SAVE_PATH="ckpt/10task/baseline_no_lora"
 mkdir -p "${SAVE_PATH}"
 
-EVAL_DATASETS="Aircraft,Caltech101,CIFAR10,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,ImageNet"
-TASKS=(Aircraft Caltech101 CIFAR10 CIFAR100 DTD EuroSAT Flowers Food MNIST OxfordPet)
+EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,ImageNet"
+TASKS=(Aircraft Caltech101 CIFAR100 DTD EuroSAT Flowers Food MNIST OxfordPet StanfordCars)
 
 # Zero-shot eval
 echo "[`date`] Zero-shot evaluation..."
@@ -77,8 +77,7 @@ srun python -m src.main \
   --ref-dataset ImageNet \
   --ref-sentences conceptual_captions \
   --save "${SAVE_PATH}" \
-  --eval-datasets "${EVAL_DATASETS}" \
-  --max-evaluation-size 500
+  --eval-datasets "${EVAL_DATASETS}"
 
 PREV_CKPT="${SAVE_PATH}/Aircraft.pth"
 
@@ -91,7 +90,7 @@ for i in "${!TASKS[@]}"; do
     continue
   fi
 
-  echo "[`date`] Training task $((i+1))/10: ${TASK}"
+  echo "[`date`] Training task $((i+1))/${#TASKS[@]}: ${TASK}"
   srun python -m src.main \
     --train-mode=whole \
     --train-dataset="${TASK}" \
@@ -109,7 +108,6 @@ for i in "${!TASKS[@]}"; do
     --save "${SAVE_PATH}" \
     --eval-datasets "${EVAL_DATASETS}" \
     --eval-interval 500 \
-    --max-evaluation-size 500 \
     --custom-finetune \
     --load "${PREV_CKPT}" \
     --start-iteration 0
@@ -118,4 +116,4 @@ for i in "${!TASKS[@]}"; do
   echo "[`date`] Done: ${TASK}"
 done
 
-echo "[`date`] All 10 tasks complete. Checkpoints in ${SAVE_PATH}/"
+echo "[`date`] All ${#TASKS[@]} tasks complete. Checkpoints in ${SAVE_PATH}/"

@@ -53,8 +53,8 @@ mkdir -p logs
 SAVE_PATH="ckpt/10task/baseline_lora"
 mkdir -p "${SAVE_PATH}"
 
-EVAL_DATASETS="Aircraft,Caltech101,CIFAR10,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,ImageNet"
-TASKS=(Aircraft Caltech101 CIFAR10 CIFAR100 DTD EuroSAT Flowers Food MNIST OxfordPet)
+EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,ImageNet"
+TASKS=(Aircraft Caltech101 CIFAR100 DTD EuroSAT Flowers Food MNIST OxfordPet StanfordCars)
 LORA_ARGS="--use_lora --lora_r 8 --lora_alpha 16 --lora_dropout 0.1"
 
 # Zero-shot eval
@@ -75,7 +75,6 @@ srun python -m src.main \
   --ref-sentences conceptual_captions \
   --save "${SAVE_PATH}" \
   --eval-datasets "${EVAL_DATASETS}" \
-  --max-evaluation-size 500 \
   $LORA_ARGS
 
 PREV_CKPT="${SAVE_PATH}/Aircraft.pth"
@@ -89,7 +88,7 @@ for i in "${!TASKS[@]}"; do
     continue
   fi
 
-  echo "[`date`] Training task $((i+1))/10: ${TASK} (LoRA)"
+  echo "[`date`] Training task $((i+1))/${#TASKS[@]}: ${TASK} (LoRA)"
   srun python -m src.main \
     --train-mode=whole \
     --train-dataset="${TASK}" \
@@ -107,7 +106,6 @@ for i in "${!TASKS[@]}"; do
     --save "${SAVE_PATH}" \
     --eval-datasets "${EVAL_DATASETS}" \
     --eval-interval 500 \
-    --max-evaluation-size 500 \
     --custom-finetune \
     --load "${PREV_CKPT}" \
     --start-iteration 0 \
@@ -117,4 +115,4 @@ for i in "${!TASKS[@]}"; do
   echo "[`date`] Done: ${TASK}"
 done
 
-echo "[`date`] All 10 tasks complete. Checkpoints in ${SAVE_PATH}/"
+echo "[`date`] All ${#TASKS[@]} tasks complete. Checkpoints in ${SAVE_PATH}/"

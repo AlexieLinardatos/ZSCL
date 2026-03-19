@@ -53,7 +53,7 @@ mkdir -p logs
 SAVE_PATH="ckpt/10task/replay_lora"
 mkdir -p "${SAVE_PATH}"
 
-EVAL_DATASETS="Aircraft,Caltech101,CIFAR10,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,ImageNet"
+EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,ImageNet"
 LORA_ARGS="--use_lora --lora_r 8 --lora_alpha 16 --lora_dropout 0.1"
 
 echo "[`date`] Starting 10-task ZSCL + Replay + LoRA"
@@ -74,12 +74,11 @@ srun python -m src.main \
   --save "${SAVE_PATH}" \
   --eval-datasets "${EVAL_DATASETS}" \
   --eval-interval 500 \
-  --max-evaluation-size 500 \
   $LORA_ARGS \
   --use_replay \
-  --replay_budget 2000 \
+  --replay_budget 5000 \
   --replay_batch_size 32 \
   --replay_loss_weight 0.75 \
-  --dataset_order Aircraft,Caltech101,CIFAR10,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet
+  --dataset_order Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars
 
 echo "[`date`] Done. Checkpoints in ${SAVE_PATH}/"
