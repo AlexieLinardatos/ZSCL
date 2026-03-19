@@ -1,0 +1,120 @@
+#!/bin/bash
+#SBATCH --job-name=10t_base_lora
+#SBATCH --time=20:00:00
+#SBATCH --mem=64GB
+#SBATCH --cpus-per-task=4
+#SBATCH --gres=gpu:h100:1
+#SBATCH --output=/scratch/alexie/logs/%x-%j.out
+#SBATCH --signal=USR1@60
+
+# 10-task Baseline: ZSCL, no replay, WITH LoRA
+# Ablation: shows LoRA contribution without replay
+
+set -euo pipefail
+mkdir -p /scratch/alexie/logs
+echo "[`date`] Host: $(hostname)"
+nvidia-smi
+
+module load cuda/12.6
+module load python/3.11.5
+
+ENV_DIR="$SLURM_TMPDIR/env"
+if python -c "import tkinter" >/dev/null 2>&1; then
+  python -m venv "$ENV_DIR"
+  source "$ENV_DIR/bin/activate"
+else
+  if module avail 2>&1 | egrep -qi "miniconda|anaconda"; then
+    if module avail 2>&1 | egrep -qi "miniconda"; then
+      module load miniconda3 || true
+    else
+      module load anaconda3 || true
+    fi
+  fi
+  if ! command -v conda >/dev/null 2>&1; then
+    echo "[`date`] ERROR: conda not available and tkinter missing."
+    exit 3
+  fi
+  CONDA_ENV_DIR="$SLURM_TMPDIR/conda-env"
+  conda create -y -p "$CONDA_ENV_DIR" python=3.11 tk pip
+  source "$(conda info --base)/etc/profile.d/conda.sh"
+  conda activate "$CONDA_ENV_DIR"
+fi
+
+which python; python -V; which pip
+pip install --upgrade pip
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+pip install tqdm ftfy regex wilds pandas
+pip install git+https://github.com/modestyachts/ImageNetV2_pytorch
+
+REPO_ROOT="$HOME/projects/def-fqureshi/alexie/ZSCL"
+cd "$REPO_ROOT/mtil"
+mkdir -p logs
+
+SAVE_PATH="ckpt/10task/baseline_lora"
+mkdir -p "${SAVE_PATH}"
+
+EVAL_DATASETS="Aircraft,Caltech101,CIFAR10,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,ImageNet"
+TASKS=(Aircraft Caltech101 CIFAR10 CIFAR100 DTD EuroSAT Flowers Food MNIST OxfordPet)
+LORA_ARGS="--use_lora --lora_r 8 --lora_alpha 16 --lora_dropout 0.1"
+
+# Zero-shot eval
+echo "[`date`] Zero-shot evaluation..."
+srun python -m src.main \
+  --train-mode=whole \
+  --train-dataset=Aircraft \
+  --lr=1e-5 \
+  --ls 0.2 \
+  --iterations 0 \
+  --method ZSCL \
+  --image_loss \
+  --text_loss \
+  --we \
+  --avg_freq 50 \
+  --l2 1 \
+  --ref-dataset ImageNet \
+  --ref-sentences conceptual_captions \
+  --save "${SAVE_PATH}" \
+  --eval-datasets "${EVAL_DATASETS}" \
+  --max-evaluation-size 500 \
+  $LORA_ARGS
+
+PREV_CKPT="${SAVE_PATH}/Aircraft.pth"
+
+for i in "${!TASKS[@]}"; do
+  TASK="${TASKS[$i]}"
+
+  if [ -f "${SAVE_PATH}/${TASK}.pth" ]; then
+    echo "[`date`] Skipping ${TASK} (checkpoint exists)"
+    PREV_CKPT="${SAVE_PATH}/${TASK}.pth"
+    continue
+  fi
+
+  echo "[`date`] Training task $((i+1))/10: ${TASK} (LoRA)"
+  srun python -m src.main \
+    --train-mode=whole \
+    --train-dataset="${TASK}" \
+    --lr=1e-5 \
+    --ls 0.2 \
+    --iterations 2000 \
+    --method ZSCL \
+    --image_loss \
+    --text_loss \
+    --we \
+    --avg_freq 50 \
+    --l2 1 \
+    --ref-dataset ImageNet \
+    --ref-sentences conceptual_captions \
+    --save "${SAVE_PATH}" \
+    --eval-datasets "${EVAL_DATASETS}" \
+    --eval-interval 500 \
+    --max-evaluation-size 500 \
+    --custom-finetune \
+    --load "${PREV_CKPT}" \
+    --start-iteration 0 \
+    $LORA_ARGS
+
+  PREV_CKPT="${SAVE_PATH}/${TASK}.pth"
+  echo "[`date`] Done: ${TASK}"
+done
+
+echo "[`date`] All 10 tasks complete. Checkpoints in ${SAVE_PATH}/"

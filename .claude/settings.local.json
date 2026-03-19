@@ -4,7 +4,9 @@
       "WebFetch(domain:arxiv.org)",
       "WebSearch",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:paperswithcode.com)"
     ]
   }
 }
