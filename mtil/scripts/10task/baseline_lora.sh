@@ -75,6 +75,7 @@ srun python -m src.main \
   --ref-sentences conceptual_captions \
   --save "${SAVE_PATH}" \
   --eval-datasets "${EVAL_DATASETS}" \
+  --eval-interval 500 \
   $LORA_ARGS
 
 PREV_CKPT="${SAVE_PATH}/Aircraft.pth"

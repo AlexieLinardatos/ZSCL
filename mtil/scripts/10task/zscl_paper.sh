@@ -82,7 +82,8 @@ srun python -m src.main \
   --ref-dataset ImageNet \
   --ref-sentences conceptual_captions \
   --save "${SAVE_PATH}" \
-  --eval-datasets "${EVAL_DATASETS}"
+  --eval-datasets "${EVAL_DATASETS}" \
+  --eval-interval 250
 
 PREV_CKPT="${SAVE_PATH}/Aircraft.pth"
 
