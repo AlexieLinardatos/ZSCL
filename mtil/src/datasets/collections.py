@@ -113,13 +113,28 @@ class Caltech101(ClassificationDataset):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = "caltech101"
-        dataset = datasets.Caltech101(
-            self.location, download=True, transform=self.preprocess
-        )
-        self.classnames = dataset.categories
+        # torchvision's Caltech101 download=True causes issues on compute nodes
+        # (tarball missing → re-download attempt fails → 0 images).
+        # Use ImageFolder directly instead.
+        root = os.path.join(self.location, "caltech101", "101_ObjectCategories")
+        full_dataset = datasets.ImageFolder(root, transform=self.preprocess)
+
+        # Remove BACKGROUND_Google to match torchvision's Caltech101 behaviour
+        bg_idx = full_dataset.class_to_idx.get("BACKGROUND_Google")
+        if bg_idx is not None:
+            new_samples = [
+                (path, label - (1 if label > bg_idx else 0))
+                for path, label in full_dataset.samples
+                if label != bg_idx
+            ]
+            full_dataset.samples = new_samples
+            full_dataset.targets = [s[1] for s in new_samples]
+            full_dataset.classes = [c for c in full_dataset.classes if c != "BACKGROUND_Google"]
+            full_dataset.class_to_idx = {c: i for i, c in enumerate(full_dataset.classes)}
+        dataset = full_dataset
 
         train_dataset, test_dataset = self.split_dataset(dataset)
-        
+
         self.train_dataset = train_dataset
         self.test_dataset = test_dataset
         self.build_dataloader()
@@ -535,11 +550,16 @@ class StanfordCars(ClassificationDataset):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = "stanford cars"
-        self.train_dataset = datasets.StanfordCars(
-            self.location, split="train", download=False, transform=self.preprocess
+        # torchvision's StanfordCars download is broken; load from ImageFolder
+        # structure created by scripts/save_stanford_cars.py:
+        #   {location}/StanfordCars/train/<class>/...
+        #   {location}/StanfordCars/test/<class>/...
+        root = os.path.join(self.location, "StanfordCars")
+        self.train_dataset = datasets.ImageFolder(
+            os.path.join(root, "train"), transform=self.preprocess
         )
-        self.test_dataset = datasets.StanfordCars(
-            self.location, split="test", download=False, transform=self.preprocess
+        self.test_dataset = datasets.ImageFolder(
+            os.path.join(root, "test"), transform=self.preprocess
         )
         self.build_dataloader()
         self.classnames = self.train_dataset.classes
