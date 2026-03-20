@@ -6,7 +6,8 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(ls:*)",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:paperswithcode.com)"
+      "WebFetch(domain:paperswithcode.com)",
+      "WebFetch(domain:docs.alliancecan.ca)"
     ]
   }
 }

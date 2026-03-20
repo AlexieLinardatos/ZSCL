@@ -111,6 +111,7 @@ for i in "${!TASKS[@]}"; do
     --eval-interval 500 \
     --custom-finetune \
     --load "${PREV_CKPT}" \
+    --ref-model "${PREV_CKPT}" \
     --start-iteration 0
 
   PREV_CKPT="${SAVE_PATH}/${TASK}.pth"
