@@ -3,7 +3,8 @@
 #SBATCH --time=12:00:00
 #SBATCH --mem=64GB
 #SBATCH --cpus-per-task=4
-#SBATCH --gres=gpu:h100:1
+#SBATCH --gres=gpu:a100:1
+#SBATCH --account=def-fqureshi
 #SBATCH --output=/scratch/alexie/logs/%x-%j.out
 #SBATCH --signal=USR1@60
 
