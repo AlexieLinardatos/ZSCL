@@ -17,7 +17,10 @@ from .collections import (
     OxfordPet,
     StanfordCars,
 )
-from .fmow import FMOW, FMOWID, FMOWOOD
+try:
+    from .fmow import FMOW, FMOWID, FMOWOOD
+except ImportError:
+    pass
 
 # ImageNet
 from .imagenet import ImageNet
@@ -28,14 +31,20 @@ from .imagenet_small import ImageNetSM
 from .imagenet_sub import ImageNetSUB
 from .imagenet_subclass import ImageNetSC
 from .imagenet_vid_robust import ImageNetVidRobust
-from .imagenetv2 import ImageNetV2
-from .iwildcam import (
-    IWildCam,
-    IWildCamID,
-    IWildCamIDNonEmpty,
-    IWildCamOOD,
-    IWildCamOODNonEmpty,
-)
+try:
+    from .imagenetv2 import ImageNetV2
+except ImportError:
+    pass
+try:
+    from .iwildcam import (
+        IWildCam,
+        IWildCamID,
+        IWildCamIDNonEmpty,
+        IWildCamOOD,
+        IWildCamOODNonEmpty,
+    )
+except ImportError:
+    pass
 from .joint import Joint
 
 # Random Noise

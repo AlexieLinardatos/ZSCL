@@ -44,8 +44,8 @@ fi
 which python; python -V; which pip
 pip install --upgrade pip
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-pip install tqdm ftfy regex wilds pandas
-pip install git+https://github.com/modestyachts/ImageNetV2_pytorch
+pip install tqdm ftfy regex pandas
+
 
 REPO_ROOT="$HOME/projects/def-fqureshi/alexie/ZSCL"
 cd "$REPO_ROOT/mtil"
