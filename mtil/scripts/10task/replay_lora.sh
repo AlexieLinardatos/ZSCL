@@ -43,8 +43,8 @@ fi
 
 which python; python -V; which pip
 pip install --upgrade pip
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-pip install tqdm ftfy regex pandas
+pip install --no-index torch torchvision
+pip install --no-index tqdm ftfy regex pandas
 
 
 REPO_ROOT="$HOME/projects/def-fqureshi/alexie/ZSCL"
