@@ -50,7 +50,7 @@ fi
 which python; python -V; which pip
 pip install --upgrade pip
 pip install --no-index torch torchvision
-pip install --no-index tqdm ftfy regex pandas
+pip install --no-index tqdm ftfy regex pandas scipy
 
 
 REPO_ROOT="$HOME/projects/def-fqureshi/alexie/ZSCL"
