@@ -16,7 +16,7 @@ mkdir -p /scratch/alexie/logs
 echo "[`date`] Host: $(hostname)"
 nvidia-smi
 
-module load cuda/12.6
+module load cuda/12.2
 module load python/3.11.5
 
 ENV_DIR="$SLURM_TMPDIR/env"
@@ -43,7 +43,7 @@ fi
 
 which python; python -V; which pip
 pip install --upgrade pip
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 pip install tqdm ftfy regex wilds pandas
 pip install git+https://github.com/modestyachts/ImageNetV2_pytorch
 
