@@ -17,7 +17,7 @@ from src.models.helpers import distillation
 
 
 def compute_replay_teacher_distill_loss(
-    model, ref_model, replay_images, ref_texts, logit_scale, args
+    model, ref_model, replay_images, ref_texts, logit_scale, args, ref_embeddings=None
 ):
     """
     Distillation loss between frozen teacher and student on replay images.
@@ -43,9 +43,10 @@ def compute_replay_teacher_distill_loss(
     use_text_loss = getattr(args, "text_loss", False)
 
     with torch.no_grad():
-        # Reference text embeddings (teacher, frozen)
-        ref_embeddings = ref_model(None, ref_texts)
-        ref_embeddings = ref_embeddings / ref_embeddings.norm(dim=-1, keepdim=True)
+        # Reference text embeddings (reuse cached if provided)
+        if ref_embeddings is None:
+            ref_embeddings = ref_model(None, ref_texts)
+            ref_embeddings = ref_embeddings / ref_embeddings.norm(dim=-1, keepdim=True)
 
         # Teacher image embeddings on replay batch (frozen)
         teacher_img = ref_model(replay_images, None)

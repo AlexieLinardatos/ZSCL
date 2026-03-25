@@ -545,12 +545,13 @@ def compute_ce_loss(model, images, texts, embeddings, logit_scale, labels, args)
     return loss, embeddings
 
 
-def compute_zscl_loss(model, ref_model, ref_images, ref_texts, logit_scale, args):
+def compute_zscl_loss(model, ref_model, ref_images, ref_texts, logit_scale, args, ref_embeddings=None):
     """Compute ZSCL distillation loss."""
     with torch.no_grad():
-        # Get reference text embeddings
-        ref_embeddings = ref_model(None, ref_texts)
-        ref_embeddings = ref_embeddings / ref_embeddings.norm(dim=-1, keepdim=True)
+        # Get reference text embeddings (reuse cached if provided)
+        if ref_embeddings is None:
+            ref_embeddings = ref_model(None, ref_texts)
+            ref_embeddings = ref_embeddings / ref_embeddings.norm(dim=-1, keepdim=True)
 
         # Get reference image embeddings
         ref_out = ref_model(ref_images, None)

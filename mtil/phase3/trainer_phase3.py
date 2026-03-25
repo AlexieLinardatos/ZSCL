@@ -328,6 +328,13 @@ def custom_finetune_phase3(args, replay_buffer=None):
             loss = loss + args.l2 * loss_l2
             loss_l2_val = loss_l2.item()
 
+        # ---- Pre-compute ref_embeddings once (reused by ZSCL + replay-teacher losses) ----
+        cached_ref_embeddings = None
+        if ref_model is not None and ref_texts is not None:
+            with torch.no_grad():
+                cached_ref_embeddings = ref_model(None, ref_texts)
+                cached_ref_embeddings = cached_ref_embeddings / cached_ref_embeddings.norm(dim=-1, keepdim=True)
+
         # ---- (3) Existing ZSCL public/reference distillation ----
         loss_zscl_val = 0.0
         if args.method == "ZSCL" and enable_existing_distill and ref_model is not None:
@@ -348,7 +355,8 @@ def custom_finetune_phase3(args, replay_buffer=None):
                 ref_images = ref_images.cuda()
 
             zscl_loss, loss_zscl_raw = compute_zscl_loss(
-                model, ref_model, ref_images, ref_texts, logit_scale, args
+                model, ref_model, ref_images, ref_texts, logit_scale, args,
+                ref_embeddings=cached_ref_embeddings
             )
             loss = loss + zscl_loss
             loss_zscl_val = loss_zscl_raw.item()
@@ -391,7 +399,8 @@ def custom_finetune_phase3(args, replay_buffer=None):
                     rtd_images = rtd_batch[0].cuda()
 
                 loss_rtd = compute_replay_teacher_distill_loss(
-                    model, ref_model, rtd_images, ref_texts, logit_scale, args
+                    model, ref_model, rtd_images, ref_texts, logit_scale, args,
+                    ref_embeddings=cached_ref_embeddings
                 )
                 loss = loss + lambda_rtd * loss_rtd
                 loss_rteacher_val = loss_rtd.item()
