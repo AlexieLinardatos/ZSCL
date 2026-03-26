@@ -6,6 +6,7 @@
 /mtil/src/models/__pycache__/
 /mtil/src/templates/__pycache__/
 /mtil/thesis_results/
+!/mtil/thesis_results/experiment_findings.md
 /myenv/
 /zscl_env/
 /mtil/src/ui/
