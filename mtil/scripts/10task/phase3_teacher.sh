@@ -47,6 +47,7 @@ pip install --no-index torch torchvision
 pip install --no-index tqdm ftfy regex pandas scipy
 
 export PYTORCH_ALLOC_CONF=expandable_segments:True
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 REPO_ROOT="$HOME/projects/def-fqureshi/alexie/ZSCL"
 cd "$REPO_ROOT/mtil"
