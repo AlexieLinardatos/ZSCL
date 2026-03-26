@@ -80,7 +80,7 @@ srun python -m phase3.train_phase3 \
   $LORA_ARGS \
   --use_replay \
   --replay_budget 5000 \
-  --replay_batch_size 32 \
+  --replay_batch_size 16 \
   --replay_loss_weight 0.75 \
   --dataset_order Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars \
   --lambda_replay_teacher_distill 0.5
