@@ -22,6 +22,7 @@ All five terms are logged separately every loss_interval steps.
 import copy
 import csv
 import os
+import wandb
 import signal
 import sys
 from dataclasses import dataclass, field
@@ -276,6 +277,26 @@ def custom_finetune_phase3(args, replay_buffer=None):
         )
 
     # ------------------------------------------------------------------ #
+    # wandb run                                                           #
+    # ------------------------------------------------------------------ #
+    wandb.init(
+        project="zscl-mtil",
+        name=f"{args.train_dataset}_lam{lambda_rtd}_r{getattr(args, 'lora_r', 'nolora')}",
+        config={
+            "task": args.train_dataset,
+            "lambda_rtd": lambda_rtd,
+            "lora_r": getattr(args, "lora_r", None),
+            "use_lora": getattr(args, "use_lora", False),
+            "replay_budget": getattr(args, "replay_budget", 0),
+            "replay_loss_weight": replay_loss_weight,
+            "lr": args.lr,
+            "iterations": total_iterations,
+        },
+        dir=args.save,
+        mode=os.getenv("WANDB_MODE", "offline"),
+    )
+
+    # ------------------------------------------------------------------ #
     # Loss tracking for logging                                           #
     # ------------------------------------------------------------------ #
     prev_ce = prev_l2 = prev_zscl = prev_rsup = prev_rteacher = 0.0
@@ -319,6 +340,13 @@ def custom_finetune_phase3(args, replay_buffer=None):
                     iteration
                 )
             torch.cuda.empty_cache()
+            for ds in (args.eval_datasets or "").split(","):
+                csv_path = os.path.join(args.save, f"metrics_{ds}.csv")
+                if os.path.exists(csv_path):
+                    with open(csv_path, newline="") as _f:
+                        _rows = list(csv.DictReader(_f))
+                    if _rows:
+                        wandb.log({f"eval/{ds}_top1": float(_rows[-1]["top1"])}, step=iteration)
 
         # Reset data iterator at epoch boundary
         if iteration % num_batches == 0:
@@ -453,6 +481,15 @@ def custom_finetune_phase3(args, replay_buffer=None):
                 buf_size,
             ])
             _loss_csv_file.flush()
+            wandb.log({
+                "loss/total": total_val,
+                "loss/ce": loss_ce_val,
+                "loss/l2": loss_l2_val,
+                "loss/zscl": loss_zscl_val,
+                "loss/replay_sup": loss_rsup_val,
+                "loss/replay_teacher": loss_rteacher_val,
+                "replay_buffer_size": buf_size,
+            }, step=iteration)
             prev_ce = loss_ce_val
             prev_l2 = loss_l2_val
             prev_zscl = loss_zscl_val
@@ -483,4 +520,5 @@ def custom_finetune_phase3(args, replay_buffer=None):
         torch.save(basis_per_layer, basis_path)
         print(f"[Phase3] Saved gradient basis to {basis_path}")
 
+    wandb.finish()
     save_final_model(args, model, we_model, _p3_state.iteration)

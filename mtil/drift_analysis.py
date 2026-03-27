@@ -45,22 +45,22 @@ TASK_ORDER = ["DTD", "MNIST", "EuroSAT", "Flowers"]
 # All three conditions use LoRA (detected automatically).
 CONDITIONS = {
     "ZSCL only (no replay)": [
-        "phase2.1/baseline/DTD_trained/DTD.pth",
-        "phase2.1/baseline/DTD_trained/MNIST_trained/MNIST.pth",
-        "phase2.1/baseline/DTD_trained/MNIST_trained/EuroSAT_trained/EuroSAT.pth",
-        "phase2.1/baseline/DTD_trained/MNIST_trained/EuroSAT_trained/Flowers_trained/Flowers.pth",
+        "4task/phase2.1/baseline/DTD_trained/DTD.pth",
+        "4task/phase2.1/baseline/DTD_trained/MNIST_trained/MNIST.pth",
+        "4task/phase2.1/baseline/DTD_trained/MNIST_trained/EuroSAT_trained/EuroSAT.pth",
+        "4task/phase2.1/baseline/DTD_trained/MNIST_trained/EuroSAT_trained/Flowers_trained/Flowers.pth",
     ],
     "CE replay (no teacher distill)": [
-        "phase2.1/replay/DTD.pth",
-        "phase2.1/replay/MNIST.pth",
-        "phase2.1/replay/EuroSAT.pth",
-        "phase2.1/replay/Flowers.pth",
+        "4task/phase2.1/replay/DTD.pth",
+        "4task/phase2.1/replay/MNIST.pth",
+        "4task/phase2.1/replay/EuroSAT.pth",
+        "4task/phase2.1/replay/Flowers.pth",
     ],
     "Phase 3: replay + teacher distill": [
-        "phase3.1/replay_teacher/DTD.pth",
-        "phase3.1/replay_teacher/MNIST.pth",
-        "phase3.1/replay_teacher/EuroSAT.pth",
-        "phase3.1/replay_teacher/Flowers.pth",
+        "4task/phase3.1/replay_teacher/DTD.pth",
+        "4task/phase3.1/replay_teacher/MNIST.pth",
+        "4task/phase3.1/replay_teacher/EuroSAT.pth",
+        "4task/phase3.1/replay_teacher/Flowers.pth",
     ],
 }
 

@@ -555,9 +555,9 @@ Output: `drift_analysis.png` (plot), `drift_analysis.json` (raw numbers).
 
 | Condition | Checkpoints used | Architecture |
 |---|---|---|
-| ZSCL only (no replay) | `phase2.1/baseline/` (nested paths) | LoRA |
-| CE replay (no teacher distill) | `phase2.1/replay/` (flat paths) | LoRA |
-| Phase 3: replay + teacher distill | `phase3.1/replay_teacher/` (flat paths) | LoRA |
+| ZSCL only (no replay) | `4task/phase2.1/baseline/` (nested paths) | LoRA |
+| CE replay (no teacher distill) | `4task/phase2.1/replay/` (flat paths) | LoRA |
+| Phase 3: replay + teacher distill | `4task/phase3.1/replay_teacher/` (flat paths) | LoRA |
 
 All three use LoRA (auto-detected from checkpoint). Zero-shot point (drift = 0) is prepended as the baseline.
 
