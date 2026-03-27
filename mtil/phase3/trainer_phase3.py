@@ -20,6 +20,7 @@ All five terms are logged separately every loss_interval steps.
 """
 
 import copy
+import csv
 import os
 import signal
 import sys
@@ -281,6 +282,19 @@ def custom_finetune_phase3(args, replay_buffer=None):
     data_iter = None
 
     # ------------------------------------------------------------------ #
+    # CSV loss log (one row per loss_interval iteration)                  #
+    # ------------------------------------------------------------------ #
+    loss_csv_path = os.path.join(args.save, f"losses_{args.train_dataset}.csv")
+    os.makedirs(args.save, exist_ok=True)
+    _loss_csv_file = open(loss_csv_path, "w", newline="")
+    _loss_csv_writer = csv.writer(_loss_csv_file)
+    _loss_csv_writer.writerow([
+        "iteration", "total", "ce", "l2", "zscl",
+        "replay_sup", "replay_teacher", "buf_size",
+    ])
+    print(f"[Phase3] Loss CSV → {loss_csv_path}")
+
+    # ------------------------------------------------------------------ #
     # Main training loop                                                  #
     # ------------------------------------------------------------------ #
     for iteration in tqdm(range(model_iter_count, total_iterations + 1)):
@@ -421,9 +435,10 @@ def custom_finetune_phase3(args, replay_buffer=None):
         # ---- Logging ----
         if iteration % loss_interval == 0:
             buf_size = len(replay_buffer) if replay_buffer is not None else 0
+            total_val = loss.item()
             print(
                 f"[Phase3] iter={iteration:>6d}  "
-                f"total={loss.item():.4f}  "
+                f"total={total_val:.4f}  "
                 f"ce={loss_ce_val:.4f}  "
                 f"l2={loss_l2_val:.4f}  "
                 f"zscl={loss_zscl_val:.4f}  "
@@ -431,6 +446,13 @@ def custom_finetune_phase3(args, replay_buffer=None):
                 f"replay_teacher={loss_rteacher_val:.4f}  "
                 f"buf={buf_size}"
             )
+            _loss_csv_writer.writerow([
+                iteration, f"{total_val:.6f}", f"{loss_ce_val:.6f}",
+                f"{loss_l2_val:.6f}", f"{loss_zscl_val:.6f}",
+                f"{loss_rsup_val:.6f}", f"{loss_rteacher_val:.6f}",
+                buf_size,
+            ])
+            _loss_csv_file.flush()
             prev_ce = loss_ce_val
             prev_l2 = loss_l2_val
             prev_zscl = loss_zscl_val
@@ -440,6 +462,9 @@ def custom_finetune_phase3(args, replay_buffer=None):
     # ------------------------------------------------------------------ #
     # Post-training                                                       #
     # ------------------------------------------------------------------ #
+    _loss_csv_file.close()
+    print(f"[Phase3] Loss log saved to {loss_csv_path}")
+
     apply_wise_merge(args, model)
 
     if args.orthogonal_gradients:

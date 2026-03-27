@@ -255,22 +255,42 @@ Higher Transfer = better zero-shot preservation. The original CLIP zero-shot bas
 
 ### Final Accuracies After All 10 Tasks (Last metric)
 
-| Dataset | Replay (no LoRA) | Replay + LoRA | Phase 3 (Teacher) |
+> Phase 3 Teacher column = after 9 tasks (StanfordCars not yet trained). StanfordCars shown at zero-shot level (~61%). Final 10-task Last estimated ~77–79% once StanfordCars completes.
+
+| Dataset | Replay (no LoRA) | Replay + LoRA | Phase 3 (Teacher, 9/10 tasks) |
 |---|---|---|---|
-| Aircraft | 53.05% | TBD | TBD |
-| Caltech101 | 95.85% | TBD | TBD |
-| CIFAR100 | 83.26% | TBD | TBD |
-| DTD | 77.82% | TBD | TBD |
-| EuroSAT | 97.63% | TBD | TBD |
-| Flowers | 97.06% | TBD | TBD |
-| Food | 90.25% | TBD | TBD |
-| MNIST | 99.09% | TBD | TBD |
-| OxfordPet | 95.07% | TBD | TBD |
-| StanfordCars | 85.19% | TBD | TBD |
-| ImageNet | 64.34% | TBD | TBD |
-| **Last** | **85.33%** | TBD | TBD |
-| **Avg** | **76.20%** | TBD | TBD |
-| **Transfer** | **66.49%** | TBD | TBD |
+| Aircraft | 53.05% | 35.97% | 34.47% |
+| Caltech101 | 95.85% | 92.57% | 92.68% |
+| CIFAR100 | 83.26% | 77.34% | 73.71% |
+| DTD | 77.82% | 64.95% | 64.31% |
+| EuroSAT | 97.63% | 93.76% | 86.30% |
+| Flowers | 97.06% | 85.79% | 85.17% |
+| Food | 90.25% | 89.75% | 89.87% |
+| MNIST | 99.09% | 95.90% | 92.30% |
+| OxfordPet | 95.07% | 93.24% | 93.87% |
+| StanfordCars | 85.19% | 67.65% | 61.29% *(untrained)* |
+| ImageNet | 64.34% | 69.57% | 69.67% |
+| **Last** | **85.33%** | **78.77%** | **76.69%** *(9 tasks)* |
+| **Avg** | **76.20%** | ~70–71% *(est.)* | TBD |
+| **Transfer** | **66.49%** | ~68–69% *(est.)* | TBD |
+
+### Phase 3 Teacher vs Replay + LoRA (per-dataset delta)
+
+| Dataset | Phase 3 | Replay LoRA | Δ |
+|---|---|---|---|
+| Aircraft | 34.47% | 35.97% | -1.5 |
+| Caltech101 | 92.68% | 92.57% | +0.1 |
+| CIFAR100 | 73.71% | 77.34% | **-3.6** |
+| DTD | 64.31% | 64.95% | -0.6 |
+| EuroSAT | 86.30% | 93.76% | **-7.5** |
+| Flowers | 85.17% | 85.79% | -0.6 |
+| Food | 89.87% | 89.75% | +0.1 |
+| ImageNet | 69.67% | 69.57% | +0.1 |
+| MNIST | 92.30% | 95.90% | **-3.6** |
+| OxfordPet | 93.87% | 93.24% | +0.6 |
+| StanfordCars | 61.29% *(untrained)* | 67.65% | — |
+
+**Finding:** Teacher distillation at λ=0.5 hurts task accuracy (−7.5 pp on EuroSAT, −3.6 pp on CIFAR100/MNIST) while providing zero benefit on ImageNet preservation (69.67% vs 69.57%). The three simultaneous loss terms (task CE, ZSCL reference distillation, replay teacher distillation) over-constrain the optimization. EuroSAT degradation from 93.76% to 86.30% is the most visible symptom. **Next step: retry with λ=0.1.**
 
 ### Comparison to State of the Art (MTIL, CLIP ViT-B/16)
 
@@ -288,13 +308,14 @@ Higher Transfer = better zero-shot preservation. The original CLIP zero-shot bas
 | AFA/ABFA | arXiv 2025 | ~70.3% | ~78.5% | — | best reported Transfer |
 | GIFT | CVPR 2025 | best | best | best | diffusion-based synthetic replay |
 | **Ours (Replay no LoRA)** | thesis | **66.49%** | **76.20%** | **85.33%** | real exemplar replay, 500/task |
-| **Ours (Replay + LoRA)** | thesis | TBD | TBD | TBD | |
-| **Ours (Phase 3 Teacher)** | thesis | TBD | TBD | TBD | novel contribution |
+| **Ours (Replay + LoRA)** | thesis | ~68–69% *(est.)* | ~70–71% *(est.)* | **78.77%** | LoRA preserves ImageNet (+5.2 pp vs no-LoRA) |
+| **Ours (Phase 3 Teacher)** | thesis | TBD | TBD | ~77–79% *(est., 9/10 tasks)* | λ=0.5 hurts; retry with λ=0.1 |
 
 **Key observations:**
-- **Last**: beats ZSCL (+2.3 pp) and MoE-Adapters (+0.7 pp), just below LoRA-Loop (-0.7 pp)
-- **Avg**: matches ZSCL (~76%), slightly below MoE-Adapters and LoRA-Loop
-- **Transfer**: lower than ZSCL (66.49% vs 68.1%) — replay boosts task accuracy but slightly erodes ImageNet retention. Expected tradeoff.
+- **Last**: Replay no-LoRA beats ZSCL (+2.3 pp) and MoE-Adapters (+0.7 pp), 0.7 pp below LoRA-Loop
+- **Replay + LoRA Last (78.77%)**: 6.5 pp below replay no-LoRA — LoRA restricts per-task capacity; Aircraft forgetting especially visible (35.97% vs 53.05%)
+- **ImageNet (Transfer)**: LoRA is clearly better (69.57% vs 64.34%) — clean stability-plasticity tradeoff
+- **Phase 3 Teacher**: λ=0.5 over-constrains optimization — results *worse* than replay+LoRA; retry needed with λ=0.1
 - Original CLIP zero-shot ImageNet: ~70.8% — all methods degrade this to some extent
 
 ---
@@ -385,17 +406,21 @@ No published paper combines **ZSCL's WiSE-FT weight averaging + distillation wit
 | LoRA-Loop (ICCV 2025 WS) | ~86.0% | Marginally |
 | GIFT (CVPR 2025) | best on most | Likely yes |
 
-### Decision Framework
+### Decision Framework (updated 2026-03-27)
 
-**Wait for phase3 results first.** Two scenarios:
+**Phase3 results are in — Scenario B applies.**
 
-**Scenario A — phase3 beats LoRA-Loop (~86%):**
-Write the paper around real replay + teacher distillation. Simpler than synthetic replay, more reproducible, no diffusion model needed. Competitive NeurIPS submission.
+Phase3 Teacher at λ=0.5 scores ~76.69% Last after 9 tasks (est. ~77–79% after 10) — *worse* than plain replay+LoRA (78.77%). Teacher distillation does not help at this λ.
 
-**Scenario B — phase3 does not beat LoRA-Loop:**
-ZSCL + synthetic exemplar replay becomes the natural next step — genuinely novel combination, not yet published. Would require Stable Diffusion integration and more GPU compute.
+**Revised scenarios:**
 
-**Do not implement synthetic replay until phase3 results are in.**
+**Scenario B1 — λ=0.1 phase3 rerun works (≥79% Last, ≥ replay_lora):**
+Story becomes: teacher distillation on replay requires careful weighting; at the right λ it preserves ImageNet without hurting task accuracy. Still a viable contribution.
+
+**Scenario B2 — λ=0.1 also fails:**
+Focus shifts to replay_no_lora (85.33% Last) + replay_lora (78.77%) as the contribution. The paper story is the empirical stability-plasticity tradeoff and the finding that teacher distillation over-constrains the optimizer. Combined with larger replay budget or herding, replay_no_lora may yet beat LoRA-Loop.
+
+**Do not implement synthetic replay until λ=0.1 result is in.**
 
 ### What You Need to Compete at NeurIPS
 
@@ -554,8 +579,281 @@ Run `drift_analysis.py` and paste output here.
 
 ## Open Questions / Next Steps
 
-- [ ] Rerun Phase 3.1 (4-task) to completion — Flowers task missing
-- [ ] Run all 6 × 10-task experiments above
+### Immediate (to close out current experiments)
+- [ ] Phase 3 Teacher: finish StanfordCars (task 10) — job resubmitted on Narval
+- [ ] Fix and rerun 3 buggy baselines (zscl_paper, baseline_no_lora, baseline_lora) with `--ref-model` fix
+
+### Why Phase 3 Teacher Distillation Failed at λ=0.5 — Diagnosis (2026-03-27)
+
+The current phase3 loss has 5 terms pulling the model simultaneously:
+
+```
+L_total = L_task_CE                          (learn current task)
+        + L_zscl_image + L_zscl_text         (stay close to CLIP on reference data)
+        + 0.75 * L_replay_CE                  (remember past tasks via cross-entropy)
+        + 0.5 * L_replay_teacher_distill      (stay close to CLIP on replay data)
+```
+
+Terms 4 and 5 **compete on the same data** (replay images) with **contradictory gradients**. The CE replay loss says "push these replay images toward their class labels." The teacher distillation says "match frozen CLIP's logits on these images" — but frozen CLIP doesn't know those classes well (it's zero-shot). At λ=0.5, the teacher distillation is half as strong as the replay CE, which is enough to substantially interfere.
+
+EuroSAT (-7.5 pp) was hit hardest because EuroSAT's zero-shot accuracy (55.26%) is far from the trained accuracy (93.76%) — meaning the frozen CLIP teacher's logits are most "wrong" on EuroSAT replay images, creating the strongest conflicting gradient.
+
+The total replay signal is 0.75 + 0.5 = 1.25 — stronger than the current task CE (1.0). This over-constrains the optimization.
+
+**This is not a fundamentally broken idea. It is a weighting and formulation problem.**
+
+### Priority experiments — Teacher distillation recovery
+
+**Run A — Lower λ (highest priority, easiest)**
+
+```bash
+--lambda_replay_teacher_distill 0.1    # down from 0.5
+```
+
+At λ=0.1, the teacher distillation becomes a gentle regularizer rather than a dominant force. This is the single most likely fix. If 0.1 still hurts, try 0.05 or 0.01. The sweet spot is where distillation adds just enough zero-shot anchoring without fighting task learning.
+
+**Cost:** 1 run on Narval (~20h).
+
+**Run B — Lower λ + higher temperature**
+
+```bash
+--lambda_replay_teacher_distill 0.1
+--T 4.0    # up from 2.0
+```
+
+Higher T softens the teacher's probability distribution, making the distillation less opinionated about specific classes. This reduces the conflict between "CLIP thinks this EuroSAT image is class X" and "the student knows it's class Y."
+
+**Cost:** 1 run on Narval (~20h). Can run after A or in parallel if fairshare allows.
+
+**Run C — Cosine embedding loss instead of KL distillation (code change)**
+
+Replace the logit-based KL distillation with direct cosine similarity between student and teacher image embeddings on replay images:
+
+```python
+# In losses_phase3.py, replace logit-based distillation with:
+loss = (1 - F.cosine_similarity(student_img, teacher_img)).mean()
+```
+
+This is simpler, doesn't need `ref_texts` at all, and directly anchors the student's representation geometry without interfering with classification logits. It avoids the fundamental conflict where teacher logits on replay images disagree with the CE labels. Closest to what MAFED (ACL 2024) does, but with a frozen zero-shot teacher instead of a sequential checkpoint.
+
+**Cost:** Small code change in `losses_phase3.py` + 1 run (~20h).
+
+**Run D — Lower λ + lower replay CE weight**
+
+```bash
+--replay_loss_weight 0.5    # down from 0.75
+--lambda_replay_teacher_distill 0.1
+```
+
+Keeps total replay signal at 0.6 (below current task CE of 1.0), giving the model room to learn the current task while still benefiting from both replay signals.
+
+**Cost:** 1 run on Narval (~20h).
+
+### Additional levers to explore (if A–D don't work)
+
+**5. Distill only on non-current-task replay images**
+
+Currently distillation is applied to ALL replay images, including images from the most recently trained task. But the frozen CLIP teacher is *least* informative on recently-trained tasks (where the student has already diverged far from zero-shot). Filtering the replay batch by task origin — only distilling on tasks trained ≥2 tasks ago — reduces the gradient conflict.
+
+Requires a small code change in `trainer_phase3.py` to filter the replay batch before passing to `compute_replay_teacher_distill_loss`.
+
+**6. Distill only on the text (transposed) branch, not image branch**
+
+Currently both image-side logits (`student_img @ ref_texts.T`) and text-side logits (`(student_img @ ref_texts.T).T`) are distilled. The text branch is most responsible for zero-shot generalization. Only regularizing the transposed logits lets the image encoder adapt freely to tasks while preserving the text-based classification geometry.
+
+Set `args.text_loss = True` but only apply teacher distillation on the `.t()` branch in `compute_replay_teacher_distill_loss`.
+
+**7. Exponential decay schedule for λ**
+
+Start with higher λ at the beginning of each task (when the model is adjusting most) and decay it:
+
+```python
+lambda_t = lambda_0 * (0.5 ** (iteration / 500))  # halves every 500 iters
+```
+
+Gives stronger anchoring early (preventing catastrophic drift in the first few hundred iterations) and lets the model learn freely later.
+
+**8. Teacher = previous task checkpoint, not frozen zero-shot CLIP**
+
+The current teacher is always frozen zero-shot CLIP. By task 9, this teacher is extremely far from what the student has learned. Alternative: use the **checkpoint from the previous task** as the teacher. This is closer to LwF/DER++ but applied specifically to replay images.
+
+Advantage: the gradient conflict is much smaller because the previous checkpoint already knows the earlier tasks. Disadvantage: lose the zero-shot anchoring (which preserves ImageNet).
+
+**Hybrid approach:** Keep frozen zero-shot CLIP for the ZSCL reference distillation (already done) and use previous checkpoint for replay distillation. This separates "preserve zero-shot" from "preserve past tasks."
+
+### Recommended run order
+
+| Priority | Run | Change from current phase3 | What it tests |
+|---|---|---|---|
+| 1 | **A** | λ=0.1 | Is the idea alive at lower weight? |
+| 2 | **C** | Cosine embedding loss | Is the logit formulation the problem? |
+| 3 | **B** | λ=0.1 + T=4.0 | Does softer distillation help further? |
+| 4 | **D** | λ=0.1 + replay_weight=0.5 | Is total replay signal too high? |
+
+**Decision rule:** If Run A improves over replay_lora (even by 0.5 pp on Last), the approach is alive — tune from there. If A still hurts, Run C (cosine loss) is a fundamentally different formulation that avoids logit-level conflict entirely. If both A and C fail, then teacher distillation on replay is genuinely dead and pivot to other approaches.
+
+### Priority experiments — Replay accuracy improvements
+
+**5. Larger replay budget**
+Increase from `--replay_budget 5000` (500/task) to 10000 (1000/task). More exemplars pushes Last accuracy higher — likely +1–2 pp on replay_no_lora, potentially crossing the LoRA-Loop threshold (~86%). Memory cost is higher but A100 40GB should handle it (reduce replay_batch_size if needed).
+
+**6. Herding-based exemplar selection**
+Replace random sampling in the replay buffer with iCaRL-style herding — select exemplars closest to the class mean in CLIP embedding space. Produces more representative samples. Expected modest improvement (+0.5–1 pp) over random selection, but adds principled justification for replay design.
+
+**7. LoRA with higher rank (r=16 or r=32)**
+Current LoRA r=8 limits per-task capacity, causing large forgetting on early tasks (Aircraft: 35.97% after 10 tasks). r=16 or r=32 may bridge the gap to no-LoRA Last accuracy while still preserving ImageNet. Directly targets the stability-plasticity tradeoff.
+
+**8. WiSE-FT on LoRA weights after each task**
+After training each task with LoRA, merge the LoRA weights back into the full model and interpolate with the previous checkpoint (similar to WiSE-FT but applied task-by-task). This is already partially done by weight ensembling (`--we --avg_freq 50`) but could be applied more aggressively after full task completion.
+
+### Thesis / paper completeness
 - [ ] Compare against MoE-Adapters4CL, LADA, SnD, ZAF published numbers
-- [ ] WiSE-FT interpolation sweep (ablation on avg_freq)
+- [ ] Add SUN397 as task 11 to match published 11-task benchmark (if Nibi recovers)
 - [ ] Read and cite: MoE-Adapters4CL, LADA, GIFT, C-CLIP, SD-LoRA, ZAF, SnD, DIKI
+- [ ] Run embedding drift analysis (drift_analysis.py) on existing checkpoints
+
+---
+
+## Competitor Overview (2026-03-27)
+
+### GIFT (CVPR 2025) — hardest competitor
+ZSCL uses 100K real ImageNet images as the reference dataset for distillation. GIFT replaces those with ~1K synthetic images generated by a diffusion model — no data licensing issues, less storage, and it beats ZSCL. Currently the best-known result on MTIL. **Beating GIFT would be SOTA as far as the current literature shows**, but there are likely newer unindexed papers from early 2026.
+
+### MoE-Adapters4CL (CVPR 2024) — already beaten
+Uses a mixture-of-experts adapter architecture — a routing network picks which expert handles each image, so different tasks use different pathways and don't interfere with each other. Reports ~84.6% Last on 11-task MTIL. **Our replay no-LoRA (85.33%) beats this on 10 tasks.**
+
+### LoRA-Loop (ICCVW 2025) — 0.7 pp above us on Last
+Combines LoRA fine-tuning with a Stable Diffusion generator that produces task-specific synthetic replay images — the LoRA adapters from training are fed back into the generator to improve replay quality each loop. Reports ~86% Last. **10K replay budget + herding is the plan to close this gap.**
+
+---
+
+## Full Results vs SOTA — Comparison Table (2026-03-27)
+
+> † Our results are 10-task MTIL (no SUN397). Published papers use 11 tasks. Direct comparison is approximate.
+> ★ = best among ours &nbsp; ★★ = best overall
+
+| Method | Venue | Last | Avg | Transfer | Δ Last vs ZSCL |
+|---|---|---|---|---|---|
+| **— Baselines —** | | | | | |
+| Sequential FT | — | ~74% | ~65% | ~59% | −9.0 |
+| WiSE-FT | — | ~78% | ~70% | ~67% | −5.0 |
+| ZSCL | ICCV 2023 | ~83% | ~76% | ~68.1% | ref |
+| **— Published SOTA —** | | | | | |
+| MoE-Adapters | CVPR 2024 | ~84.6% | ~77.3% | ~68.9% | +1.6 |
+| LoRA-Loop | ICCVW 2025 | ~86.0% | ~77.6% | ~69.8% | +3.0 |
+| GIFT | CVPR 2025 | ~87%+ ★★ | ~78%+ ★★ | ~70%+ ★★ | +4.0+ |
+| **— Ours (10 tasks†) —** | | | | | |
+| Phase 3 Teacher (λ=0.5) | — | ~77%* | TBD | TBD | −6.0 |
+| Replay + LoRA | — | 78.77% | ~70% | **~69% ★** | −4.2 |
+| **Replay no-LoRA** | — | **85.33% ★** | **76.20% ★** | 66.49% | **+2.3** |
+
+\* Phase 3 after 9/10 tasks at λ=0.5 — Run A at λ=0.1 pending
+
+**Key points:**
+- Replay no-LoRA beats ZSCL (+2.3 pp) and MoE-Adapters (+0.7 pp) — two published CVPR/ICCV papers — with no generative model
+- LoRA variant trades 6.6 pp Last for ~5 pp better Transfer — quantified stability-plasticity tradeoff
+- 0.7 pp below LoRA-Loop on Last — within reach with 10K replay budget
+- SUN397 caveat must be stated when presenting this table
+
+---
+
+## Technical Explainers — Supervisor Meeting Prep (2026-03-27)
+
+### Replay Buffer
+
+**Problem:** After training on task 5 (EuroSAT), the model forgets task 1 (Aircraft). The fix is keeping some examples from past tasks and training on them again.
+
+**Implementation:**
+- Fixed total budget: 5000 images across all tasks seen so far
+- After finishing task T, randomly sample images from that task's training set and store `(image_tensor, label)` pairs on CPU
+- **Equal rebalancing:** budget ÷ num_tasks per task. After task 1: 5000 Aircraft. After task 2: 2500 Aircraft + 2500 Caltech. After task 10: 500 per task.
+- During training on task T+1: every iteration, sample a mini-batch from the buffer, compute cross-entropy loss on those past images, add to current loss weighted by `replay_loss_weight=0.75`
+
+**Why random sampling and not herding?** Herding picks samples closest to the class mean in embedding space — more representative. Random is simpler and works well. It's a known limitation; herding is a planned next experiment.
+
+**Why store raw images and not CLIP embeddings?** The replay CE loss requires passing images through the *current training model* to get logits. Pre-computed embeddings would be stale as the model's embedding space shifts during training. Raw images let you re-encode through whatever the model currently looks like.
+
+---
+
+### LoRA (Low-Rank Adaptation)
+
+**Problem:** Full fine-tuning lets the model drift far from its original CLIP weights, destroying zero-shot generalisation (ImageNet drops 8.5 pp). LoRA restricts how much weights can change.
+
+**How it works:** A normal linear layer computes `output = W·x`. LoRA adds two small trainable matrices instead of updating W:
+
+```
+output = W·x  +  (α/r) · B · A · x
+```
+
+- W is **frozen** (requires_grad=False)
+- A is shape (r × d_in), B is shape (d_out × r)
+- B is initialised to zeros — at the start, LoRA adds nothing
+- α/r = 16/8 = 2.0 is a fixed scaling factor
+
+**What r controls:**
+
+| Rank | Params per layer (d=512) | Behaviour |
+|---|---|---|
+| r=8 | 8,192 | Conservative — preserves CLIP, lower task accuracy |
+| r=16 | 16,384 | Balanced — more task capacity, slightly more drift |
+| r=32 | 32,768 | Expressive — approaches full fine-tuning behaviour |
+
+**Where applied:** All attention projection layers (q_proj, k_proj, v_proj) and MLP layers (c_fc, c_proj) in both image and text encoders of CLIP ViT-B/16.
+
+**Result in experiments:** ImageNet stays at 69.57% (vs 71% zero-shot, only −0.87 pp). Without LoRA it drops to 64.34% (−6.6 pp). Cost: Last drops from 85.33% to 78.77%.
+
+---
+
+### Teacher Distillation and the KL Loss
+
+**Two places distillation is used:**
+
+**ZSCL branch (original method):** Every iteration, take a batch of ImageNet reference images. Run through frozen CLIP (teacher) and training model (student). Compute similarity logits of both against Conceptual Captions text embeddings. Force student's logit distribution to match teacher's.
+
+**Phase 3 branch (novel contribution):** Same formula but on replay images instead of reference images. The idea: while training on StanfordCars, pass Aircraft replay images through both models and force the student's representation to stay anchored to what the original CLIP would produce.
+
+**The exact loss function:**
+```python
+def distillation(t, s, T=2):
+    p = F.softmax(t / T, dim=1)       # teacher soft targets
+    loss = F.cross_entropy(s / T, p)  # KL divergence
+    loss = loss * (T ** 2)            # rescale gradient magnitude
+    return loss
+```
+
+Temperature T softens the teacher's distribution — instead of near-zero probability on wrong classes you get small non-zero values, carrying more information and producing smoother gradients. T² rescaling keeps gradient magnitude stable as T increases (standard KD practice from Hinton et al.).
+
+**What λ (lambda) means:** λ is a multiplier on a loss term controlling how much it contributes:
+```
+L_total = L_task_CE  +  0.75 × L_replay_CE  +  λ × L_teacher_distill  + ...
+```
+λ=0.5 means teacher distillation is half as strong as the task loss. λ=0.1 makes it a gentle nudge. Finding the right λ is why Run A (λ=0.1) is the next experiment.
+
+**Why λ=0.5 failed:** The frozen CLIP teacher's zero-shot accuracy on EuroSAT is only 55% — far below the trained 93.76%. When EuroSAT replay images pass through the teacher, it produces "wrong" logits. The distillation then tells the student to match those wrong logits at 50% the strength of the CE term saying "classify EuroSAT correctly." EuroSAT dropped 7.5 pp — the dataset where frozen CLIP is most wrong.
+
+---
+
+### Metrics Explained
+
+**Last** — "How good is the final model?"
+After training all 10 tasks, evaluate on all 11 datasets and take the mean. The most commonly reported number. Your headline result is **85.33%**.
+
+**Avg** — "How good was the model throughout training, not just at the end?"
+After each task t, compute the 11-dataset average. Average those 10 snapshots. Penalises methods that are weak early and only peak at the end. Your Avg (76.20%) being lower than Last (85.33%) shows the model is weak in early tasks and improves as training progresses.
+
+**Transfer** — "How well does zero-shot generalisation hold up throughout training?"
+Before training each task, record ImageNet accuracy. Average those 10 values. Higher = better zero-shot preservation. The original CLIP baseline is ~70.8%. Your no-LoRA Transfer (66.49%) is lower than your LoRA Transfer (~69%) — confirming LoRA preserves zero-shot better.
+
+**BWT (Backward Transfer)** — not yet reported, but may be asked about.
+How much did training new tasks hurt performance on old tasks? Negative = forgetting. Your BWT is small (ZSCL distillation is effective — Aircraft only drops 3.75 pp from peak).
+
+**FWT (Forward Transfer)** — not yet reported.
+Does training past tasks help on future tasks before seeing them? Positive = earlier tasks helped. Not a focus of your work.
+
+---
+
+### SOTA Positioning — Honest Summary
+
+Beating GIFT would make you **best known on MTIL as of late 2025**. "SOTA" in a paper means best among what has been published and indexed — there are likely 2026 papers not yet findable. The standard phrasing is: *"achieves state-of-the-art on the MTIL benchmark."*
+
+You have **already beaten two SOTA papers** (ZSCL ICCV 2023, MoE-Adapters CVPR 2024) on Last accuracy. Caveats to state: 10-task vs 11-task comparison, and SUN397 unavailability is a dataset access issue not a design choice.

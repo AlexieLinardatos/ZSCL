@@ -14,6 +14,7 @@ and Phase 3 results separate.
 """
 
 import copy
+import csv
 import glob
 import os
 
@@ -75,6 +76,43 @@ def _clear_task_metrics(save_dir):
         cleared.append(os.path.basename(f))
     if cleared:
         print(f"[Phase3] Cleared stale metrics: {', '.join(cleared)}")
+
+
+def _save_task_summary(save_dir, task_idx, task_name, eval_datasets):
+    """Read final-iteration accuracy from each metrics CSV and append to task_summary.csv.
+
+    This file is NOT cleared between tasks, so it accumulates the full
+    accuracy matrix needed for computing Avg and Transfer metrics.
+    """
+    summary_path = os.path.join(save_dir, "task_summary.csv")
+
+    # Collect final accuracy for each eval dataset
+    row = {"task_idx": task_idx, "task_name": task_name}
+    for ds in eval_datasets:
+        csv_path = os.path.join(save_dir, f"metrics_{ds}.csv")
+        if os.path.exists(csv_path):
+            with open(csv_path, newline="") as f:
+                rows = list(csv.DictReader(f))
+            if rows:
+                row[ds] = rows[-1]["top1"]
+            else:
+                row[ds] = ""
+        else:
+            row[ds] = ""
+
+    # Compute average across all eval datasets that have values
+    vals = [float(row[ds]) for ds in eval_datasets if row[ds]]
+    row["avg"] = f"{sum(vals) / len(vals):.4f}" if vals else ""
+
+    # Write header if file doesn't exist, then append row
+    fieldnames = ["task_idx", "task_name"] + eval_datasets + ["avg"]
+    write_header = not os.path.exists(summary_path)
+    with open(summary_path, "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row)
+    print(f"[Phase3] Task summary saved → {summary_path} (after '{task_name}')")
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +256,10 @@ def finetune_multi_task_phase3(args):
         print(replay_buffer)
 
         _save_buffer_state(args.save, replay_buffer, task_name)
+
+        # Save per-task accuracy snapshot before metrics CSVs get cleared
+        eval_ds = args.eval_datasets.split(",") if args.eval_datasets else []
+        _save_task_summary(args.save, task_idx, task_name, eval_ds)
 
     print(f"\n[Phase3] Finished all {len(task_names)} tasks.")
     print(f"Final checkpoint: {os.path.join(args.save, task_names[-1] + '.pth')}")

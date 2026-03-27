@@ -11,7 +11,9 @@
       "WebFetch(domain:api.semanticscholar.org)",
       "WebFetch(domain:www.semanticscholar.org)",
       "WebFetch(domain:scholar.google.com)",
-      "WebFetch(domain:openaccess.thecvf.com)"
+      "WebFetch(domain:openaccess.thecvf.com)",
+      "Bash(find:*)",
+      "Bash(__NEW_LINE_88741828ce15f87a__ find:*)"
     ]
   }
 }
