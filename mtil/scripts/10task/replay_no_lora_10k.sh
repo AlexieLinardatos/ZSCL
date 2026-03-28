@@ -45,7 +45,7 @@ which python; python -V; which pip
 pip install --upgrade pip
 pip install --no-index torch torchvision
 pip install --no-index tqdm ftfy regex pandas scipy
-pip install wandb
+pip install --no-index wandb
 export WANDB_MODE=offline
 
 export PYTORCH_ALLOC_CONF=expandable_segments:True

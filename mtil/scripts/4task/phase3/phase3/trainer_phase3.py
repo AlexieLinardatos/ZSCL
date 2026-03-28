@@ -340,7 +340,8 @@ def custom_finetune_phase3(args, replay_buffer=None):
                     iteration
                 )
             torch.cuda.empty_cache()
-            for ds in (args.eval_datasets or "").split(","):
+            _eval_ds = args.eval_datasets if isinstance(args.eval_datasets, list) else (args.eval_datasets or "").split(",")
+            for ds in _eval_ds:
                 csv_path = os.path.join(args.save, f"metrics_{ds}.csv")
                 if os.path.exists(csv_path):
                     with open(csv_path, newline="") as _f:
