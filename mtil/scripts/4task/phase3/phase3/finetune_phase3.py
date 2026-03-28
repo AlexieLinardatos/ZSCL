@@ -258,7 +258,7 @@ def finetune_multi_task_phase3(args):
         _save_buffer_state(args.save, replay_buffer, task_name)
 
         # Save per-task accuracy snapshot before metrics CSVs get cleared
-        eval_ds = args.eval_datasets.split(",") if args.eval_datasets else []
+        eval_ds = args.eval_datasets if isinstance(args.eval_datasets, list) else (args.eval_datasets.split(",") if args.eval_datasets else [])
         _save_task_summary(args.save, task_idx, task_name, eval_ds)
 
     print(f"\n[Phase3] Finished all {len(task_names)} tasks.")
