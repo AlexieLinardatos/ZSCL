@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=10t_p3_nolora_l01
-#SBATCH --time=24:00:00
+#SBATCH --time=48:00:00
 #SBATCH --mem=64GB
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:a100:1
@@ -80,7 +80,7 @@ srun python -m phase3.train_phase3 \
   --eval-interval 500 \
   --use_replay \
   --replay_budget 5000 \
-  --replay_batch_size 16 \
+  --replay_batch_size 8 \
   --replay_loss_weight 0.75 \
   --dataset_order Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars \
   --lambda_replay_teacher_distill 0.1
