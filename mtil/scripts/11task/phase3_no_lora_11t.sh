@@ -4,7 +4,6 @@
 #SBATCH --mem=64GB
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:nvidia_h100_80gb_hbm3_3g.40gb:1
-#SBATCH --partition=gpubase_bygpu_b1
 #SBATCH --account=def-fqureshi_gpu
 #SBATCH --output=/scratch/alexie/logs/%x-%j.out
 #SBATCH --signal=USR1@60
