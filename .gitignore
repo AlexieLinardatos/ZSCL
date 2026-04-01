@@ -1,6 +1,7 @@
 /mtil/data/
 /mtil/ckpt/
 /mtil/logs/
+/data/
 /mtil/src/__pycache__/
 /mtil/src/datasets/__pycache__/
 /mtil/src/models/__pycache__/

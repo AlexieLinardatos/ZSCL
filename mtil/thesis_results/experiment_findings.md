@@ -294,29 +294,60 @@ Higher Transfer = better zero-shot preservation. The original CLIP zero-shot bas
 
 ### Comparison to State of the Art (MTIL, CLIP ViT-B/16)
 
-> Note: published papers use 11-task MTIL (includes SUN397). Ours is 10-task (no SUN397). Direct comparison is approximate.
+> Note: published papers use 11-task MTIL (includes SUN397). Our 10-task results exclude SUN397. Next run (11-task) will be directly comparable.
+> GIFT numbers: self-reported from arXiv 2503.04229. LoRA-Loop numbers: from ICCV 2025 WS paper (arXiv 2507.13568).
 
 | Method | Venue | Transfer | Avg | Last | Notes |
 |---|---|---|---|---|---|
 | Sequential FT | baseline | ~59% | ~65% | ~74% | catastrophic forgetting |
 | WiSE-FT | baseline | ~67% | ~70% | ~78% | weight interpolation only |
-| ZSCL | ICCV 2023 | ~68.1% | ~76% | ~83% | reference dataset + WE |
-| MoE-Adapters | CVPR 2024 | ~68.9% | ~77.3% | ~84.6% | mixture-of-experts adapters |
-| DIKI | ECCV 2024 | SOTA | SOTA | SOTA | 0.86% trainable params |
+| ZSCL | ICCV 2023 | 68.1% | 75.4% | 83.6% | reference dataset + WE |
+| MoE-Adapters | CVPR 2024 | 68.9% | 76.7% | 85.0% | mixture-of-experts adapters |
+| DIKI | ECCV 2024 | — | — | — | 0.86% trainable params |
 | ZAF | NeurIPS 2024 | — | — | — | EMA-LoRA + zero-shot stability |
-| LoRA-Loop | ICCV 2025 WS | ~69.8% | ~77.6% | ~86.0% | synthetic replay + LoRA |
+| GIFT | CVPR 2025 | 69.3% | 77.3% | 86.0% | Stable Diffusion synthetic replay (~900M extra params) |
+| LoRA-Loop | ICCV 2025 WS | 69.8% | 77.6% | 86.0% | SD + LoRA synthetic replay (~900M extra params) |
 | AFA/ABFA | arXiv 2025 | ~70.3% | ~78.5% | — | best reported Transfer |
-| GIFT | CVPR 2025 | best | best | best | diffusion-based synthetic replay |
-| **Ours (Replay no LoRA)** | thesis | **66.49%** | **76.20%** | **85.33%** | real exemplar replay, 500/task |
+| **Ours (Replay no LoRA)** | thesis | **66.49%** | **76.20%** | **85.33%** | real exemplar replay, 500/task, no generative model |
 | **Ours (Replay + LoRA)** | thesis | ~68–69% *(est.)* | ~70–71% *(est.)* | **78.77%** | LoRA preserves ImageNet (+5.2 pp vs no-LoRA) |
-| **Ours (Phase 3 Teacher)** | thesis | TBD | TBD | ~77–79% *(est., 9/10 tasks)* | λ=0.5 hurts; retry with λ=0.1 |
+| **Ours (Phase 3 λ=0.1)** | thesis | TBD | TBD | TBD *(9/10 tasks done)* | tuned λ; 11-task rerun pending |
 
 **Key observations:**
-- **Last**: Replay no-LoRA beats ZSCL (+2.3 pp) and MoE-Adapters (+0.7 pp), 0.7 pp below LoRA-Loop
+- **Last**: Replay no-LoRA is 0.67 pp below GIFT/LoRA-Loop (85.33% vs 86.0%) with no generative model
+- **Efficiency argument**: GIFT and LoRA-Loop require Stable Diffusion (~900M params) for synthetic replay. We match within 0.67 pp on Last using only 500 real images/task.
 - **Replay + LoRA Last (78.77%)**: 6.5 pp below replay no-LoRA — LoRA restricts per-task capacity; Aircraft forgetting especially visible (35.97% vs 53.05%)
 - **ImageNet (Transfer)**: LoRA is clearly better (69.57% vs 64.34%) — clean stability-plasticity tradeoff
-- **Phase 3 Teacher**: λ=0.5 over-constrains optimization — results *worse* than replay+LoRA; retry needed with λ=0.1
+- **Phase 3 Teacher**: λ=0.5 over-constrains optimization; λ=0.1 run in progress
 - Original CLIP zero-shot ImageNet: ~70.8% — all methods degrade this to some extent
+
+### Loss Analysis — Phase 3 no-LoRA λ=0.1 (2026-03-31)
+
+Analysis of `losses_*.csv` from the 9/10-task run reveals the following gradient budget breakdown:
+
+| Loss Component | Effective Contribution | Share |
+|---|---|---|
+| ZSCL (text-image distillation) | ~29–30 | **~85%** |
+| replay_teacher (teacher distill, scaled) | ~3.0 | ~9% |
+| CE (task cross-entropy) | ~0.9–2.5 | ~3–7% |
+| replay_sup (replay CE, scaled) | ~1.1 | ~3% |
+| L2 (reference distillation) | ~0.2–0.6 | **<2%** |
+
+**Key finding:** ZSCL dominates at ~85% of the gradient budget. CE task loss is only 3–7%. L2 reference distillation is negligible. Teacher distillation (raw ~39, scaled by 0.075) is not converging — flat across all tasks — meaning λ=0.1 is too small to steer the model. Universal gradient conflicts observed: when CE decreases, ZSCL or L2 increases in every single task.
+
+**ImageNet decline pattern:** Gradual through Tasks 1–4 (−0.53 pp total), accelerates at Flowers (−1.15 pp), catastrophic at OxfordPet (−1.99 pp single-task drop).
+
+### 11-Task Run Hyperparameter Changes (scripts/11task/phase3_no_lora_11t.sh)
+
+| Parameter | 10-Task Value | 11-Task Value | Reason |
+|---|---|---|---|
+| `--lr` | 1e-5 | **5e-6** | Reduce gradient conflict magnitude |
+| `--iterations` | 2000 | **1500** | Tasks converge by iter 1000; extra iters drift Transfer |
+| `--replay_batch_size` | 8 | **16** | Less noisy replay gradient |
+| `--replay_loss_weight` | 0.75 | **1.0** | Strengthen replay signal |
+| `--lambda_replay_teacher_distill` | 0.1 | **0.5** | Teacher not steering at 0.1; raw loss ~39 needs higher weight |
+| `--ls` | 0.2 | **0.1** | Cleaner CE gradient |
+| `--replay_budget` | 5000 | **5500** | 500/task × 11 tasks |
+| Dataset order | 10 tasks | **+ SUN397** | Full 11-task benchmark for direct SOTA comparison |
 
 ---
 
@@ -857,3 +888,16 @@ Does training past tasks help on future tasks before seeing them? Positive = ear
 Beating GIFT would make you **best known on MTIL as of late 2025**. "SOTA" in a paper means best among what has been published and indexed — there are likely 2026 papers not yet findable. The standard phrasing is: *"achieves state-of-the-art on the MTIL benchmark."*
 
 You have **already beaten two SOTA papers** (ZSCL ICCV 2023, MoE-Adapters CVPR 2024) on Last accuracy. Caveats to state: 10-task vs 11-task comparison, and SUN397 unavailability is a dataset access issue not a design choice.
+
+---
+
+### Paper Target Table
+
+| Beat this | Venue target |
+|---|---|
+| ZSCL (ICCV 2023) | Minimum bar — expected |
+| MoE-Adapters (CVPR 2024) | Workshop / short paper viable |
+| LoRA-Loop (ICCV 2025 WS) | Comparable workshop level |
+| GIFT (CVPR 2025) | Main conference strong |
+
+The goal is to match or come close to GIFT's numbers at a fraction of the compute.
