@@ -581,11 +581,16 @@ class SUN397(ClassificationDataset):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = "sun397"
-        dataset = datasets.SUN397(
-            self.location, download=True, transform=self.preprocess
-        )
+        # torchvision's SUN397 requires ClassName.txt and internet access on
+        # compute nodes. Use ImageFolder on our converted structure instead:
+        #   {location}/SUN397/<letter>_<classname>/image_XXXXX.jpg
+        root = os.path.join(self.location, "SUN397")
+        dataset = datasets.ImageFolder(root, transform=self.preprocess)
         train_dataset, test_dataset = self.split_dataset(dataset)
-        self.classnames = dataset.classes
+        # Convert a_abbey -> abbey, a_airplane_cabin -> airplane cabin
+        self.classnames = [
+            c.split("_", 1)[1].replace("_", " ") for c in dataset.classes
+        ]
 
         self.train_dataset = train_dataset
         self.test_dataset = test_dataset
