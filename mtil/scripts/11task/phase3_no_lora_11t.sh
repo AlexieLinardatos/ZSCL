@@ -59,6 +59,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 REPO_ROOT="$HOME/projects/def-fqureshi/alexie/ZSCL"
 cd "$REPO_ROOT/mtil"
+export PYTHONPATH="$REPO_ROOT/mtil/scripts/4task/phase3:${PYTHONPATH:-}"
 mkdir -p logs
 
 SAVE_PATH="ckpt/11task/phase3_no_lora"
