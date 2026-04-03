@@ -316,6 +316,24 @@ def custom_finetune_phase3(args, replay_buffer=None):
     print(f"[Phase3] Loss CSV → {loss_csv_path}")
 
     # ------------------------------------------------------------------ #
+    # Pre-compute ref_text_embeddings once before the loop               #
+    # ref_model is frozen and ref_texts never change, so this is safe.   #
+    # Chunked to avoid allocating ~5 GB for 10k CC captions at once.     #
+    # ------------------------------------------------------------------ #
+    cached_ref_embeddings = None
+    if ref_model is not None and ref_texts is not None:
+        with torch.no_grad():
+            _chunks = []
+            _chunk_size = 512
+            for _i in range(0, ref_texts.shape[0], _chunk_size):
+                _chunk = ref_texts[_i:_i + _chunk_size]
+                _emb = ref_model(None, _chunk)
+                _emb = _emb / _emb.norm(dim=-1, keepdim=True)
+                _chunks.append(_emb)
+            cached_ref_embeddings = torch.cat(_chunks, dim=0)
+        print(f"[Phase3] Pre-computed ref_text_embeddings: {cached_ref_embeddings.shape}")
+
+    # ------------------------------------------------------------------ #
     # Main training loop                                                  #
     # ------------------------------------------------------------------ #
     for iteration in tqdm(range(model_iter_count, total_iterations + 1)):
