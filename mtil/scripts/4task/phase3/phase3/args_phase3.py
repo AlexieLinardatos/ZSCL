@@ -37,6 +37,10 @@ def parse_phase3_arguments():
     p3_parser.add_argument("--no_existing_distill", action="store_true", default=False)
     p3_parser.add_argument("--no_replay_supervised_loss", action="store_true", default=False)
     p3_parser.add_argument("--no_replay_teacher_same_batch", action="store_true", default=False)
+    p3_parser.add_argument(
+        "--task_iterations", type=str, default=None,
+        help="Per-task iteration overrides as 'Task:iters,...' e.g. 'Aircraft:2000,MNIST:800'"
+    )
 
     p3_ns, remaining_argv = p3_parser.parse_known_args()
 
@@ -75,5 +79,11 @@ def parse_phase3_arguments():
         args.enable_replay_supervised_loss = False
     if p3_ns.no_replay_teacher_same_batch:
         args.replay_teacher_same_batch_as_replay_sup = False
+
+    args.task_iterations = {}
+    if p3_ns.task_iterations:
+        for pair in p3_ns.task_iterations.split(","):
+            task, iters = pair.strip().split(":")
+            args.task_iterations[task.strip()] = int(iters.strip())
 
     return args

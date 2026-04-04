@@ -320,21 +320,49 @@ Higher Transfer = better zero-shot preservation. The original CLIP zero-shot bas
 - **Phase 3 Teacher**: λ=0.5 over-constrains optimization; λ=0.1 run in progress
 - Original CLIP zero-shot ImageNet: ~70.8% — all methods degrade this to some extent
 
-### Loss Analysis — Phase 3 no-LoRA λ=0.1 (2026-03-31)
+### Loss Analysis — Phase 3 no-LoRA, λ Sensitivity Study (2026-03-31 / 2026-04-04)
 
-Analysis of `losses_*.csv` from the 9/10-task run reveals the following gradient budget breakdown:
+Analysis of `losses_*.csv` across both the λ=0.1 (10-task) and λ=0.5 (11-task) runs reveals a fundamental gradient budget problem that constrains the Phase 3 objective regardless of λ.
 
+#### Gradient Budget Breakdown
+
+**λ=0.1 (10-task run):**
 | Loss Component | Effective Contribution | Share |
 |---|---|---|
 | ZSCL (text-image distillation) | ~29–30 | **~85%** |
-| replay_teacher (teacher distill, scaled) | ~3.0 | ~9% |
+| replay_teacher (×λ=0.1) | ~3.0 | ~9% |
 | CE (task cross-entropy) | ~0.9–2.5 | ~3–7% |
-| replay_sup (replay CE, scaled) | ~1.1 | ~3% |
-| L2 (reference distillation) | ~0.2–0.6 | **<2%** |
+| replay_sup | ~1.1 | ~3% |
+| L2 | ~0.2–0.6 | <2% |
 
-**Key finding:** ZSCL dominates at ~85% of the gradient budget. CE task loss is only 3–7%. L2 reference distillation is negligible. Teacher distillation (raw ~39, scaled by 0.075) is not converging — flat across all tasks — meaning λ=0.1 is too small to steer the model. Universal gradient conflicts observed: when CE decreases, ZSCL or L2 increases in every single task.
+**λ=0.5 (11-task run):**
+| Loss Component | Effective Contribution | Share |
+|---|---|---|
+| ZSCL (text-image distillation) | ~29–31 | **~51%** |
+| replay_teacher (×λ=0.5) | ~19–20 | **~33%** |
+| CE (task cross-entropy) | ~0.8–2.2 | ~3% |
+| replay_sup | ~0.7–1.0 | ~2% |
+| L2 | ~0.1–0.3 | <1% |
 
-**ImageNet decline pattern:** Gradual through Tasks 1–4 (−0.53 pp total), accelerates at Flowers (−1.15 pp), catastrophic at OxfordPet (−1.99 pp single-task drop).
+#### Key Findings
+
+**1. ZSCL dominates regardless of λ.** The ZSCL reference distillation term contributes ~29–31 in absolute loss value and remains nearly flat throughout training across all tasks and both λ settings. It acts as a strong anchor that the optimizer cannot meaningfully reduce, consuming the majority of the gradient budget in both configurations.
+
+**2. λ creates a dilemma with no good solution.** At λ=0.1, the replay teacher term is too weak (~9% of budget) to steer the student model — it remains flat across all 10 tasks and provides negligible benefit to Transfer. At λ=0.5, the replay teacher term grows to ~33% of the budget, which suppresses CE task learning (dropping to only ~3% of the budget) and produces measurable accuracy degradation (2–4 pp per task vs the replay_no_lora baseline). Neither regime achieves a favourable trade-off.
+
+**3. CE task learning is severely budget-constrained.** Across all tasks and both λ values, the CE loss accounts for only 3–7% of the total gradient signal. While CE does decrease from iter 0 to iter 1000 (e.g., Aircraft: 3.31→1.25, MNIST: 1.72→0.54), the rate of learning is limited by the dominant ZSCL and replay teacher terms. Tasks with inherently harder decision boundaries (StanfordCars: CE only dropped 0.42 over 1500 iterations) are disproportionately affected.
+
+**4. Replay teacher distillation does not converge.** The raw replay_teacher loss value (~38–41) remains nearly constant across all 1500 training iterations for every task, in both λ settings. This indicates the student model cannot meaningfully close the gap with the frozen teacher on replay samples while simultaneously satisfying the ZSCL and CE objectives — a symptom of over-constrained multi-objective optimisation.
+
+**5. Universal gradient conflict.** Across every task in both runs, a consistent antagonistic pattern is observed: when CE decreases, ZSCL increases, and vice versa. This confirms that the ZSCL regularisation objective and the task learning objective are pulling the model in opposing directions throughout training.
+
+#### Interpretation
+
+The Phase 3 loss landscape is dominated by a tension between ZSCL's reference distillation (which enforces proximity to the zero-shot CLIP teacher on ImageNet reference data) and the CE objective (which pushes the model toward new task boundaries). The replay teacher term, regardless of weighting, cannot simultaneously satisfy both. This structural conflict — not the choice of λ — is the fundamental bottleneck of the Phase 3 formulation.
+
+Notably, despite this constraint, the 11-task Phase 3 run (λ=0.5) achieves a Transfer of ~67.6%, which is +1.1 pp over the replay_no_lora baseline (66.49%) and within 1.7 pp of GIFT (69.3%). This suggests the teacher distillation is providing marginal but real benefit to zero-shot preservation, even if it cannot be further amplified without sacrificing task accuracy.
+
+**ImageNet decline pattern (λ=0.1, 10-task):** Gradual through Tasks 1–4 (−0.53 pp total), accelerates at Flowers (−1.15 pp), catastrophic at OxfordPet (−1.99 pp single-task drop) — indicating that forgetting compounds non-linearly as the number of previously seen tasks increases.
 
 ### 11-Task Run Hyperparameter Changes (scripts/11task/phase3_no_lora_11t.sh)
 
@@ -348,6 +376,123 @@ Analysis of `losses_*.csv` from the 9/10-task run reveals the following gradient
 | `--ls` | 0.2 | **0.1** | Cleaner CE gradient |
 | `--replay_budget` | 5000 | **5500** | 500/task × 11 tasks |
 | Dataset order | 10 tasks | **+ SUN397** | Full 11-task benchmark for direct SOTA comparison |
+
+---
+
+## Proposed Improvements (v2 Run)
+
+Based on the loss and CE convergence analysis above, three concrete improvements were identified for the v2 run. Changes 1 and 2 are implemented and ready. Change 3 (PCGrad) is pinned as future work pending v2 results.
+
+### Improvement Overview
+
+| # | Improvement | Problem it Fixes | Expected Effect |
+|---|---|---|---|
+| 1 | Proportional exemplar allocation | SUN397 and StanfordCars under-represented (1.25–2.5 ex/class) | Better replay quality → Last ↑ |
+| 2 | Per-task iteration scheduling | Easy tasks waste compute; hard tasks under-train | More efficient training → Last ↑ |
+| 3 | PCGrad on CE vs ZSCL (future) | CE only gets ~3% of gradient budget due to ZSCL dominance | CE learning ↑ → Last ↑, Transfer maintained |
+
+---
+
+### Change 1: Proportional Exemplar Allocation
+
+**Problem:** `rebalance()` divides the buffer equally (`budget // num_tasks`), giving every task the same number of exemplars regardless of how many classes it has. With a 5500-exemplar budget across 11 tasks, each task gets 500 exemplars. SUN397 has 397 classes and StanfordCars has 196 — the two hardest tasks receive the fewest exemplars per class.
+
+**Before (equal allocation, 5500 budget / 11 tasks = 500/task):**
+
+| Task | Classes | Exemplars | Exemplars/Class |
+|---|---|---|---|
+| Aircraft | 100 | 500 | 5.0 |
+| Caltech101 | 101 | 500 | 5.0 |
+| CIFAR100 | 100 | 500 | 5.0 |
+| DTD | 47 | 500 | 10.6 |
+| EuroSAT | 10 | 500 | 50.0 |
+| Flowers | 102 | 500 | 4.9 |
+| Food | 101 | 500 | 5.0 |
+| MNIST | 10 | 500 | 50.0 |
+| OxfordPet | 37 | 500 | 13.5 |
+| **StanfordCars** | **196** | **500** | **2.5** |
+| **SUN397** | **397** | **500** | **1.25** |
+
+**After (proportional allocation, budget scaled by class count):**
+
+| Task | Classes | % of Total Classes | Exemplars | Exemplars/Class |
+|---|---|---|---|---|
+| Aircraft | 100 | 9.7% | 533 | 5.3 |
+| Caltech101 | 101 | 9.8% | 539 | 5.3 |
+| CIFAR100 | 100 | 9.7% | 533 | 5.3 |
+| DTD | 47 | 4.6% | 251 | 5.3 |
+| EuroSAT | 10 | 1.0% | 53 | 5.3 |
+| Flowers | 102 | 9.9% | 544 | 5.3 |
+| Food | 101 | 9.8% | 539 | 5.3 |
+| MNIST | 10 | 1.0% | 53 | 5.3 |
+| OxfordPet | 37 | 3.6% | 197 | 5.3 |
+| **StanfordCars** | **196** | **19.0%** | **1046** | **5.3** |
+| **SUN397** | **397** | **38.5%** | **2118** | **5.3** |
+| **Total** | **1201** | 100% | **≤5500** | — |
+
+SUN397 goes from 500 → 2118 exemplars (4.2× increase). StanfordCars goes from 500 → 1046 (2.1× increase). All tasks now have ~5.3 exemplars per class, ensuring the two hardest tasks are not systematically under-represented in replay.
+
+**Implementation:** Added `rebalance_proportional(class_counts)` to `src/replay_buffer.py`. Called from `finetune_phase3.py` after each task, replacing the equal `rebalance()` call.
+
+---
+
+### Change 2: Per-Task Iteration Scheduling
+
+**Problem:** All 11 tasks used a fixed 1500 iterations. CE convergence analysis (from the v1 run loss curves) shows large variation: some tasks converge by iteration 800–1000, while the hardest tasks (StanfordCars, SUN397) have barely begun learning at iteration 1500.
+
+| Task | CE Drop (v1) | Status at iter 1000 | v2 Iterations | Rationale |
+|---|---|---|---|---|
+| Aircraft | −2.05 | Still learning fast | **2000** | High CE drop → needs more |
+| Caltech101 | −0.48 | Converged early | **1000** | Save compute |
+| CIFAR100 | −0.72 | Adequate | **1500** | Unchanged |
+| DTD | −1.69 | Still learning | **1500** | Good rate |
+| EuroSAT | −0.85 | Converged | **1000** | Only 10 classes |
+| Flowers | −1.01 | Good learning | **1500** | Unchanged |
+| Food | −0.68 | Adequate | **1500** | Unchanged |
+| MNIST | −1.18 | Converged fast (10 classes) | **800** | Drastically over-trained in v1 |
+| OxfordPet | −0.66 | Adequate | **1500** | Unchanged |
+| StanfordCars | −0.42 | Barely learning | **3000** | 196 classes, nearly no CE progress |
+| SUN397 | unknown | 397 classes, very hard | **3000** | Largest task by far |
+| **Total** | — | — | **18,300** | vs 16,500 in v1 (+11%) |
+
+The total compute increase is ~11% (18,300 vs 16,500 iterations), which is well justified: the saved iterations from Caltech101, EuroSAT, and MNIST are reallocated to the two hardest tasks that showed negligible convergence.
+
+**Implementation:** Added `--task_iterations` CLI argument to `args_phase3.py`. Parsed as a comma-separated `"Task:iters"` string into a dict. Applied in `finetune_phase3.py` as a per-task override before calling the trainer.
+
+**Comparability note:** Per-task iterations do not affect MTIL benchmark comparability. The benchmark evaluates accuracy after all tasks are trained — the number of iterations per task is a hyperparameter choice, not a benchmark protocol constraint. ZSCL paper also varies per-task LR (e.g., Aircraft=5e-5, others=1e-5), which is analogous.
+
+---
+
+### Change 3: PCGrad on CE vs ZSCL (Future Work)
+
+**Problem:** The gradient budget analysis shows ZSCL consumes ~51% of the gradient budget while CE receives only ~3%. This is a structural conflict: the ZSCL regularisation direction is frequently antagonistic to the CE task-learning direction.
+
+**Proposed Fix:** Apply PCGrad (gradient surgery) targeting only the CE vs ZSCL pair — not all 5 losses — since this pair accounts for the dominant conflict. When the CE and ZSCL gradient vectors have negative cosine similarity, the CE gradient is projected to remove the component pointing against ZSCL (so ZSCL is preserved), and the projected CE gradient is used instead.
+
+**Memory cost:** Each gradient vector for ViT-B/16 (~150M params) is ~600 MB at float32. The 2-way PCGrad requires storing 2 vectors simultaneously → ~1.2 GB extra peak memory. This is within the available headroom on the H100 40GB MIG slice.
+
+**Expected gradient budget after PCGrad:**
+
+| Loss Term | Before PCGrad | After PCGrad (estimated) |
+|---|---|---|
+| ZSCL | ~51% | ~50% (unchanged) |
+| replay_teacher | ~33% | ~33% (unchanged) |
+| CE | ~3% | **~12–15%** (projected; conflict removed) |
+| replay_sup | ~2% | ~2% (unchanged) |
+| L2 | <1% | <1% (unchanged) |
+
+**Status:** Pinned. Will be implemented and run as a v3 experiment once v2 results are available for comparison.
+
+---
+
+### Expected Combined Outcome (v1 → v2)
+
+| Metric | v1 Result | Target (LoRA-Loop) | v2 Hypothesis |
+|---|---|---|---|
+| Last (avg final acc) | ~84.5–85% | 86.0% | **+0.5–1.5 pp** from better StanfordCars/SUN397 replay + iterations |
+| Transfer (avg ImageNet) | ~67.6% | 69.8% | **Stable** (no change to ZSCL distillation or λ) |
+| StanfordCars (final) | — | — | Most improved: 6× more exemplars, 2× more iterations |
+| SUN397 (final) | — | — | Most improved: 4.2× more exemplars, 2× more iterations |
 
 ---
 

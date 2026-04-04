@@ -193,6 +193,12 @@ def finetune_multi_task_phase3(args):
         args_task = copy.copy(args)
         args_task.train_dataset = task_name
 
+        # Per-task iteration override
+        task_iters = getattr(args, "task_iterations", {})
+        if task_iters and task_name in task_iters:
+            args_task.iterations = task_iters[task_name]
+            print(f"[Phase3] Per-task iterations for '{task_name}': {args_task.iterations}")
+
         task_ckpt = os.path.join(args.save, f"{task_name}.pth")
         if os.path.exists(task_ckpt):
             saved_iter = torch.load(task_ckpt, weights_only=False)["iteration"]
@@ -250,7 +256,12 @@ def finetune_multi_task_phase3(args):
             classnames=task_dataset_obj.classnames,
             template=task_template,
         )
-        replay_buffer.rebalance()
+        class_counts = {
+            tid: len(replay_buffer.task_info[tid]["classnames"])
+            for tid in replay_buffer.memory
+            if tid in replay_buffer.task_info
+        }
+        replay_buffer.rebalance_proportional(class_counts)
 
         print(f"[Phase3 outer loop] Buffer after task {task_idx + 1}:")
         print(replay_buffer)

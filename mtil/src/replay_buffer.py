@@ -101,6 +101,28 @@ class ReplayBuffer:
             if len(current) > per_task_budget:
                 self.memory[task_id] = random.sample(current, per_task_budget)
 
+    def rebalance_proportional(self, class_counts: Dict[int, int]) -> None:
+        """
+        Downsample tasks proportionally to their number of classes.
+
+        Allocates more exemplars to tasks with more classes so that each class
+        receives approximately the same number of exemplars across all tasks.
+        Tasks absent from class_counts fall back to a budget of 1.
+
+        Args:
+            class_counts: mapping from task_id -> number of classes in that task.
+        """
+        if not self.memory:
+            return
+
+        total_classes = sum(class_counts.get(tid, 1) for tid in self.memory)
+        for task_id in self.memory:
+            n_classes = class_counts.get(task_id, 1)
+            task_budget = max(1, round(self.total_budget * n_classes / total_classes))
+            current = self.memory[task_id]
+            if len(current) > task_budget:
+                self.memory[task_id] = random.sample(current, task_budget)
+
     def get_combined_dataset(self) -> FlatReplayDataset:
         """Return a flat Dataset of all stored (img, label, task_id) tuples."""
         all_samples: List[Tuple[torch.Tensor, int, int]] = []
