@@ -389,13 +389,6 @@ def custom_finetune_phase3(args, replay_buffer=None):
             loss = loss + args.l2 * loss_l2
             loss_l2_val = loss_l2.item()
 
-        # ---- Pre-compute ref_embeddings once (reused by ZSCL + replay-teacher losses) ----
-        cached_ref_embeddings = None
-        if ref_model is not None and ref_texts is not None:
-            with torch.no_grad():
-                cached_ref_embeddings = ref_model(None, ref_texts)
-                cached_ref_embeddings = cached_ref_embeddings / cached_ref_embeddings.norm(dim=-1, keepdim=True)
-
         # ---- (3) Existing ZSCL public/reference distillation ----
         loss_zscl_val = 0.0
         if args.method == "ZSCL" and enable_existing_distill and ref_model is not None:
