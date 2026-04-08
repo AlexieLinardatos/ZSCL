@@ -351,6 +351,8 @@ def custom_finetune_phase3(args, replay_buffer=None):
         # ---- Periodic evaluation ----
         if args.eval_interval is not None and iteration % args.eval_interval == 0:
             print(f"[Phase3] Evaluating at iter {iteration}...")
+            if ref_model is not None:
+                ref_model.cpu()
             torch.cuda.empty_cache()
             with torch.no_grad():
                 evaluate_and_save(
@@ -358,6 +360,8 @@ def custom_finetune_phase3(args, replay_buffer=None):
                     iteration
                 )
             torch.cuda.empty_cache()
+            if ref_model is not None:
+                ref_model.cuda()
             _eval_ds = args.eval_datasets if isinstance(args.eval_datasets, list) else (args.eval_datasets or "").split(",")
             for ds in _eval_ds:
                 csv_path = os.path.join(args.save, f"metrics_{ds}.csv")
