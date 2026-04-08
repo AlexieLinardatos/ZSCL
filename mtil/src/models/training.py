@@ -286,7 +286,7 @@ def setup_l2_model(args, model):
     if args.l2 > 0:
         print("L2 norm")
         l2_model = copy.deepcopy(model)
-        l2_model.cuda()
+        # Keep on CPU to save ~600MB GPU memory; l2_loss moves params on-demand
         return l2_model
     return None
 

@@ -47,7 +47,7 @@ def moving_avg(model_0, model_1, alpha=0.999):
 def l2_loss(model, model_ref):
     loss = 0.0
     for param_q, param_k in zip(model.parameters(), model_ref.parameters()):
-        loss += F.mse_loss(param_q, param_k.detach(), reduction="sum")
+        loss += F.mse_loss(param_q, param_k.detach().to(param_q.device), reduction="sum")
     return loss
 
 
