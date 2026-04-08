@@ -86,7 +86,7 @@ srun python -m phase3.train_phase3 \
   --replay_budget 5500 \
   --replay_batch_size 8 \
   --replay_loss_weight 1.0 \
-  --batch-size-eval 16 \
+  --batch-size-eval 8 \
   --dataset_order Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397 \
   --lambda_replay_teacher_distill 0.5 \
   --task_iterations "Aircraft:2000,Caltech101:1000,CIFAR100:1500,DTD:1500,EuroSAT:1000,Flowers:1500,Food:1500,MNIST:800,OxfordPet:1500,StanfordCars:3000,SUN397:3000"
