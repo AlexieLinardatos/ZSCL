@@ -200,6 +200,9 @@ def custom_finetune_phase3(args, replay_buffer=None):
     devices = list(range(torch.cuda.device_count()))
     print("Using devices", devices)
     model = torch.nn.DataParallel(model, device_ids=devices)
+    # Gradient checkpointing on text transformer: recomputes activations during
+    # backward instead of storing them (~10GB savings for SUN397's 397 classes).
+    model.module.transformer.use_checkpoint = True
 
     texts = clip.tokenize([template(x) for x in dataset.classnames]).cuda()
 

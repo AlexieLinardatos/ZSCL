@@ -196,8 +196,13 @@ class Transformer(nn.Module):
         self.width = width
         self.layers = layers
         self.resblocks = nn.Sequential(*[ResidualAttentionBlock(width, heads, attn_mask) for _ in range(layers)])
+        self.use_checkpoint = False  # enable to trade compute for activation memory
 
     def forward(self, x: torch.Tensor):
+        if self.use_checkpoint:
+            for block in self.resblocks:
+                x = torch.utils.checkpoint.checkpoint(block, x, use_reentrant=False)
+            return x
         return self.resblocks(x)
 
 

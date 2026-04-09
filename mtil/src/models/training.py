@@ -529,13 +529,10 @@ def get_next_batch(data_iter, dataset, args):
 
 def compute_ce_loss(model, images, texts, embeddings, logit_scale, labels, args):
     """Compute cross-entropy loss."""
-    # Get text embeddings if not in text-only mode.
-    # no_grad: text features act as fixed class prototypes (saves ~10GB for large tasks like SUN397).
-    # Text encoder still receives gradients via ZSCL regularization.
+    # Get text embeddings if not in text-only mode
     if args.train_mode != "text":
-        with torch.no_grad():
-            embeddings = model(None, texts)
-            embeddings = embeddings / embeddings.norm(dim=-1, keepdim=True)
+        embeddings = model(None, texts)
+        embeddings = embeddings / embeddings.norm(dim=-1, keepdim=True)
 
     # Get image embeddings
     out = model(images, None)
@@ -806,10 +803,9 @@ def compute_replay_loss(model, replay_batch, logit_scale, replay_buffer, args):
         # Build text tokens for this task's classes
         texts = clip.tokenize([template(c) for c in classnames]).cuda()
 
-        # Text embeddings — no_grad to match CE loss and save activation memory
-        with torch.no_grad():
-            text_emb = model(None, texts)
-            text_emb = text_emb / text_emb.norm(dim=-1, keepdim=True)
+        # Text embeddings (with grad)
+        text_emb = model(None, texts)
+        text_emb = text_emb / text_emb.norm(dim=-1, keepdim=True)
 
         # Image embeddings
         img_emb = model(task_images, None)
