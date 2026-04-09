@@ -6,6 +6,7 @@ import json
 import numpy as np
 import torch
 import torch.nn.functional as F
+import torch.utils.checkpoint
 from torch import nn
 
 
