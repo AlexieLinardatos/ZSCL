@@ -203,6 +203,9 @@ def custom_finetune_phase3(args, replay_buffer=None):
     # Gradient checkpointing on text transformer: recomputes activations during
     # backward instead of storing them (~10GB savings for SUN397's 397 classes).
     model.module.transformer.use_checkpoint = True
+    # Gradient checkpointing on visual transformer: prevents OOM when replay RTD
+    # runs a second visual encoder forward pass per iteration on the 10GB MIG slice.
+    model.module.visual.transformer.use_checkpoint = True
 
     texts = clip.tokenize([template(x) for x in dataset.classnames]).cuda()
 
