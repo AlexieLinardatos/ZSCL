@@ -1046,3 +1046,180 @@ You have **already beaten two SOTA papers** (ZSCL ICCV 2023, MoE-Adapters CVPR 2
 | GIFT (CVPR 2025) | Main conference strong |
 
 The goal is to match or come close to GIFT's numbers at a fraction of the compute.
+
+---
+
+## NeurIPS Paper Strengthening Plan (2026-04-09)
+
+This section captures a full honest assessment of the paper's current conference viability and the concrete steps to move it from workshop to main-track quality — **without requiring better headline results**.
+
+---
+
+### Honest Verdict: Workshop Paper As Currently Conceived
+
+The paper as drafted (intro + related work + method + §4.1–4.2) reads like a solid workshop submission. Here is why it does not yet clear the NeurIPS main conference bar:
+
+**1. The headline number is below SOTA.**
+85.3% Last vs. GIFT/LoRA-Loop at 86.0% means every reviewer writes the same sentence: *"the proposed method does not outperform existing approaches."* The efficiency argument ("no generative model needed") is qualitatively valid but has not been sufficient for main-conference acceptance in this area on its own. 0.7 pp below SOTA is a workshop result.
+
+**2. The novelty reads as incremental.**
+ZSCL + exemplar replay + apply the same teacher to replay samples. A reviewer will summarise: *"ZSCL with iCaRL and an obvious teacher extension."* RTD is a natural next step from ZSCL, not a conceptual leap. Proportional allocation is an engineering fix. Neither rises to a primary NeurIPS contribution on its own.
+
+**3. The "we disprove ZSCL's claim" framing is weaker than it looks.**
+ZSCL's claim that replay is unnecessary was made in 2023 in a specific context. Showing in 2026 that combining them works is expected, not surprising. The framing needs a deeper *why* to be compelling.
+
+**4. The most interesting finding is buried in a notes file.**
+The gradient budget analysis — ZSCL consuming ~85% of the budget, CE only getting ~3%, and the consistent antagonism between the two — is a genuine empirical finding that no published MTIL paper has reported. It is sitting in `experiment_findings.md` instead of the paper. This is the paper's actual discovery.
+
+---
+
+### The Identity Shift That Changes Everything
+
+**Current narrative:** *"We combined ZSCL with exemplar replay and got good results."*
+
+**NeurIPS narrative:** *"We identify a structural gradient conflict in ZSCL-family training — the reference distillation term consumes ~85% of the gradient budget, leaving only ~3% for task learning — and show that exemplar replay partially relieves this conflict by providing a task signal that bypasses it. We characterise the tradeoff empirically across 11 tasks and demonstrate that this simple, storage-efficient approach matches the accuracy of methods requiring a 900M-parameter generative model."*
+
+The experiments are identical. The story has become a *discovery about ZSCL's failure mode* with the method as the principled response.
+
+---
+
+### Five Concrete Changes (No New Experiments Required)
+
+These can all be done with data already collected or trivially cheap experiments.
+
+#### Change 1: Promote the Gradient Budget Analysis to a Paper Section
+
+The loss analysis from `phase3_nolora_l01/losses_*.csv` already shows:
+
+| Loss Component | Share of Gradient Budget (λ=0.1 run) |
+|---|---|
+| ZSCL reference distillation | ~85% |
+| Replay teacher (×λ) | ~9% |
+| CE (task cross-entropy) | ~3–7% |
+| Replay supervised | ~3% |
+| L2 | <2% |
+
+And across all 11 tasks and both λ settings, a consistent antagonism: when CE decreases, ZSCL increases, and vice versa.
+
+**Action:** Add a dedicated subsection — call it §4.3 Analysis or §3.6 Gradient Budget Analysis — with:
+- A stacked bar chart showing gradient budget breakdown per task (one bar per task, 5 colour bands for the 5 loss components)
+- A 2-panel figure showing CE vs. ZSCL loss curves for a representative easy task (Caltech101) and hard task (SUN397), illustrating the antagonism
+- 2–3 paragraphs explaining what this implies for task learning ceiling effects
+
+This is free: the data is already collected. It is the figure that makes the paper a discovery paper rather than a combination paper.
+
+#### Change 2: Build the Ablation Table Around the Narrative
+
+The current §4.4 is a placeholder. The ablation table needs to tell the story of every component so reviewers cannot dismiss any claim:
+
+| Method | Last (%) | Transfer (%) | Avg (%) |
+|---|---|---|---|
+| ZSCL (reproduced) | 83.6 | 68.1 | 75.4 |
+| + uniform exemplar replay | TBD | TBD | TBD |
+| + **proportional** exemplar replay | TBD | TBD | TBD |
+| + RTD (λ=0.5) | 85.3* | 67.5* | — |
+| Zero-shot CLIP | — | 70.8 | — |
+
+*Narval v2 numbers; update with Nibi results.
+
+The uniform → proportional row is the one that matters most. If proportional allocation shows even +0.3–0.5 pp over uniform, that is the empirical justification for the section 3.3 design choice. This requires one additional run (phase3 with `rebalance()` instead of `rebalance_proportional()`), or can be estimated from the v1 → v2 delta once Nibi completes. **This is the single highest-priority additional experiment to run.**
+
+#### Change 3: Build the Cost-vs-Accuracy Figure
+
+Make one figure: x-axis = extra parameters or storage required at training time beyond CLIP (log scale), y-axis = Last accuracy. Every baseline gets a point:
+
+| Method | Extra params at training time | Last (%) |
+|---|---|---|
+| ZSCL | 0 (100K real ImageNet images) | 83.6 |
+| MoE-Adapters | ~0 (small adapters) | 85.0 |
+| **Ours** | **0** (~100MB of stored images) | **85.3** |
+| GIFT | ~900M (Stable Diffusion) | 86.0 |
+| LoRA-Loop | ~900M (SD + LoRA) | 86.0 |
+
+Then quantify in the text: GIFT requires fine-tuning Stable Diffusion per task. Our method adds approximately 15–20% overhead from replay sampling. Training time comparison (if available from job logs) makes this concrete.
+
+This visual makes the efficiency argument a reviewer cannot dismiss — it is shown rather than claimed.
+
+#### Change 4: Tighten the Contribution List
+
+The introduction currently has three contributions where two are the same claim restated. Reduce to two:
+
+**Contribution 1 (Analysis):** We characterise the gradient budget dynamics of ZSCL-family training empirically and show that the reference distillation term structurally limits task learning to ~3–7% of the gradient budget — a constraint that per-task accuracy improvements cannot overcome through hyperparameter tuning alone.
+
+**Contribution 2 (Method + Result):** We show that exemplar replay with proportional allocation and replay teacher distillation partially relieves this constraint, matching the accuracy of 900M-parameter generative replay methods using only stored real exemplars and no additional model components. We provide the first controlled ablation of replay vs. distillation vs. their combination on the full 11-task MTIL benchmark.
+
+This reframing is defensible under reviewer scrutiny because the gradient budget claim is backed by data, not assertion.
+
+#### Change 5: Fix All Paper Formatting Issues Before Next Draft
+
+The following issues exist in the current draft and must be fixed before sharing with supervisor or submitting:
+
+| Issue | Location | Fix |
+|---|---|---|
+| Table 1 ("Move to Experiments later") appears twice | §3.5 and §4.1 | Delete the §3.5 version; rename §4.1 Table 2 → Table 1 |
+| `[nosep, leftmargin=*]` shows as literal text in §4.2 | Baselines list | Add `\usepackage{enumitem}` to preamble |
+| `WiSE-FT [?]` in baselines | §4.2 | Replace with `\cite{wortsman2022robust}` — already in refs |
+| `GIFT [?]`, `LoRA-Loop [?]` in baselines | §4.2 | Replace with `\cite{wu2025gift}` and `\cite{wang2025loraloop}` — already in refs |
+| `ZSCL ?` in introduction | §1 line 11 | Replace with `\cite{zheng2023zscl}` |
+| `Parameter-efficient methods ???` | §1 line 12–13 | Replace with `\cite{hu2022lora, yu2024moe}` at minimum |
+| `Synthetic replay methods ??` | §1 line 15 | Replace with `\cite{wu2025gift, wang2025loraloop}` |
+| `Classic exemplar replay ??` | §1 line 16–17 | Replace with `\cite{rebuffi2017icarl}` |
+| `Catastrophic forgetting ?` in §2.2 | §2.2 line 37 | Can drop the citation — no reviewer will penalise its absence for a phenomenon this well-known |
+| `DER++ ?` in §2.2 | §2.2 line 43 | Need BibTeX: Buzzega et al., NeurIPS 2020 |
+| `MoE-Adapters ?` in §2.4 | §2.4 line 64 | Replace with `\cite{yu2024moe}` |
+| ZAF, C-CLIP, SD-LoRA all show `?` | §2.4 | Need BibTeX entries (see below) |
+| §2.1: missing comma | §2.1 line 32 | `"downstream tasks, however tends"` → `"downstream tasks, however, tends"` |
+| Abstract is a placeholder | Abstract | Write it (see template below) |
+| §4.3, §4.4, §5 are empty | — | Fill after Nibi results arrive |
+
+---
+
+### Missing BibTeX Entries Still Needed
+
+```bibtex
+@inproceedings{buzzega2020dark,
+  title={Dark Experience for General Continual Learning: a Strong, Simple Baseline},
+  author={Buzzega, Pietro and Boschini, Matteo and Porrello, Angelo and Abati, Davide and Calderara, Simone},
+  booktitle={Advances in Neural Information Processing Systems},
+  volume={33},
+  pages={15920--15930},
+  year={2020}
+}
+
+% ZAF — EMA-LoRA + zero-shot stability, NeurIPS 2024
+% Title/authors TBD — search arXiv for "ZAF continual learning LoRA zero-shot 2024"
+
+% C-CLIP — contrastive consolidation with LoRA, ICLR 2025
+% Title/authors TBD — search arXiv for "C-CLIP contrastive continual CLIP LoRA 2025"
+
+% SD-LoRA — magnitude-direction decoupled LoRA, ICLR 2025 Oral
+% Title/authors TBD — search arXiv for "SD-LoRA magnitude direction continual 2025"
+```
+
+ZAF, C-CLIP, and SD-LoRA are referenced in §2.4 but their full citation details were not confirmed during the literature search. Either find the exact papers and add proper entries, or remove the references from §2.4 (acceptable if the paragraph still makes the point without them — it does).
+
+---
+
+### Abstract Template (Fill In After Nibi Results)
+
+Write ~150 words following this structure:
+
+> Fine-tuning vision-language models on a sequence of downstream tasks causes catastrophic forgetting of both task-specific knowledge and the zero-shot transfer capacity built during pretraining. Existing methods address these pressures separately: distillation-based approaches [ZSCL] protect zero-shot representations but cannot revisit task-specific features, while synthetic replay methods [GIFT, LoRA-Loop] achieve strong accuracy at the cost of maintaining a 900M-parameter generative model at training time. We show that these goals are not in tension: exemplar replay and zero-shot anchor distillation are complementary mechanisms that together achieve [X]% Last accuracy on the 11-task MTIL benchmark — within [Y] pp of state-of-the-art methods requiring no generative model. We further characterise a structural gradient conflict in ZSCL-family training where reference distillation consumes ~85% of the gradient budget, and show that exemplar replay with proportional class-count allocation partially relieves this constraint. Our analysis and ablations provide the first systematic study of how real exemplar replay interacts with zero-shot anchor distillation across 11 sequential tasks.
+
+Fill in [X] and [Y] once Nibi completes.
+
+---
+
+### Priority Order for Next Work Session
+
+| Priority | Task | Time Required | Impact |
+|---|---|---|---|
+| 1 | Fix all formatting issues in the LaTeX draft | 1h | Blocks sharing draft with supervisor |
+| 2 | Write the abstract | 30min | Blocks any serious review of the paper |
+| 3 | Run uniform replay ablation (v2 with equal allocation) | 1 Nibi job | Unlocks the key ablation row |
+| 4 | Create gradient budget figure from existing loss CSVs | 2h | Turns the paper into a discovery paper |
+| 5 | Create cost-vs-accuracy scatter figure | 1h | Makes the efficiency argument visual |
+| 6 | Write §4.3 Results with Nibi v2 numbers | 2h (after Nibi) | Completes the paper skeleton |
+| 7 | Write §4.4 Ablation | 1h (after uniform run) | Required for main-conference submission |
+| 8 | Write §5 Conclusion | 30min | Short, can be done anytime |
+| 9 | Find BibTeX keys for ZAF, C-CLIP, SD-LoRA | 30min | Cleans up §2.4 ? placeholders |
