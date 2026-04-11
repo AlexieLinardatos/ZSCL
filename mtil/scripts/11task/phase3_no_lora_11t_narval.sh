@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=11t_p3_narval
 #SBATCH --time=48:00:00
-#SBATCH --mem=64GB
+#SBATCH --mem=128GB
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:a100:1
 #SBATCH --account=def-fqureshi_gpu
