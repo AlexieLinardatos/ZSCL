@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH --job-name=11t_p3_narval
-#SBATCH --time=48:00:00
+#SBATCH --job-name=11t_p3_v3_narval
+#SBATCH --time=72:00:00
 #SBATCH --mem=128GB
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:a100:1
@@ -8,10 +8,9 @@
 #SBATCH --output=/scratch/alexie/logs/%x-%j.out
 #SBATCH --signal=USR1@60
 
-# Narval version of phase3_no_lora_11t_v2.sh
+# Narval version of phase3_no_lora_11t_v3.sh
 # Runs on full A100 80GB — no MIG slice, no memory pressure.
-# Resumes from existing checkpoints in ckpt/11task/phase3_no_lora_v2/
-# (same SAVE_PATH as Nibi v2/v3 runs so resume logic picks up automatically)
+# v3 changes: doubled replay budget (11000) + SUN397 5000 iters
 
 set -euo pipefail
 mkdir -p /scratch/alexie/logs
@@ -58,7 +57,7 @@ cd "$REPO_ROOT/mtil"
 export PYTHONPATH="$REPO_ROOT/mtil/scripts/4task/phase3:${PYTHONPATH:-}"
 mkdir -p logs
 
-SAVE_PATH="ckpt/11task/phase3_no_lora_v2"
+SAVE_PATH="ckpt/11task/phase3_no_lora_v3"
 mkdir -p "${SAVE_PATH}"
 
 EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397,ImageNet"
@@ -82,12 +81,12 @@ srun python -m phase3.train_phase3 \
   --eval-datasets "${EVAL_DATASETS}" \
   --eval-interval 500 \
   --use_replay \
-  --replay_budget 5500 \
+  --replay_budget 11000 \
   --replay_batch_size 8 \
   --replay_loss_weight 1.0 \
   --batch-size-eval 16 \
   --dataset_order Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397 \
   --lambda_replay_teacher_distill 0.5 \
-  --task_iterations "Aircraft:2000,Caltech101:1000,CIFAR100:1500,DTD:1500,EuroSAT:1000,Flowers:1500,Food:1500,MNIST:800,OxfordPet:1500,StanfordCars:3000,SUN397:3000"
+  --task_iterations "Aircraft:2000,Caltech101:1000,CIFAR100:1500,DTD:1500,EuroSAT:1000,Flowers:1500,Food:1500,MNIST:800,OxfordPet:1500,StanfordCars:3000,SUN397:5000"
 
 echo "[`date`] Done. Checkpoints in ${SAVE_PATH}/"
