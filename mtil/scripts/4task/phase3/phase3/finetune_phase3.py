@@ -261,7 +261,10 @@ def finetune_multi_task_phase3(args):
             for tid in replay_buffer.memory
             if tid in replay_buffer.task_info
         }
-        replay_buffer.rebalance_proportional(class_counts)
+        if getattr(args, 'no_proportional_replay', False):
+            replay_buffer.rebalance()
+        else:
+            replay_buffer.rebalance_proportional(class_counts)
 
         print(f"[Phase3 outer loop] Buffer after task {task_idx + 1}:")
         print(replay_buffer)

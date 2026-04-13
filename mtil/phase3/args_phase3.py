@@ -41,6 +41,10 @@ def parse_phase3_arguments():
         "--task_iterations", type=str, default=None,
         help="Per-task iteration overrides as 'Task:iters,...' e.g. 'Aircraft:2000,MNIST:800'"
     )
+    p3_parser.add_argument(
+        "--no_proportional_replay", action="store_true", default=False,
+        help="Use uniform exemplar allocation instead of proportional-by-class-count"
+    )
 
     p3_ns, remaining_argv = p3_parser.parse_known_args()
 
@@ -85,5 +89,7 @@ def parse_phase3_arguments():
         for pair in p3_ns.task_iterations.split(","):
             task, iters = pair.strip().split(":")
             args.task_iterations[task.strip()] = int(iters.strip())
+
+    args.no_proportional_replay = p3_ns.no_proportional_replay
 
     return args
