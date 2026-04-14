@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=11t_p3_v3
+#SBATCH --job-name=11t_p3_v4
 #SBATCH --time=72:00:00
 #SBATCH --mem=128GB
 #SBATCH --cpus-per-task=4
@@ -8,14 +8,16 @@
 #SBATCH --output=/scratch/alexie/logs/%x-%j.out
 #SBATCH --signal=USR1@60
 
-# Phase 3 v3: two improvements over v2:
-#   1. Doubled replay budget (11000 vs 5500) — more exemplars per class
-#   2. SUN397 increased to 5000 iters (CE still dropping at 3000 in v2)
+# Phase 3 v4: two changes over v3:
+#   1. lambda_replay_teacher_distill 0.5 -> 0.3
+#      At 0.5 RTD takes 33% of gradient budget, CE only 3%.
+#      At 0.3 RTD drops to ~25%, CE gets ~5-6% — RTD still steers but less suppressive.
+#      At 0.1 RTD was "not steering" (too weak), so 0.3 is the middle ground.
+#   2. Aircraft 2000 -> 3000 iters
+#      Aircraft is fine-grained (100 classes), first task trained, hardest to learn.
+#      53.59% final acc in v3 — more CE exposure needed.
 #
-# Per-task iterations (total: 20300):
-#   Aircraft:2000    Caltech101:1000  CIFAR100:1500   DTD:1500
-#   EuroSAT:1000     Flowers:1500     Food:1500        MNIST:800
-#   OxfordPet:1500   StanfordCars:3000  SUN397:5000
+# All other settings identical to v3.
 
 set -euo pipefail
 mkdir -p /scratch/alexie/logs
@@ -62,12 +64,12 @@ cd "$REPO_ROOT/mtil"
 export PYTHONPATH="$REPO_ROOT/mtil/scripts/4task/phase3:${PYTHONPATH:-}"
 mkdir -p logs
 
-SAVE_PATH="ckpt/11task/phase3_no_lora_v3"
+SAVE_PATH="ckpt/11task/phase3_no_lora_v4"
 mkdir -p "${SAVE_PATH}"
 
 EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397,ImageNet"
 
-echo "[`date`] Starting Phase 3 v3 — doubled replay budget + SUN397 5000 iters"
+echo "[`date`] Starting Phase 3 v4 — lambda_RTD=0.3, Aircraft 3000 iters"
 
 srun python -m phase3.train_phase3 \
   --train-mode=whole \
@@ -91,7 +93,7 @@ srun python -m phase3.train_phase3 \
   --replay_loss_weight 1.0 \
   --batch-size-eval 16 \
   --dataset_order Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397 \
-  --lambda_replay_teacher_distill 0.5 \
-  --task_iterations "Aircraft:2000,Caltech101:1000,CIFAR100:1500,DTD:1500,EuroSAT:1000,Flowers:1500,Food:1500,MNIST:800,OxfordPet:1500,StanfordCars:3000,SUN397:5000"
+  --lambda_replay_teacher_distill 0.3 \
+  --task_iterations "Aircraft:3000,Caltech101:1000,CIFAR100:1500,DTD:1500,EuroSAT:1000,Flowers:1500,Food:1500,MNIST:800,OxfordPet:1500,StanfordCars:3000,SUN397:5000"
 
 echo "[`date`] Done. Checkpoints in ${SAVE_PATH}/"
