@@ -1,0 +1,13 @@
+# Experiments — Findings
+
+## 11-task Phase 3 (no LoRA)
+
+Benchmark: MTIL 11-task order (Aircraft → Caltech101 → CIFAR100 → DTD → EuroSAT → Flowers → Food → MNIST → OxfordPet → StanfordCars → SUN397), ImageNet as held-out zero-shot eval. Scripts: `mtil/scripts/11task/phase3_no_lora_11t_v{N}.sh`.
+
+| Version | Last | ImageNet avg | λ_RTD | replay_w | replay_bs | replay_budget | L2 | lr | Aircraft it. | CIFAR100 it. | DTD it. | SUN397 it. | StanfordCars it. | Notes |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| v3 | 84.42 | 68.13 | 0.5 | 1.0 | 8 | 11000 | 1 | 5e-6 | 2000 | 1500 | 1500 | 5000 | 3000 | Baseline: doubled replay budget + SUN397 5000 iters |
+| v4 | 84.65 | 68.37 | 0.3 | 1.0 | 8 | 11000 | 1 | 5e-6 | 3000 | 1500 | 1500 | 5000 | 3000 | λ_RTD 0.5→0.3 (less suppressive); Aircraft 2000→3000 |
+| v5 | — | — | 0.3 | 1.5 | 16 | 11000 | 1 | 5e-6 | 3500 | 2000 | 2000 | 5000 | 3000 | replay_w 1.0→1.5 + replay_bs 8→16; longer CIFAR100/DTD/Aircraft. Target: Last→86% |
+
+Shared across all versions: `method=ZSCL`, `train-mode=whole`, `image_loss + text_loss`, `we avg_freq=50`, `ref-dataset=ImageNet`, `ref-sentences=conceptual_captions`, default `iterations=1500` per task. Other per-task iterations (unchanged across v3–v5): Caltech101:1000, EuroSAT:1000, Flowers:1500, Food:1500, MNIST:800, OxfordPet:1500.
