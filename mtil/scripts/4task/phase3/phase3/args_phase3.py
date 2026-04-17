@@ -45,6 +45,10 @@ def parse_phase3_arguments():
         "--no_proportional_replay", action="store_true", default=False,
         help="Use uniform exemplar allocation instead of proportional-by-class-count"
     )
+    p3_parser.add_argument(
+        "--replay_positional_weighting", action="store_true", default=False,
+        help="Weight replay CE per task by (N-i)/N where i=task position, N=total tasks"
+    )
 
     p3_ns, remaining_argv = p3_parser.parse_known_args()
 
@@ -91,5 +95,6 @@ def parse_phase3_arguments():
             args.task_iterations[task.strip()] = int(iters.strip())
 
     args.no_proportional_replay = p3_ns.no_proportional_replay
+    args.replay_positional_weighting = p3_ns.replay_positional_weighting
 
     return args

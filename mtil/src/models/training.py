@@ -762,7 +762,8 @@ def apply_wise_merge(args, model):
 # Replay Loss
 # =============================================================================
 
-def compute_replay_loss(model, replay_batch, logit_scale, replay_buffer, args):
+def compute_replay_loss(model, replay_batch, logit_scale, replay_buffer, args,
+                        task_weights=None):
     """
     Compute cross-entropy loss on a batch sampled from the replay buffer.
 
@@ -777,6 +778,9 @@ def compute_replay_loss(model, replay_batch, logit_scale, replay_buffer, args):
         logit_scale:   Scalar logit scale (from model.logit_scale).
         replay_buffer: ReplayBuffer instance (for task metadata).
         args:          Training arguments (uses args.ls for label smoothing).
+        task_weights:  Optional dict mapping task_id -> scalar weight.
+                       When provided, each task's CE is scaled by its weight
+                       before averaging. Default None = uniform (weight 1).
 
     Returns:
         Scalar loss tensor (mean over all replay samples).
@@ -815,8 +819,9 @@ def compute_replay_loss(model, replay_batch, logit_scale, replay_buffer, args):
         logits = logit_scale.exp() * img_emb @ text_emb.t()
         task_loss = F.cross_entropy(logits, task_labels, label_smoothing=args.ls)
 
+        w = task_weights.get(tid_int, 1.0) if task_weights else 1.0
         n = mask.sum().float()
-        total_loss = total_loss + task_loss * n
+        total_loss = total_loss + w * task_loss * n
         total_samples += mask.sum().item()
 
     if total_samples > 0:

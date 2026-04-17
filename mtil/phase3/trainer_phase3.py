@@ -165,12 +165,22 @@ def custom_finetune_phase3(args, replay_buffer=None):
     lambda_rtd = getattr(args, "lambda_replay_teacher_distill", 0.5)
     same_batch = getattr(args, "replay_teacher_same_batch_as_replay_sup", True)
 
+    use_positional_weights = getattr(args, "replay_positional_weighting", False)
+    num_total_tasks = len(args.dataset_order) if hasattr(args, "dataset_order") else 1
+    replay_task_weights = None
+    if use_positional_weights and num_total_tasks > 1:
+        replay_task_weights = {
+            i: (num_total_tasks - i) / num_total_tasks
+            for i in range(num_total_tasks)
+        }
+
     print(
         f"\n[Phase3 config] "
         f"existing_distill={enable_existing_distill}  "
         f"replay_sup={enable_replay_sup}  "
         f"replay_teacher={enable_replay_teacher} (λ={lambda_rtd})  "
-        f"same_batch={same_batch}\n"
+        f"same_batch={same_batch}"
+        f"{'  positional_weights=' + str(replay_task_weights) if replay_task_weights else ''}\n"
     )
 
     # ------------------------------------------------------------------ #
@@ -443,7 +453,8 @@ def custom_finetune_phase3(args, replay_buffer=None):
             # (4) Supervised CE on replay samples
             if enable_replay_sup:
                 replay_ce = compute_replay_loss(
-                    model, replay_batch, logit_scale, replay_buffer, args
+                    model, replay_batch, logit_scale, replay_buffer, args,
+                    task_weights=replay_task_weights
                 )
                 loss = loss + replay_loss_weight * replay_ce
                 loss_rsup_val = replay_ce.item()

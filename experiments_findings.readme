@@ -8,6 +8,64 @@ Benchmark: MTIL 11-task order (Aircraft → Caltech101 → CIFAR100 → DTD → 
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | v3 | 84.42 | 68.13 | 0.5 | 1.0 | 8 | 11000 | 1 | 5e-6 | 2000 | 1500 | 1500 | 5000 | 3000 | Baseline: doubled replay budget + SUN397 5000 iters |
 | v4 | 84.65 | 68.37 | 0.3 | 1.0 | 8 | 11000 | 1 | 5e-6 | 3000 | 1500 | 1500 | 5000 | 3000 | λ_RTD 0.5→0.3 (less suppressive); Aircraft 2000→3000 |
-| v5 | — | — | 0.3 | 1.5 | 16 | 11000 | 1 | 5e-6 | 3500 | 2000 | 2000 | 5000 | 3000 | replay_w 1.0→1.5 + replay_bs 8→16; longer CIFAR100/DTD/Aircraft. Target: Last→86% |
+| v5 | 84.57 | 68.11 | 0.3 | 1.5 | 16 | 11000 | 1 | 5e-6 | 3500 | 2000 | 2000 | 5000 | 3000 | replay_w 1.0→1.5 + replay_bs 8→16; longer CIFAR100/DTD/Aircraft. Result: slight regression, replay gradient diluted ZSCL signal |
+| v6 | — | — | 0.3 | 1.0 | 8 | 13000 | 1 | 5e-6 | 3000 | 1500 | 1500 | 5000 | 3000 | **NEW: positional replay weighting** w_i=(N-i)/N + budget 11k→13k. Reverts to v4 base (replay_w=1.0, replay_bs=8). Code change in compute_replay_loss |
 
-Shared across all versions: `method=ZSCL`, `train-mode=whole`, `image_loss + text_loss`, `we avg_freq=50`, `ref-dataset=ImageNet`, `ref-sentences=conceptual_captions`, default `iterations=1500` per task. Other per-task iterations (unchanged across v3–v5): Caltech101:1000, EuroSAT:1000, Flowers:1500, Food:1500, MNIST:800, OxfordPet:1500.
+### v5 analysis
+
+v5 regressed slightly vs v4 (Last -0.08, ImageNet -0.26). Higher replay_loss_weight diluted the relative contribution of L_zscl in the total gradient, hurting ImageNet retention. DTD forgetting improved (-2.13 → -1.33) but CIFAR100 forgetting worsened (-3.93 → -4.72). Net effect: wash. Replay weight was already well-balanced at 1.0.
+
+### Per-task forgetting comparison (v4 vs v5)
+
+| Task | v4 peak | v4 final | v4 forgot | v5 peak | v5 final | v5 forgot |
+|---|---|---|---|---|---|---|
+| Aircraft | 52.48 | 54.52 | +2.04 | 52.66 | 54.61 | +1.95 |
+| Caltech101 | 94.59 | 94.07 | -0.52 | 94.07 | 93.49 | -0.58 |
+| CIFAR100 | 85.91 | 81.98 | -3.93 | 86.52 | 81.80 | -4.72 |
+| DTD | 78.19 | 76.06 | -2.13 | 77.98 | 76.65 | -1.33 |
+| EuroSAT | 97.76 | 94.61 | -3.15 | 97.94 | 94.67 | -3.27 |
+| Flowers | 97.04 | 97.02 | -0.02 | 97.02 | 97.37 | +0.35 |
+| Food | 91.61 | 90.75 | -0.86 | 91.62 | 90.58 | -1.03 |
+| MNIST | 98.86 | 98.05 | -0.81 | 98.86 | 97.84 | -1.02 |
+| OxfordPet | 95.45 | 94.90 | -0.55 | 95.53 | 94.74 | -0.80 |
+| StanfordCars | 86.41 | 85.54 | -0.87 | 86.30 | 85.39 | -0.90 |
+| SUN397 | 80.36 | 80.36 | 0.00 | 80.34 | 80.34 | 0.00 |
+
+Shared across all versions: `method=ZSCL`, `train-mode=whole`, `image_loss + text_loss`, `we avg_freq=50`, `ref-dataset=ImageNet`, `ref-sentences=conceptual_captions`, default `iterations=1500` per task. Other per-task iterations (unchanged across v3–v6): Caltech101:1000, EuroSAT:1000, Flowers:1500, Food:1500, MNIST:800, OxfordPet:1500.
+
+### v5 lessons → v6 design
+
+**What v3→v5 taught us:**
+- Doubling replay budget (5.5k→11k, v2→v3): minimal effect on forgetting. More exemplars alone has diminishing returns — ~9 per class is already sufficient for the gradient direction.
+- Increasing replay_loss_weight (1.0→1.5, v4→v5): actually hurt. Diluted the relative ZSCL signal in the total gradient, causing ImageNet to drop -0.26. The replay weight was already well-calibrated at 1.0.
+- The forgetting pattern is **position-dependent**: tasks trained early (CIFAR100, task 2) forget ~4pt across 8 subsequent tasks; tasks trained late (StanfordCars, task 9) forget <1pt across 1 subsequent task. Yet the replay loss treats them equally.
+
+**v6 hypothesis:** Instead of increasing the total replay signal (which dilutes ZSCL), redistribute it — give early tasks more anti-forgetting pressure proportional to how many remaining tasks they must survive.
+
+**Positional replay weighting formula:**
+```
+w_i = (N - i) / N     where i = task position (0-indexed), N = total tasks
+```
+
+| Task | Position | Weight |
+|---|---|---|
+| Aircraft | 0 | 1.00 |
+| Caltech101 | 1 | 0.91 |
+| CIFAR100 | 2 | 0.82 |
+| DTD | 3 | 0.73 |
+| EuroSAT | 4 | 0.64 |
+| Flowers | 5 | 0.55 |
+| Food | 6 | 0.45 |
+| MNIST | 7 | 0.36 |
+| OxfordPet | 8 | 0.27 |
+| StanfordCars | 9 | 0.18 |
+
+This is principled (no dependency on prior run data), thesis-defensible ("we weight replay CE proportionally to the number of remaining tasks each exemplar must be retained across"), and adds no hyperparameters.
+
+**Code changes for v6:**
+- `src/models/training.py:compute_replay_loss` — added optional `task_weights` dict parameter; multiplies each task's CE by its weight before averaging.
+- `phase3/args_phase3.py` — added `--replay_positional_weighting` flag.
+- `phase3/trainer_phase3.py` — computes weight map `{i: (N-i)/N}` when flag is set, passes to `compute_replay_loss`.
+- Budget bump 11k→13k: modest, to give positional weighting more exemplar diversity for the higher-weighted early tasks (~11 per class instead of ~9).
+
+**Expected outcome:** CIFAR100 and EuroSAT forgetting should decrease (they get 0.82× and 0.64× weight vs current 1.0×... wait, actually they get MORE weight). StanfordCars and OxfordPet (low forgetting, late position) get reduced weight, freeing gradient budget for the ZSCL signal. Net: Last should improve without hurting ImageNet.
