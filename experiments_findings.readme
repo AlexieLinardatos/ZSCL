@@ -9,7 +9,7 @@ Benchmark: MTIL 11-task order (Aircraft → Caltech101 → CIFAR100 → DTD → 
 | v3 | 84.42 | 68.13 | 0.5 | 1.0 | 8 | 11000 | 1 | 5e-6 | 2000 | 1500 | 1500 | 5000 | 3000 | Baseline: doubled replay budget + SUN397 5000 iters |
 | v4 | 84.65 | 68.37 | 0.3 | 1.0 | 8 | 11000 | 1 | 5e-6 | 3000 | 1500 | 1500 | 5000 | 3000 | λ_RTD 0.5→0.3 (less suppressive); Aircraft 2000→3000 |
 | v5 | 84.57 | 68.11 | 0.3 | 1.5 | 16 | 11000 | 1 | 5e-6 | 3500 | 2000 | 2000 | 5000 | 3000 | replay_w 1.0→1.5 + replay_bs 8→16; longer CIFAR100/DTD/Aircraft. Result: slight regression, replay gradient diluted ZSCL signal |
-| v6 | — | — | 0.3 | 1.0 | 8 | 13000 | 1 | 5e-6 | 3000 | 1500 | 1500 | 5000 | 3000 | **NEW: positional replay weighting** w_i=(N-i)/N + budget 11k→13k. Reverts to v4 base (replay_w=1.0, replay_bs=8). Code change in compute_replay_loss |
+| v6 | 84.66 | 68.24 | 0.3 | 1.0 | 8 | 13000 | 1 | 5e-6 | 3000 | 1500 | 1500 | 5000 | 3000 | Positional replay weighting w_i=(N-i)/N + budget 11k→13k. Reverts to v4 base (replay_w=1.0, replay_bs=8). Last ≈ v4, ImageNet -0.13 |
 
 ### v5 analysis
 
@@ -69,3 +69,17 @@ This is principled (no dependency on prior run data), thesis-defensible ("we wei
 - Budget bump 11k→13k: modest, to give positional weighting more exemplar diversity for the higher-weighted early tasks (~11 per class instead of ~9).
 
 **Expected outcome:** CIFAR100 and EuroSAT forgetting should decrease (they get 0.82× and 0.64× weight vs current 1.0×... wait, actually they get MORE weight). StanfordCars and OxfordPet (low forgetting, late position) get reduced weight, freeing gradient budget for the ZSCL signal. Net: Last should improve without hurting ImageNet.
+
+### v6 analysis
+
+v6 essentially tied v4 on Last (84.66 vs 84.65, +0.01) and slightly regressed on ImageNet (-0.13). Per-task pattern is mixed:
+
+- **Aircraft** (position 0, weight 1.0): 54.52 → 56.17 (+1.65). Early task with highest replay weight — the mechanism worked as designed.
+- **DTD** (position 3, weight 0.73): 76.06 → 76.49 (+0.43). Small gain.
+- **EuroSAT** (position 4, weight 0.64): 94.61 → 92.30 (-2.31). Unexpected regression.
+- **MNIST** (position 7, weight 0.36): 98.05 → 97.36 (-0.69). Consistent with reduced replay pressure on late tasks.
+- **Other tasks**: within ±0.2 of v4.
+
+The hypothesis that late-task replay weight could be reduced to free gradient budget for ZSCL was partially validated (MNIST forgetting slightly up, ImageNet slightly down — both consistent with rebalancing away from late tasks). But EuroSAT's regression is unexplained and cancels the Aircraft gain. Net effect on Last is a wash.
+
+**Conclusion:** v4 and v6 are essentially indistinguishable on Last (84.65 vs 84.66). v4 wins on ImageNet (68.37 vs 68.24). For the paper's Row 5, **v4 is the safer choice** — it has the best ImageNet retention of any run and matches v6 on Last within noise.
