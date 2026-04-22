@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=abl_zscl
-#SBATCH --time=48:00:00
+#SBATCH --time=72:00:00
 #SBATCH --mem=128GB
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:nvidia_h100_80gb_hbm3_3g.40gb:1
@@ -80,6 +80,12 @@ srun python -m phase3.train_phase3 \
   --eval-datasets "${EVAL_DATASETS}" \
   --eval-interval 500 \
   --batch-size-eval 16 \
-  --dataset_order Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397
+  --dataset_order Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397 \
+  --use_replay \
+  --replay_budget 11000 \
+  --replay_batch_size 8 \
+  --replay_loss_weight 1.0 \
+  --no_replay_supervised_loss \
+  --no_replay_teacher_distill
 
 echo "[`date`] Done. Checkpoints in ${SAVE_PATH}/"
