@@ -4,7 +4,39 @@
 
 Benchmark: MTIL 11-task order (Aircraft → Caltech101 → CIFAR100 → DTD → EuroSAT → Flowers → Food → MNIST → OxfordPet → StanfordCars → SUN397), ImageNet as held-out zero-shot eval. Scripts: `mtil/scripts/11task/phase3_no_lora_11t_v{N}.sh`.
 
-| Version | Last | ImageNet avg | λ_RTD | replay_w | replay_bs | replay_budget | L2 | lr | Aircraft it. | CIFAR100 it. | DTD it. | SUN397 it. | StanfordCars it. | Notes |
+### Results (corrected — standard MTIL metrics)
+
+`Last` = mean accuracy over the 11 MTIL tasks in the final row (ImageNet excluded, per ZSCL/MoE-Adapters convention). `Avg` = mean over all 121 cells of the 11×11 task-by-stage matrix (ZSCL paper definition — includes pre-training zero-shot cells). `Peak` = mean of diagonal (task i acc right after training task i; the number `compute_metrics.py` prints as "Avg"). `Transfer` = mean ImageNet acc across all 11 rows.
+
+| Version | Last | Avg | Peak | Transfer | λ_RTD | replay_w | replay_bs | replay_budget | Aircraft it. | CIFAR100 it. | DTD it. | SUN397 it. | StanfordCars it. | Notes |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| v3 | 85.94 | 77.06 | 87.16 | 68.13 | 0.5 | 1.0 | 8 | 11000 | 2000 | 1500 | 1500 | 5000 | 3000 | Baseline: doubled replay budget + SUN397 5000 iters |
+| v4 | **86.17** | 77.17 | 87.15 | **68.37** | 0.3 | 1.0 | 8 | 11000 | 3000 | 1500 | 1500 | 5000 | 3000 | λ_RTD 0.5→0.3; Aircraft 2000→3000. **Best run; used for Table 1.** |
+| v5 | 86.13 | **77.23** | 87.17 | 68.11 | 0.3 | 1.5 | 16 | 11000 | 3500 | 2000 | 2000 | 5000 | 3000 | replay_w 1.0→1.5 + replay_bs 8→16 |
+| v6 | 86.14 | 77.07 | 87.15 | 68.24 | 0.3 | 1.0 | 8 | 13000 | 3000 | 1500 | 1500 | 5000 | 3000 | Positional replay weighting w_i=(N-i)/N + budget 11k→13k |
+
+Shared across all versions: `method=ZSCL`, `train-mode=whole`, `image_loss + text_loss`, `we avg_freq=50`, `ref-dataset=ImageNet`, `ref-sentences=conceptual_captions`, default `iterations=1500` per task, `L2=1`, `lr=5e-6`. Other per-task iterations (unchanged across v3–v6): Caltech101:1000, EuroSAT:1000, Flowers:1500, Food:1500, MNIST:800, OxfordPet:1500.
+
+### WiSE-FT test-time interpolation on v4 (`merged = α·v4 + (1-α)·zeroshot`)
+
+| α | Last | ImageNet |
+|---|---|---|
+| 0.70 | 85.10 | 70.44 |
+| 0.80 | 85.79 | 69.94 |
+| 0.85 | 86.08 | 69.59 |
+| 0.90 | 86.26 | 69.23 |
+| 0.95 | 86.42 | 68.90 |
+| 1.00 | 86.46 | 68.52 |
+
+α=1.00 is ≈ v4 base (86.17 from CSV; 0.29 pt drift likely from eval-time pipeline differences). Pareto frontier: α=0.70 trades −1.07 Last for +2.07 Transfer vs v4.
+
+---
+
+### ⚠️ Old/deprecated table (BAD — averaged over 12 columns including ImageNet)
+
+The table below was computed as `(11 task accs + ImageNet) / 12`, which does **not** match the standard MTIL `Last` definition. It is preserved only for provenance. **Do not cite these numbers.** See the corrected table above.
+
+| Version | Last (wrong) | ImageNet avg | λ_RTD | replay_w | replay_bs | replay_budget | L2 | lr | Aircraft it. | CIFAR100 it. | DTD it. | SUN397 it. | StanfordCars it. | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | v3 | 84.42 | 68.13 | 0.5 | 1.0 | 8 | 11000 | 1 | 5e-6 | 2000 | 1500 | 1500 | 5000 | 3000 | Baseline: doubled replay budget + SUN397 5000 iters |
 | v4 | 84.65 | 68.37 | 0.3 | 1.0 | 8 | 11000 | 1 | 5e-6 | 3000 | 1500 | 1500 | 5000 | 3000 | λ_RTD 0.5→0.3 (less suppressive); Aircraft 2000→3000 |
