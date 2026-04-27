@@ -394,9 +394,11 @@
   once. Weight ensembling runs every $K{=}50$ iterations with
   $\alpha{=}1$ and $\lambda{=}0.3$ (matching \Cref{eq:total}). Per-task
   iteration counts follow dataset size (800--5{,}000 iterations;
-  see \Cref{app:iterations}). All
-  hyperparameters were fixed before the 11-task run; no post-hoc tuning was
-  performed. All experiments run on a single NVIDIA H100 40\,GB MIG slice. GIFT
+  see \Cref{app:iterations}). $\lambda$ was selected from $\{0.3, 0.5\}$ on a
+  4-task proxy sequence (Aircraft $\to$ CIFAR-100 $\to$ DTD $\to$ Flowers) before
+  the 11-task run; both values are reported in \Cref{tab:ablation} for full
+  transparency. All other hyperparameters were fixed prior to evaluation; no
+  tuning was performed on the 11-task benchmark. All experiments run on a single NVIDIA H100 40\,GB MIG slice. GIFT
   and LoRA-Loop, for comparison, each require a frozen ${\approx}900$M-parameter
   Stable Diffusion network throughout training; our method has no such dependency.
 
