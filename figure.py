@@ -1,115 +1,97 @@
+import math
 import matplotlib.pyplot as plt
 import matplotlib.lines as mlines
-from adjustText import adjust_text
 
 plt.rcParams.update({
     'font.family': 'serif',
-    'font.size': 10,
+    'font.size': 30,
     'axes.labelsize': 11,
     'xtick.labelsize': 9,
     'ytick.labelsize': 9,
+    'axes.spines.top': False,
+    'axes.spines.right': False,
 })
 
-methods = [
-    (59.0,  74.0,  'Seq. FT',       '#aaaaaa', 'o',  55),
-    (67.0,  78.0,  'WiSE-FT',       '#aaaaaa', 's',  55),
-    (62.1,  76.3,  'EWC',           '#aaaaaa', 's',  55),
-    (66.8,  78.1,  'LwF',           '#aaaaaa', 's',  55),
-    (68.1,  83.6,  'ZSCL',          '#4472C4', '^',  80),
-    (68.9,  85.0,  'MoE-Adapters',  '#4472C4', '^',  80),
-    (69.3,  86.0,  'GIFT$^\\dagger$',      '#E07B39', 'D', 80),
-    (69.8,  86.0,  'LoRA-Loop$^\\dagger$', '#E07B39', 'D', 80),
-    (68.37, 86.17, 'Ours',          '#C00000', '*', 220),
+# Numbers from Table 1 in the paper.
+# Seq. FT inferred from ZSCL deltas: 68.1-9.1=59.0 Transfer, 83.6-9.6=74.0 Last.
+#
+# To reposition a label, edit (dx_pt, dy_pt) — offset in typographic points
+# from the marker centre. Positive x = right, positive y = up.
+# ha = horizontal alignment ('left' | 'right' | 'center')
+# va = vertical alignment ('bottom' | 'top' | 'center')
+#
+# (Transfer, Last, label, color, marker, s, dx_pt, dy_pt, ha, va)
+METHODS = [
+    (50.4,  80.1,  'iCaRL',               '#666666', 's',  35,    6,   4, 'left',  'bottom'),
+    (52.3,  77.7,  'WiSE-FT',             '#666666', 's',  35,    6,   4, 'left',  'bottom'),
+    (56.9,  74.6,  'LwF',                 '#666666', 's',  35,   -6,   4, 'right', 'bottom'),
+    (59.0,  74.0,  'Seq. FT',             '#666666', 'o',  35,    6,  -6, 'right',  'top'),
+    (62.1,  76.3,  'EWC',                 '#666666', 's',  35,   -6,   4, 'right', 'bottom'),
+    (68.1,  83.6,  'ZSCL',                '#4472C4', '^',  65,   -8,   4, 'right', 'bottom'),
+    (68.9,  85.0,  'MoE-Adapters',        '#4472C4', '^',  65,   -8,   4, 'right', 'bottom'),
+    (69.3,  86.0,  r'GIFT$^\dagger$',     '#E07B39', 'D',  65,    5,   5, 'left',  'bottom'),
+    (69.8,  86.0,  r'LoRA-Loop$^\dagger$','#E07B39', 'D',  65,    5,  -7, 'left',  'top'),
+    (68.37, 86.17, 'Ours',                '#C00000', '*', 200,   -8,   5, 'right', 'bottom'),
 ]
 
-fig, ax = plt.subplots(figsize=(5.5, 4.5))
+LINE_LEN = 14  # uniform connector length in typographic points — edit to taste
 
-texts = []
+fig, ax = plt.subplots(figsize=(6.0, 4.5))
 
-# scatter + text
-for t, l, name, color, marker, size in methods:
-    ax.scatter(
-        t, l,
-        c=color,
-        marker=marker,
-        s=size,
-        zorder=5,
-        edgecolors='white',
-        linewidths=0.5
-    )
-
-    txt = ax.text(
-        t,
-        l,
+for t, l, name, color, marker, s, dx, dy, ha, va in METHODS:
+    ax.scatter(t, l, c=color, marker=marker, s=s, zorder=5,
+               edgecolors='white', linewidths=0.5, clip_on=False)
+    mag = math.hypot(dx, dy)
+    ndx, ndy = dx / mag * LINE_LEN, dy / mag * LINE_LEN
+    ax.annotate(
         name,
+        xy=(t, l),
+        xytext=(ndx, ndy),
+        textcoords='offset points',
         fontsize=8.5,
         color=color,
         fontweight='bold' if name == 'Ours' else 'normal',
-        zorder=10
+        ha=ha, va=va,
+        zorder=10,
+        annotation_clip=False,
+        arrowprops=dict(
+            arrowstyle='-',
+            color=color,
+            lw=0.6,
+            alpha=0.6,
+        ),
     )
 
-    texts.append(txt)
+# Pareto frontier: horizontal line at Ours' Last (86.17) across the full plot.
+# Ours is the only method that achieves this Last; everything below is dominated.
+ax.axhline(y=86.17, color='#444444', linestyle='--', linewidth=1.0,
+           alpha=0.45, zorder=2)
 
-# =========================
-# KEY FIX: strong repulsion
-# =========================
-adjust_text(
-    texts,
-    ax=ax,
-
-    # push labels away HARD
-    expand_text=(2.5, 2.5),
-    expand_points=(2.5, 2.5),
-
-    # stronger repulsion = less overlap
-    force_text=(1.5, 2.0),
-    force_points=(0.5, 1.0),
-
-    # allow full movement (critical)
-    only_move={'text': 'xy'},
-
-    # keep labels OUTSIDE cluster
-    lim=200,
-
-    arrowprops=dict(
-        arrowstyle='-',
-        color='gray',
-        lw=0.5,
-        alpha=0.6
-    )
-)
-
-# Pareto frontier
-frontier_t = [68.37, 69.3, 69.3, 69.8]
-frontier_l = [86.17, 86.17, 86.0, 86.0]
-
-ax.plot(frontier_t, frontier_l, 'k--', linewidth=1.1, alpha=0.45)
-
-# shaded region
-shade_t = [56.0, 68.37, 69.3, 69.8, 72.0]
-shade_l = [86.17, 86.17, 86.0, 86.0, 86.0]
-
-ax.fill_between(shade_t, 72.0, shade_l, alpha=0.04, color='black')
-
-ax.set_xlabel('Transfer — ImageNet zero-shot (%)')
-ax.set_ylabel('Last — mean final accuracy (%)')
-ax.set_xlim(56.5, 72.0)
+ax.set_xlabel('Transfer — ImageNet Zero-Shot (%)')
+ax.set_ylabel('Last — Mean Final Accuracy (%)')
+ax.set_xlim(47.5, 72.0)
 ax.set_ylim(72.5, 87.5)
 ax.grid(True, alpha=0.22, linestyle=':')
 
 legend_handles = [
-    mlines.Line2D([],[],marker='s',color='w',markerfacecolor='#aaaaaa',
-                  markersize=8, label='Baselines'),
-    mlines.Line2D([],[],marker='^',color='w',markerfacecolor='#4472C4',
-                  markersize=8, label='VLM CL methods'),
-    mlines.Line2D([],[],marker='D',color='w',markerfacecolor='#E07B39',
-                  markersize=8, label='Generative replay ($\\dagger$)'),
-    mlines.Line2D([],[],marker='*',color='w',markerfacecolor='#C00000',
-                  markersize=12, label='Ours'),
+    mlines.Line2D([],[], marker='s', color='w', markerfacecolor='#666666',
+                  markersize=7, label='Standard CL baselines'),
+    mlines.Line2D([],[], marker='^', color='w', markerfacecolor='#4472C4',
+                  markersize=7, label='VLM CL methods'),
+    mlines.Line2D([],[], marker='D', color='w', markerfacecolor='#E07B39',
+                  markersize=7, label=r'Generative replay ($^\dagger$)'),
+    mlines.Line2D([],[], marker='*', color='w', markerfacecolor='#C00000',
+                  markersize=11, label='Ours'),
+    mlines.Line2D([],[], color='#444444', linestyle='--', linewidth=1.0,
+                  alpha=0.6, label='Pareto frontier'),
 ]
 
-ax.legend(handles=legend_handles, fontsize=8, loc='lower right', framealpha=0.92)
+ax.legend(handles=legend_handles, fontsize=8, loc='lower right',
+          bbox_to_anchor=(1.0, 0.02), framealpha=0.92,
+          handlelength=1.4, handletextpad=0.5, labelspacing=0.35)
 
 plt.tight_layout()
 plt.savefig('pareto_frontier.pdf', dpi=300, bbox_inches='tight')
+plt.savefig('pareto_frontier.png', dpi=300, bbox_inches='tight')
+print("Saved pareto_frontier.pdf and pareto_frontier.png")
 plt.show()

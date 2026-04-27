@@ -66,7 +66,7 @@ CONFIGS = [
 # The two tasks to show: (column_name, panel_title, y_label)
 FOCUS_TASKS = [
     ('Aircraft',  'Aircraft (task 1)',  'Accuracy (%)'),
-    ('CIFAR100',  'CIFAR-100 (task 3)', None),
+    ('Flowers',  'Flowers (task 6)', None),
 ]
 
 
