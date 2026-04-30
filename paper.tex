@@ -466,39 +466,40 @@
   (46.6 / 56.2 / 67.4) from~\citep{gift2025}. $^\dagger$Uses exemplar replay.
   $^\ddagger$Reproduced by us; Seq.\ FT, ZSCL, MoE, GIFT, LoRA-Loop Order~I from
   \citep{zheng2023zscl,gift2025,loraloop2025}. Order~II results for prior methods
-  from~\citep{gift2025,loraloop2025}.}
+  from~\citep{gift2025,loraloop2025}. \textit{Add.\ model}: additional model
+  required at training time beyond the shared CLIP ViT-B/16 backbone; {---} = none.}
   \label{tab:main_results}
   \centering
   \setlength{\tabcolsep}{4.5pt}
-  \begin{tabular}{lcccccc}
+  \begin{tabular}{lccccccc}
   \toprule
-  Method & Transfer & $\Delta$ & Avg. & $\Delta$ & Last & $\Delta$ \\
+  Method & Transfer & $\Delta$ & Avg. & $\Delta$ & Last & $\Delta$ & Add.\ model \\
   \midrule
-  \multicolumn{7}{l}{\textit{Order I: Aircraft $\to$ Caltech101 $\to \cdots \to$ SUN397}} \\
+  \multicolumn{8}{l}{\textit{Order I: Aircraft $\to$ Caltech101 $\to \cdots \to$ SUN397}} \\
   \midrule
-  Seq.\ FT                                       & 59.0 & \phantom{$+$}0.0 & 65.0 & \phantom{$+$}0.0 & 74.0 & \phantom{$+$}0.0 \\
-  WiSE-FT~\citep{wortsman2022wiseft}$^\ddagger$ & 52.3 & \dneg{$-$6.7} & 60.7 & \dneg{$-$4.3} & 77.7 & \dpos{$+$3.7} \\
-  EWC~\citep{kirkpatrick2017ewc}$^\ddagger$      & 62.1 & \dpos{$+$3.1} & 68.4 & \dpos{$+$3.4} & 76.3 & \dpos{$+$2.3} \\
-  LwF~\citep{li2017lwf}$^\ddagger$              & 56.9 & \dneg{$-$2.1} & 64.7 & \dneg{$-$0.3} & 74.6 & \dpos{$+$0.6} \\
-  iCaRL~\citep{rebuffi2017icarl}$^\ddagger$     & 50.4 & \dneg{$-$8.6} & 65.7 & \dpos{$+$0.7} & 80.1 & \dpos{$+$6.1} \\
+  Seq.\ FT                                       & 59.0 & \phantom{$+$}0.0 & 65.0 & \phantom{$+$}0.0 & 74.0 & \phantom{$+$}0.0 & --- \\
+  WiSE-FT~\citep{wortsman2022wiseft}$^\ddagger$ & 52.3 & \dneg{$-$6.7} & 60.7 & \dneg{$-$4.3} & 77.7 & \dpos{$+$3.7} & --- \\
+  EWC~\citep{kirkpatrick2017ewc}$^\ddagger$      & 62.1 & \dpos{$+$3.1} & 68.4 & \dpos{$+$3.4} & 76.3 & \dpos{$+$2.3} & --- \\
+  LwF~\citep{li2017lwf}$^\ddagger$              & 56.9 & \dneg{$-$2.1} & 64.7 & \dneg{$-$0.3} & 74.6 & \dpos{$+$0.6} & --- \\
+  iCaRL~\citep{rebuffi2017icarl}$^\ddagger$     & 50.4 & \dneg{$-$8.6} & 65.7 & \dpos{$+$0.7} & 80.1 & \dpos{$+$6.1} & --- \\
   \midrule
-  ZSCL~\citep{zheng2023zscl}                    & 68.1 & \dpos{$+$9.1} & 75.4 & \dpos{$+$10.4} & 83.6 & \dpos{$+$9.6} \\
-  MoE-Adapters4CL~\citep{yu2024moe}             & 68.9 & \dpos{$+$9.9} & 76.7 & \dpos{$+$11.7} & 85.0 & \dpos{$+$11.0} \\
-  GIFT$^\dagger$~\citep{gift2025}               & 69.3 & \dpos{$+$10.3}& 77.3 & \dpos{$+$12.3} & 86.0 & \dpos{$+$12.0} \\
-  LoRA-Loop$^\dagger$~\citep{loraloop2025}      & \textbf{69.8} & \dpos{$+$\textbf{10.8}} & \textbf{77.6} & \dpos{$+$\textbf{12.6}} & 86.0 & \dpos{$+$12.0} \\
+  ZSCL~\citep{zheng2023zscl}                    & 68.1 & \dpos{$+$9.1} & 75.4 & \dpos{$+$10.4} & 83.6 & \dpos{$+$9.6} & --- \\
+  MoE-Adapters4CL~\citep{yu2024moe}             & 68.9 & \dpos{$+$9.9} & 76.7 & \dpos{$+$11.7} & 85.0 & \dpos{$+$11.0} & --- \\
+  GIFT$^\dagger$~\citep{gift2025}               & 69.3 & \dpos{$+$10.3}& 77.3 & \dpos{$+$12.3} & 86.0 & \dpos{$+$12.0} & SD (${\approx}900$M) \\
+  LoRA-Loop$^\dagger$~\citep{loraloop2025}      & \textbf{69.8} & \dpos{$+$\textbf{10.8}} & \textbf{77.6} & \dpos{$+$\textbf{12.6}} & 86.0 & \dpos{$+$12.0} & SD (${\approx}900$M) \\
   \midrule
   \rowcolor{gray!12}
-  \textbf{Ours}$^\dagger$                       & 68.4 & \dpos{$+$9.4} & 77.2 & \dpos{$+$12.2} & \textbf{86.2} & \dpos{$+$\textbf{12.2}} \\
+  \textbf{Ours}$^\dagger$                       & 68.4 & \dpos{$+$9.4} & 77.2 & \dpos{$+$12.2} & \textbf{86.2} & \dpos{$+$\textbf{12.2}} & \textbf{---} \\
   \midrule
-  \multicolumn{7}{l}{\textit{Order II: StanfordCars $\to$ Food $\to \cdots \to$ CIFAR100}} \\
+  \multicolumn{8}{l}{\textit{Order II: StanfordCars $\to$ Food $\to \cdots \to$ CIFAR100}} \\
   \midrule
-  Seq.\ FT                                       & 46.6 & \phantom{$+$}0.0 & 56.2 & \phantom{$+$}0.0 & 67.4 & \phantom{$+$}0.0 \\
-  ZSCL~\citep{zheng2023zscl}                    & 64.2 & \dpos{$+$17.6} & 74.5 & \dpos{$+$18.3} & 83.4 & \dpos{$+$16.0} \\
-  MoE-Adapters4CL~\citep{yu2024moe}             & 64.3 & \dpos{$+$17.7} & 74.7 & \dpos{$+$18.5} & 84.1 & \dpos{$+$16.7} \\
-  GIFT$^\dagger$~\citep{gift2025}               & 65.9 & \dpos{$+$19.3} & 75.7 & \dpos{$+$19.5} & 85.3 & \dpos{$+$17.9} \\
-  LoRA-Loop$^\dagger$~\citep{loraloop2025}      & 66.3 & \dpos{$+$19.7} & \textbf{75.9} & \dpos{$+$\textbf{19.7}} & 85.5 & \dpos{$+$18.1} \\
+  Seq.\ FT                                       & 46.6 & \phantom{$+$}0.0 & 56.2 & \phantom{$+$}0.0 & 67.4 & \phantom{$+$}0.0 & --- \\
+  ZSCL~\citep{zheng2023zscl}                    & 64.2 & \dpos{$+$17.6} & 74.5 & \dpos{$+$18.3} & 83.4 & \dpos{$+$16.0} & --- \\
+  MoE-Adapters4CL~\citep{yu2024moe}             & 64.3 & \dpos{$+$17.7} & 74.7 & \dpos{$+$18.5} & 84.1 & \dpos{$+$16.7} & --- \\
+  GIFT$^\dagger$~\citep{gift2025}               & 65.9 & \dpos{$+$19.3} & 75.7 & \dpos{$+$19.5} & 85.3 & \dpos{$+$17.9} & SD (${\approx}900$M) \\
+  LoRA-Loop$^\dagger$~\citep{loraloop2025}      & 66.3 & \dpos{$+$19.7} & \textbf{75.9} & \dpos{$+$\textbf{19.7}} & 85.5 & \dpos{$+$18.1} & SD (${\approx}900$M) \\
   \rowcolor{gray!12}
-  \textbf{Ours}$^\dagger$                       & \textbf{68.6} & \dpos{$+$\textbf{22.0}} & 75.3 & \dpos{$+$19.1} & \textbf{85.7} & \dpos{$+$\textbf{18.3}} \\
+  \textbf{Ours}$^\dagger$                       & \textbf{68.6} & \dpos{$+$\textbf{22.0}} & 75.3 & \dpos{$+$19.1} & \textbf{85.7} & \dpos{$+$\textbf{18.3}} & \textbf{---} \\
   \bottomrule
   \end{tabular}
   \end{table}

@@ -29,9 +29,9 @@ METHODS = [
     (62.1,  76.3,  'EWC',                 '#666666', 's',  35,   -6,   4, 'right', 'bottom'),
     (68.1,  83.6,  'ZSCL',                '#4472C4', '^',  65,   -8,   4, 'right', 'bottom'),
     (68.9,  85.0,  'MoE-Adapters',        '#4472C4', '^',  65,   -8,   4, 'right', 'bottom'),
-    (69.3,  86.0,  r'GIFT$^\dagger$',     '#E07B39', 'D',  65,    5,   5, 'left',  'bottom'),
-    (69.8,  86.0,  r'LoRA-Loop$^\dagger$','#E07B39', 'D',  65,    5,  -7, 'left',  'top'),
-    (68.37, 86.17, 'Ours',                '#C00000', '*', 200,   -8,   5, 'right', 'bottom'),
+    (69.3,  86.0,  r'GIFT',     '#E07B39', 'D',  65,    5,   5, 'left',  'bottom'),
+    (69.8,  86.0,  r'LoRA-Loop','#E07B39', 'D',  65,    5,  -7, 'left',  'top'),
+    (68.37, 86.28, 'ExRD',                '#C00000', '*', 200,   -8,   5, 'right', 'bottom'),
 ]
 
 LINE_LEN = 14  # uniform connector length in typographic points — edit to taste
@@ -64,7 +64,7 @@ for t, l, name, color, marker, s, dx, dy, ha, va in METHODS:
 
 # Pareto frontier: horizontal line at Ours' Last (86.17) across the full plot.
 # Ours is the only method that achieves this Last; everything below is dominated.
-ax.axhline(y=86.17, color='#444444', linestyle='--', linewidth=1.0,
+ax.axhline(y=86.28, color='#444444', linestyle='--', linewidth=1.0,
            alpha=0.45, zorder=2)
 
 ax.set_xlabel('Transfer — ImageNet Zero-Shot (%)')
@@ -79,15 +79,15 @@ legend_handles = [
     mlines.Line2D([],[], marker='^', color='w', markerfacecolor='#4472C4',
                   markersize=7, label='VLM CL methods'),
     mlines.Line2D([],[], marker='D', color='w', markerfacecolor='#E07B39',
-                  markersize=7, label=r'Generative replay ($^\dagger$)'),
+                  markersize=7, label='Specialised CL methods'),
     mlines.Line2D([],[], marker='*', color='w', markerfacecolor='#C00000',
-                  markersize=11, label='Ours'),
+                  markersize=11, label='ExRD (Ours)'),
     mlines.Line2D([],[], color='#444444', linestyle='--', linewidth=1.0,
                   alpha=0.6, label='Pareto frontier'),
 ]
 
 ax.legend(handles=legend_handles, fontsize=8, loc='lower right',
-          bbox_to_anchor=(1.0, 0.02), framealpha=0.92,
+          bbox_to_anchor=(1.02, 0.02), framealpha=0.92,
           handlelength=1.4, handletextpad=0.5, labelspacing=0.35)
 
 plt.tight_layout()

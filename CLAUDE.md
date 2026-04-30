@@ -118,3 +118,5 @@ Defines: model architecture, dataset path, number of classes per task, learning 
 ## Web Application
 
 A web UI for this model is available at: https://github.com/JuicedCooky/zscl_ui
+
+## be efficient at using tokens 
