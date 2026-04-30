@@ -115,3 +115,21 @@ v6 essentially tied v4 on Last (84.66 vs 84.65, +0.01) and slightly regressed on
 The hypothesis that late-task replay weight could be reduced to free gradient budget for ZSCL was partially validated (MNIST forgetting slightly up, ImageNet slightly down — both consistent with rebalancing away from late tasks). But EuroSAT's regression is unexplained and cancels the Aircraft gain. Net effect on Last is a wash.
 
 **Conclusion:** v4 and v6 are essentially indistinguishable on Last (84.65 vs 84.66). v4 wins on ImageNet (68.37 vs 68.24). For the paper's Row 5, **v4 is the safer choice** — it has the best ImageNet retention of any run and matches v6 on Last within noise.
+
+---
+
+## Future Experiments (deferred)
+
+### Reference Data Scarcity (Option B — deferred, do after buffer sensitivity results are in)
+
+**What it tests:** Whether RD's Transfer benefit survives when the CC text anchor pool is small. Tests intermediate regime between full CC (N=10,599) and the portability experiment (N=0).
+
+**Motivation:** Practitioners in restricted domains (medical, satellite) may not have access to ImageNet-scale open-domain corpora. Shows RD partially compensates via replay-image anchoring even when CC data is scarce.
+
+**Setup:** Subsample CC sentences to N ∈ {100, 500, 2000, 10599}. Run ExRD and no-RD at each N. Report Transfer. Last should be largely unaffected (driven by replay CE, not CC sentences).
+
+**Requires:** Add `--ref_sentences_limit N` flag to `src/args.py` and slice `ref_texts` in `src/models/finetune.py` after line 327 (before `clip.tokenize`). ~5 lines of code total.
+
+**Scripts needed:** 3 new (N=100, 500, 2000 for ExRD; no-RD baseline already flat — can reuse ablation_prop_replay result). N=10599 already done (v4).
+
+**Expected result:** ExRD Transfer degrades more slowly than no-RD as N decreases, confirming replay images provide an independent anchoring signal beyond the CC pool. Connects directly to the portability result (N=0 already shows 65% recovery).
