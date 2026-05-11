@@ -133,3 +133,64 @@ The hypothesis that late-task replay weight could be reduced to free gradient bu
 **Scripts needed:** 3 new (N=100, 500, 2000 for ExRD; no-RD baseline already flat — can reuse ablation_prop_replay result). N=10599 already done (v4).
 
 **Expected result:** ExRD Transfer degrades more slowly than no-RD as N decreases, confirming replay images provide an independent anchoring signal beyond the CC pool. Connects directly to the portability result (N=0 already shows 65% recovery).
+
+---
+
+## Next Steps — Thesis / Journal Extensions
+
+Ranked by (novelty × thesis fit × feasibility). Target venues: NeurIPS 2026 (one headline idea) or KBS journal (system + ablations story).
+
+### Tier 1 — chapter-worthy contributions
+
+#### NS1. LLM-anchored text encoder — *highest novelty*
+Add a frozen LLM (Qwen / Llama-3 / T5) as a teacher for CLIP's text encoder. Project CLIP text features into the LLM space via a small MLP, minimize cosine drift on a reference sentence pool (CC, ImageNet templates) as an additional loss term.
+- **Motivation:** ZSCL anchors *image* features to a frozen CLIP. No one anchors *text* features to a stronger, drift-free semantic prior. Directly targets the Transfer metric.
+- **Difficulty:** medium. Projection head + precomputed LLM embeddings (free at train time after one-time pass).
+- **Risks:** dim alignment, LLM layer choice (mitigated by precomputing several layers and ablating).
+- **Headline framing:** "Semantic Anchoring for Vision-Language Continual Learning."
+
+#### NS2. Smart exemplar selection — *best low-hanging fruit*
+Replace random replay buffer construction with importance-based selection. Ablation table over 4–5 strategies:
+- Herding (iCaRL, Rebuffi 2017)
+- Gradient norm — GraNd / EL2N (Paul 2021)
+- BADGE — k-means++ on gradient embeddings (Ash 2020)
+- Loss-based (forgotten = high loss; redundant = low loss)
+- k-center coverage / submodular facility-location diversity
+- **Why it's strong:** v3→v6 already established "more exemplars doesn't help" → perfect setup for "better exemplars do." Clean ablation, universally legible to reviewers.
+- **Difficulty:** low. Modify buffer construction in `compute_replay_loss`; one new selection module.
+- **Related:** iCaRL (2017), GCR (Tiwari CVPR'22), Rainbow Memory (Bang CVPR'21), ASER (Shim AAAI'21).
+
+#### NS3. Multi-teacher distillation with model merging
+Keep one frozen teacher per task; at task `t`, distill from all `t-1` teachers but merge on-the-fly using TIES / DARE / Task Arithmetic so memory stays O(1) full models. Alt: per-task LoRA deltas + merge.
+- **Difficulty:** medium-high.
+- **Risk:** overlap with MoE-Adapters (Yu NeurIPS'24); needs clear differentiation.
+
+### Tier 2 — section-level contributions
+
+#### NS4. Dynamic hyperparameter scheduling
+Extend v6's positional replay weighting:
+- λ_RTD warmup → cooldown across tasks
+- Per-task lr scaled by dataset size / class count
+- Loss-balanced replay_w (auto-tune so |∇L_replay| ≈ |∇L_zscl|)
+
+Low standalone novelty; works as an "Adaptive ZSCL" subsection with ablations.
+
+#### NS5. Per-task CLIP encoders / MoE  *(deprioritize)*
+Largely covered by MoE-Adapters (NeurIPS'24) and CoLeCLIP. Skip unless reframed as a probe study ("what does each task-specialist learn that the joint model loses?") rather than a method.
+
+### Additional candidate directions
+
+- **Generative replay** — replace stored images with Stable-Diffusion-synthesized images from class names. Zero storage, fits privacy/legal narrative.
+- **Forgetting-aware oversampling** — small predictor estimates per-class forgetting risk at task `t`, oversample at-risk classes from the buffer. Naturally combines with NS2.
+- **Gradient projection (OGD / GPM) for CLIP** — project task-`t` gradients orthogonal to old-task gradient subspace. High novelty for CLIP-CL; could anchor a theoretical chapter.
+- **Cross-modal consistency replay** — store (image, text) pairs instead of (image, label); replay enforces CLIP's contrastive objective → true zero-shot-preserving replay.
+
+### Suggested execution order
+
+1. **NS2** (~1 week) — fastest table for any venue; de-risks the thesis.
+2. **NS1** (4–6 weeks) — the NeurIPS / KBS headline.
+3. **NS4** — polish / fold in as a subsection.
+4. **NS3** only if NS1 underperforms (expensive insurance).
+
+For KBS journal: NS1 + NS2 + extended NS4 = coherent "system + careful ablation" story.
+For NeurIPS: lead with NS1, support with NS2.

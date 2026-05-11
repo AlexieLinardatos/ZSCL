@@ -25,6 +25,19 @@
   \begin{document}
   \maketitle
 
+\newif\ifhighlight
+
+\highlighttrue  % Comment this out and uncomment the line below to turn off highlighting
+%\highlightfalse 
+
+\newcommand{\fzq}[2]{%
+    \ifhighlight
+        \textcolor{blue}{#2} (\textbf{\textcolor{red}{fzq}:} \textit{\textcolor{red}{#1}})% What happens if the flag is true
+    \else
+        #2% What happens if the flag is false (just prints plain text)
+    \fi
+}
+
   \begin{abstract}
   Continual learning of CLIP-style vision-language models must reconcile three
   competing pressures: learning new tasks, retaining previously trained ones, and
@@ -62,7 +75,7 @@
   metrics we report in \Cref{sec:experiments}; existing methods typically improve
   one or two at the cost of the third.
 
-  Prior work addresses these pressures in isolation. ZSCL~\cite{zheng2023zscl}
+  Prior work addresses these pressures in isolation. Zero shot continual learning (ZSCL)~\cite{zheng2023zscl}
   anchors training against a frozen zero-shot CLIP teacher using external
   image-caption pairs, protecting general representations but not past-task
   discriminative features. Parameter-efficient methods~\cite{yu2024moe, gao2024zaf,
@@ -78,8 +91,7 @@
 
   We revisit this claim empirically and find that adding a fixed-budget exemplar
   buffer to ZSCL improves Last accuracy by $+2.84$ points with negligible Transfer
-  cost — replay and reference-data distillation target different failure modes and
-  combine cleanly. We then introduce \emph{Replay Distillation} (RD), which applies
+  cost.  replay and reference-data distillation target different failure modes and combine cleanly. We then introduce \emph{Replay Distillation} (RD), which applies
   ZSCL's frozen zero-shot teacher to replay images rather than external reference
   data, decoupling the anchoring mechanism from its data source. A portability
   experiment shows RD recovers $65\%$ of ZSCL's Transfer contribution when
@@ -91,7 +103,7 @@
   replay-only.
 
   On the 11-task MTIL benchmark with CLIP ViT-B/16, our full method achieves
-  $86.17$ Last, $77.17$ Avg, and $68.37$ Transfer, matching or exceeding GIFT and
+  $86.17$ Last, $77.17$ Avg, and $68.37$ Transfer, competitive with GIFT and
   LoRA-Loop ($86.0$ Last) without a generative model at training time, a
   task-identity router at inference, or any parameters beyond CLIP itself.
   Component contributions are separately verified in \Cref{sec:ablation}.
@@ -118,15 +130,13 @@
   transfer~\cite{lampert2009learning}. Fine-tuning CLIP on downstream tasks,
   however, tends to degrade this capability, as task-specific adaptation distorts
   the original embedding geometry~\cite{wortsman2022wiseft}. This tension is
-  further compounded in the continual learning setting, where sequential
-  fine-tuning across tasks accelerates the erosion of pretrained representations.
-
+  further compounded in the continual learning setting, 
+further compounded in the continual learning setting, where sequential fine-tuning across tasks accelerates the erosion of pretrained representations.
   \subsection{Continual Learning: Regularization and Replay}
   Catastrophic forgetting~\cite{mccloskey1989catastrophic} remains a central
   challenge in continual learning, where sequentially fine-tuned models tend to
   overwrite previously learned weights. Regularization-based methods address this
-  by penalising changes to parameters deemed important for past tasks:
-  EWC~\cite{kirkpatrick2017ewc} approximates the posterior over weights via a
+  by penalising changes to parameters deemed important for past tasks: Elastic Weight Consolidation (EWC)~\cite{kirkpatrick2017ewc} approximates the posterior over weights via a
   Laplace approximation, anchoring critical parameters close to their previous
   values. Replay-based methods take a different route, rehearsing past data
   alongside new training. iCaRL~\cite{rebuffi2017icarl} maintains a bounded
@@ -154,8 +164,8 @@
   Low-Rank Adaptation (LoRA)~\cite{hu2022lora} reparameterises weight updates as
   the product of two low-rank matrices inserted in parallel with frozen pretrained
   weights, reducing the number of trainable parameters while preserving model
-  capacity. MoE-Adapters~\cite{yu2024moe} reduces cross-task interference via
-  mixture-of-experts routing. ZAF~\cite{gao2024zaf} uses an EMA-updated LoRA
+  capacity. Mixture of Experts (MoE)Adapters~\cite{yu2024moe} reduces cross-task interference via
+  mixture-of-experts routing.Zero-Shot Antidote to Forgetting(ZAF)~\cite{gao2024zaf} uses an EMA-updated LoRA
   adapter to stabilise zero-shot representations during sequential fine-tuning.
   C-CLIP~\cite{liu2025cclip} and SD-LoRA~\cite{wu2025sdlora} apply these ideas
   directly to CLIP in the MTIL setting, incorporating contrastive consolidation and
@@ -177,45 +187,8 @@
   anchor, leaving the interaction between real exemplar replay and zero-shot anchor
   distillation unexplored.
 
-  \section{Preliminaries}
-
-  \subsection{CLIP and Zero-Shot Classification}
-  CLIP~\citep{radford2021clip} consists of an image encoder $f_v$ and a text
-  encoder $f_t$ trained contrastively to align image-text pairs in a shared
-  embedding space. For a class set $\mathcal{C} = \{c_1, \dots, c_K\}$, zero-shot
-  classification on an image $x$ computes
-  $\hat{y} = \arg\max_k \cos\!\big(f_v(x), f_t(\tau(c_k))\big)$, where
-  $\tau(\cdot)$ is a prompt template. Because the embedding space was not optimised
-  for any specific downstream task, CLIP generalises to unseen categories without
-  task-specific supervision.
-
-  \subsection{Multi-domain Task Incremental Learning}
-  We follow the MTIL benchmark of~\citet{zheng2023zscl}. A model is trained on a
-  sequence of $T$ tasks with datasets $\{\mathcal{D}_1, \dots, \mathcal{D}_T\}$,
-  each drawn from a distinct domain with its own label space. Tasks are presented
-  one at a time; data from $\mathcal{D}_i$ is not available while training on
-  $\mathcal{D}_{j \neq i}$ except through an exemplar buffer. At evaluation, the
-  model is tested on all $T$ seen tasks \emph{and} on a held-out task never seen
-  during training, measuring zero-shot retention. Performance is reported via three
-  metrics: \textbf{Last} (accuracy after training on all tasks), \textbf{Avg}
-  (mean accuracy across training), and \textbf{Transfer} (accuracy on the
-  held-out task).
-
-  \subsection{Notation}
-  Let $\theta_0$ denote the frozen pretrained CLIP weights, which we use as a
-  fixed anchor throughout training. Let $\theta_t$ denote the student model after
-  training on task $t$. We write $\mathcal{M}_t$ for the exemplar buffer maintained
-  through task $t$, subject to a fixed total budget $B$. The full training
-  objective is a weighted sum of five components introduced in
-  \Cref{sec:method-rd}: $\mathcal{L}_{\text{CE}}$ (current-task supervision),
-  $\mathcal{L}_{\text{L2}}$ (L2 parameter regularisation),
-  $\mathcal{L}_{\text{ZSCL}}$ (zero-shot anchor distillation against $\theta_0$),
-  $\mathcal{L}_{\text{rep}}$ (supervised loss on exemplars), and
-  $\mathcal{L}_{\text{RD}}$ (our replay distillation loss).
-
   \section{Method}
 
-  \subsection{Overview}
   Our method trains a CLIP ViT-B/16 model sequentially across $T$ tasks while
   maintaining zero-shot transfer to ImageNet. At each step $t$, we combine five
   objectives: (1) supervised cross-entropy on the current task, (2) L2 parameter
@@ -229,6 +202,7 @@
   allocation by class count.
 
   \subsection{Replay Distillation}
+  
   \label{sec:method-rd}
 
   Replay Distillation applies the same distillation objective as ZSCL, but the
@@ -383,24 +357,15 @@
     \label{fig:pareto}
   \end{wrapfigure}
 
-  \paragraph{Implementation Details.}
+ \paragraph{Implementation Details.}
   We use CLIP ViT-B/16~\cite{radford2021clip} fine-tuned end-to-end with AdamW
   ($\beta_1{=}0.9$, $\beta_2{=}0.999$, no weight decay),
   $\text{lr}{=}5\!\times\!10^{-6}$, cosine schedule, 100-iteration linear warmup,
   and label smoothing $\varepsilon{=}0.1$. The exemplar buffer is fixed at
   $B{=}11{,}000$ with proportional allocation by class count
-  (\Cref{app:allocation}); replay batch size is 8. The ZSCL reference set is
-  ImageNet images and $N{=}10{,}599$ Conceptual Captions sentences, pre-computed
-  once. Weight ensembling runs every $K{=}50$ iterations with
-  $\alpha{=}1$ and $\lambda{=}0.3$ (matching \Cref{eq:total}). Per-task
-  iteration counts follow dataset size (800--5{,}000 iterations;
-  see \Cref{app:iterations}). $\lambda$ was selected from $\{0.3, 0.5\}$ on a
-  4-task proxy sequence (Aircraft $\to$ CIFAR-100 $\to$ DTD $\to$ Flowers) before
-  the 11-task run; both values are reported in \Cref{tab:ablation} for full
-  transparency. All other hyperparameters were fixed prior to evaluation; no
-  tuning was performed on the 11-task benchmark. All experiments run on a single NVIDIA H100 40\,GB MIG slice. GIFT
-  and LoRA-Loop, for comparison, each require a frozen ${\approx}900$M-parameter
+  (\Cref{app:allocation}); replay batch size is 8. The ZSCL reference set is ImageNet images and $N{=}10{,}599$ Conceptual Captions sentences, pre-computed once. Weight ensembling runs every $K{=}50$ iterations with $\alpha{=}1$ and $\lambda{=}0.3$ (matching \Cref{eq:total}). Per-task iteration counts follow dataset size (800--5{,}000 iterations; see \Cref{app:iterations}). $\lambda$ was selected from {0.1, 0.3, 0.5} based on preliminary experiments on a 4-task proxy sequence (DTD→EuroSAT→Flowers→MNIST) with an early version of the training pipeline, before the 11-task benchmark was run. All other hyperparameters were fixed prior to evaluation; no tuning was performed on the 11-task benchmark. All experiments run on a single NVIDIA H100 40\,GB MIG slice. GIFT and LoRA-Loop, for comparison, each require a frozen ${\approx}900$M-parameter
   Stable Diffusion network throughout training; our method has no such dependency.
+
 
   \begin{table}[h]
   \centering
@@ -453,11 +418,9 @@
   of avoiding a synthetic replay stream; closing it is a direction for future work.
 
   On Order~II (StanfordCars $\to$ Food $\to \cdots \to$ CIFAR100), our method
-  achieves $85.7$ Last, $75.3$ Avg, and $68.6$ Transfer. The Transfer result is
-  notably robust: ZSCL drops from $68.1$ on Order~I to $64.2$ on Order~II, while
-  our method remains at $68.6$, a $+4.4$ margin over ZSCL and above both GIFT
-  ($65.9$) and LoRA-Loop ($66.3$). Our Last ($85.7$) also leads both generative
-  baselines on this ordering. The per-task breakdown for Order~II is in
+  achieves $85.7$ Last, $75.3$ Avg, and $68.6$ Transfer. The Transfer result is notably robust: ZSCL drops from $68.1$ on Order~I to $64.2$ on Order~II, while
+  our method remains at $68.6$, a $+4.4$ margin over ZSCL and above both GIFT ($65.9$) and LoRA-Loop ($66.3$). Our Last ($85.7$) also leads both generative
+  baselines on this ordering. On Order~II our Avg (75.3) trails the generative baselines by 0.4--0.6 points (GIFT 75.7, LoRA-Loop 75.9), though both methods rely on an ${\approx}900$M diffusion model absent from our pipeline; our method achieves the highest Last accuracy and Transfer on both orderings without any auxiliary model. The per-task breakdown for Order~II is in
   \Cref{app:pertask}.
 
   \begin{table}[t]
@@ -504,6 +467,7 @@
   \end{tabular}
   \end{table}
 
+    
   \subsection{Ablation Study}
   \label{sec:ablation}
 
@@ -620,17 +584,17 @@
   \section{Conclusion}
 
   The central finding is that exemplar replay and zero-shot anchor distillation are
-  not redundant — they fail at different things and fix different things. Replay
+  not redundant they fail at different things and fix different things. Replay
   closes the forgetting gap that ZSCL leaves open ($+2.84$ Last, near-zero Transfer
   cost). Replay Distillation then decouples the anchoring mechanism from its external
   data source: applied to replay images instead of Conceptual Captions, it recovers
   $65\%$ of ZSCL's Transfer contribution, with the remaining gap attributable to
   open-domain coverage that task-specific images cannot provide. Zero-shot
-  preservation, in other words, depends on having a stable anchor — not on where
+  preservation, in other words, depends on having a stable anchor not on where
   that anchor's data comes from.
 
   On the 11-task MTIL benchmark, the full method reaches $86.17$ Last, $77.17$ Avg,
-  and $68.37$ Transfer with CLIP ViT-B/16 — matching or exceeding diffusion-based
+  and $68.37$ Transfer with CLIP ViT-B/16 matching or exceeding diffusion-based
   baselines on Last while using only stored exemplars and the pretrained CLIP
   checkpoint, with no generative model, no task-identity router, and no additional
   parameters.
@@ -647,47 +611,10 @@
   \bibliographystyle{abbrvnat}
   \bibliography{papers}
 
-  \appendix
+   \appendix
 
   \section{Per-Task Accuracy Breakdown}
   \label{app:pertask}
-
-  \begin{table}[h]
-  \centering
-  \caption{Per-dataset accuracy (\%) after the final task for our full method and
-  published baselines where available. \textbf{IN} = ImageNet zero-shot.
-  \textbf{Last} = mean across all 11 task columns.
-  AC = Aircraft, Cal = Caltech-101, C100 = CIFAR-100, ES = EuroSAT,
-  Fl = Flowers-102, Fo = Food-101, MN = MNIST, Pet = Oxford-IIIT Pet,
-  Cars = StanfordCars.}
-  \label{tab:pertask}
-  \resizebox{\textwidth}{!}{%
-  \begin{tabular}{l cccccccccccc c}
-  \toprule
-  \textbf{Method}
-    & \textbf{AC} & \textbf{Cal} & \textbf{C100} & \textbf{DTD}
-    & \textbf{ES}  & \textbf{Fl}  & \textbf{Fo}   & \textbf{MN}
-    & \textbf{Pet} & \textbf{Cars} & \textbf{SUN} & \textbf{IN} & \textbf{Last} \\
-  \midrule
-  \multicolumn{14}{l}{\textit{Order I (final task: SUN397)}} \\
-  ZSCL~\citep{zheng2023zscl}
-    & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & 83.6 \\
-  \textbf{Ours}
-    & \textbf{XX.X} & \textbf{XX.X} & \textbf{XX.X} & \textbf{XX.X}
-    & \textbf{XX.X} & \textbf{XX.X} & \textbf{XX.X} & \textbf{XX.X}
-    & \textbf{XX.X} & \textbf{XX.X} & \textbf{XX.X}
-    & \textbf{XX.X} & \textbf{XX.X} \\
-  \midrule
-  \multicolumn{14}{l}{\textit{Order II (final task: CIFAR100)}} \\
-  \textbf{Ours}
-    & 50.02 & 92.57 & 85.49 & 77.18
-    & 95.24 & 96.88 & 90.58 & 96.16
-    & 93.62 & 86.92 & 78.51
-    & 67.97 & 85.74 \\
-  \bottomrule
-  \end{tabular}%
-  }
-  \end{table}
 
   \section{Per-Task Training Iterations and Exemplar Allocation}
   \label{app:iterations}
