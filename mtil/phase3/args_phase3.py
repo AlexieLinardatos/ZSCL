@@ -49,6 +49,12 @@ def parse_phase3_arguments():
         "--replay_positional_weighting", action="store_true", default=False,
         help="Weight replay CE per task by (N-i)/N where i=task position, N=total tasks"
     )
+    p3_parser.add_argument(
+        "--exemplar_strategy",
+        choices=["random", "herding", "el2n", "gcr"],
+        default="random",
+        help="Replay buffer exemplar selection strategy (default: random)"
+    )
 
     p3_ns, remaining_argv = p3_parser.parse_known_args()
 
@@ -96,5 +102,6 @@ def parse_phase3_arguments():
 
     args.no_proportional_replay = p3_ns.no_proportional_replay
     args.replay_positional_weighting = p3_ns.replay_positional_weighting
+    args.exemplar_strategy = p3_ns.exemplar_strategy
 
     return args

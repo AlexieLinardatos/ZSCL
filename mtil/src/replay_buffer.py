@@ -51,9 +51,12 @@ class ReplayBuffer:
         num_samples: int,
         classnames: List[str],
         template: Callable[[str], str],
+        strategy: str = "random",
+        model: Optional[torch.nn.Module] = None,
     ) -> None:
         """
-        Randomly sample `num_samples` examples from `dataset` and store them.
+        Select `num_samples` examples from `dataset` according to `strategy`
+        and store them.
 
         Args:
             task_id:    Integer identifier for this task (0, 1, 2, ...).
@@ -61,10 +64,23 @@ class ReplayBuffer:
             num_samples: Max samples to store. Clamped to dataset size.
             classnames: List of class name strings for this task.
             template:   Callable mapping classname -> text prompt string.
+            strategy:   One of {"random", "herding", "el2n", "gcr"}. Default "random".
+            model:      Trained CLIP model (needed for non-random strategies).
         """
         n = len(dataset)
         num_samples = min(num_samples, n)
-        indices = random.sample(range(n), num_samples)
+        if strategy == "random" or model is None:
+            indices = random.sample(range(n), num_samples)
+        else:
+            from .exemplar_selection import select_exemplars
+            indices = select_exemplars(
+                dataset=dataset,
+                num_samples=num_samples,
+                classnames=classnames,
+                template=template,
+                strategy=strategy,
+                model=model,
+            )
 
         samples = []
         for idx in indices:

@@ -21,7 +21,7 @@ import os
 import torch
 import clip.clip as clip
 
-from src import datasets, templates
+from src import datasets, templates, utils
 from src.replay_buffer import ReplayBuffer
 from .trainer_phase3 import custom_finetune_phase3
 
@@ -249,13 +249,29 @@ def finetune_multi_task_phase3(args):
             else task_dataset_obj.template
         )
 
+        strategy = getattr(args, "exemplar_strategy", "random")
+        selection_model = None
+        if strategy != "random":
+            trained_ckpt = os.path.join(args.save, f"{task_name}.pth")
+            selection_model, _, _ = clip.load(args.model, jit=False)
+            utils.torch_load(selection_model, trained_ckpt)
+            selection_model = selection_model.cuda().eval()
+            print(f"[Phase3 outer loop] Loaded trained model for exemplar selection "
+                  f"(strategy={strategy})")
+
         replay_buffer.add_task(
             task_id=task_idx,
             dataset=task_dataset_obj.train_dataset,
             num_samples=args.replay_budget,
             classnames=task_dataset_obj.classnames,
             template=task_template,
+            strategy=strategy,
+            model=selection_model,
         )
+
+        if selection_model is not None:
+            del selection_model
+            torch.cuda.empty_cache()
         class_counts = {
             tid: len(replay_buffer.task_info[tid]["classnames"])
             for tid in replay_buffer.memory
