@@ -63,6 +63,14 @@ from src.models.training import (
 )
 from src.models.helpers import l2_loss
 from src.models.evaluation import zeroshot_classifier
+from src.models.llm_anchor import (
+    LLMAnchorProjection,
+    compute_llm_anchor_loss,
+    load_cc_captions,
+    load_or_compute_llm_anchor_cache,
+    load_projection_if_exists,
+    save_projection,
+)
 from .losses_phase3 import compute_replay_teacher_distill_loss
 
 
@@ -327,7 +335,7 @@ def custom_finetune_phase3(args, replay_buffer=None):
     _loss_csv_writer = csv.writer(_loss_csv_file)
     _loss_csv_writer.writerow([
         "iteration", "total", "ce", "l2", "zscl",
-        "replay_sup", "replay_teacher", "buf_size",
+        "replay_sup", "replay_teacher", "llm_anchor", "buf_size",
     ])
     print(f"[Phase3] Loss CSV → {loss_csv_path}")
 
@@ -348,6 +356,48 @@ def custom_finetune_phase3(args, replay_buffer=None):
                 _chunks.append(_emb)
             cached_ref_embeddings = torch.cat(_chunks, dim=0)
         print(f"[Phase3] Pre-computed ref_text_embeddings: {cached_ref_embeddings.shape}")
+
+    # ------------------------------------------------------------------ #
+    # LLM anchor setup (NS1)                                              #
+    # ------------------------------------------------------------------ #
+    lambda_llm_anchor = getattr(args, "lambda_llm_anchor", 0.0)
+    llm_anchor_bs = getattr(args, "llm_anchor_batch_size", 64)
+    llm_projection = None
+    llm_embeds_cache = None
+    if lambda_llm_anchor > 0:
+        captions = load_cc_captions(args)
+        if captions is None:
+            print("[LLM anchor] No CC captions available — disabling anchor loss.")
+            lambda_llm_anchor = 0.0
+        else:
+            n_cap = len(captions)
+            if ref_texts is not None and ref_texts.shape[0] != n_cap:
+                # Tokenization may have truncated/dropped some captions; keep the
+                # shorter side so positional correspondence with ref_texts holds.
+                n_use = min(n_cap, ref_texts.shape[0])
+                captions = captions[:n_use]
+                print(f"[LLM anchor] Truncated captions to {n_use} for alignment.")
+            llm_embeds_cache = load_or_compute_llm_anchor_cache(args, captions)
+            clip_dim = int(model.module.text_projection.shape[1]) if hasattr(model, "module") else int(model.text_projection.shape[1])
+            llm_dim = int(llm_embeds_cache.shape[1])
+            llm_projection = LLMAnchorProjection(
+                clip_dim=clip_dim,
+                hidden=args.llm_anchor_hidden,
+                llm_dim=llm_dim,
+            ).cuda()
+            prev_task = None
+            if getattr(args, "load", None):
+                prev_task = os.path.splitext(os.path.basename(args.load))[0]
+            load_projection_if_exists(llm_projection, args.save, prev_task)
+            optimizer.add_param_group(
+                {"params": list(llm_projection.parameters()), "lr": args.lr}
+            )
+            print(
+                f"[LLM anchor] Active  lambda={lambda_llm_anchor}  "
+                f"model={args.llm_anchor_model}  clip_dim={clip_dim}  "
+                f"llm_dim={llm_dim}  hidden={args.llm_anchor_hidden}  "
+                f"sample_bs={llm_anchor_bs}"
+            )
 
     # ------------------------------------------------------------------ #
     # Main training loop                                                  #
@@ -480,6 +530,21 @@ def custom_finetune_phase3(args, replay_buffer=None):
                 loss = loss + lambda_rtd * loss_rtd
                 loss_rteacher_val = loss_rtd.item()
 
+        # ---- (6) LLM anchor drift loss ----
+        loss_llm_anchor_val = 0.0
+        if lambda_llm_anchor > 0 and llm_projection is not None and ref_texts is not None:
+            n_total = ref_texts.shape[0]
+            sample_n = min(llm_anchor_bs, n_total)
+            idx = torch.randint(0, n_total, (sample_n,), device="cpu")
+            sampled_tokens = ref_texts[idx].cuda()
+            sampled_targets = llm_embeds_cache[idx].cuda()
+            student_text_feats = model(None, sampled_tokens)
+            loss_llm_anchor = compute_llm_anchor_loss(
+                student_text_feats, sampled_targets, llm_projection
+            )
+            loss = loss + lambda_llm_anchor * loss_llm_anchor
+            loss_llm_anchor_val = loss_llm_anchor.item()
+
         # ---- Backward pass ----
         optimizer.zero_grad()
         loss.backward()
@@ -505,12 +570,14 @@ def custom_finetune_phase3(args, replay_buffer=None):
                 f"zscl={loss_zscl_val:.4f}  "
                 f"replay_sup={loss_rsup_val:.4f}  "
                 f"replay_teacher={loss_rteacher_val:.4f}  "
+                f"llm_anchor={loss_llm_anchor_val:.4f}  "
                 f"buf={buf_size}"
             )
             _loss_csv_writer.writerow([
                 iteration, f"{total_val:.6f}", f"{loss_ce_val:.6f}",
                 f"{loss_l2_val:.6f}", f"{loss_zscl_val:.6f}",
                 f"{loss_rsup_val:.6f}", f"{loss_rteacher_val:.6f}",
+                f"{loss_llm_anchor_val:.6f}",
                 buf_size,
             ])
             _loss_csv_file.flush()
@@ -521,6 +588,7 @@ def custom_finetune_phase3(args, replay_buffer=None):
                 "loss/zscl": loss_zscl_val,
                 "loss/replay_sup": loss_rsup_val,
                 "loss/replay_teacher": loss_rteacher_val,
+                "loss/llm_anchor": loss_llm_anchor_val,
                 "replay_buffer_size": buf_size,
             }, step=iteration)
             prev_ce = loss_ce_val
@@ -534,6 +602,9 @@ def custom_finetune_phase3(args, replay_buffer=None):
     # ------------------------------------------------------------------ #
     _loss_csv_file.close()
     print(f"[Phase3] Loss log saved to {loss_csv_path}")
+
+    if llm_projection is not None:
+        save_projection(llm_projection, args.save, args.train_dataset)
 
     apply_wise_merge(args, model)
 

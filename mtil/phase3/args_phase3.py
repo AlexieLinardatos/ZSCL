@@ -55,6 +55,23 @@ def parse_phase3_arguments():
         default="random",
         help="Replay buffer exemplar selection strategy (default: random)"
     )
+    p3_parser.add_argument(
+        "--lambda_llm_anchor", type=float, default=0.0,
+        help="Weight on the LLM-anchored text-encoder drift loss (0 disables)"
+    )
+    p3_parser.add_argument(
+        "--llm_anchor_model", type=str,
+        default="sentence-transformers/all-mpnet-base-v2",
+        help="HuggingFace model id used as the frozen text-encoder anchor"
+    )
+    p3_parser.add_argument(
+        "--llm_anchor_hidden", type=int, default=768,
+        help="Hidden dim of the 2-layer projection MLP"
+    )
+    p3_parser.add_argument(
+        "--llm_anchor_batch_size", type=int, default=64,
+        help="How many reference sentences per iteration for the anchor loss"
+    )
 
     p3_ns, remaining_argv = p3_parser.parse_known_args()
 
@@ -103,5 +120,9 @@ def parse_phase3_arguments():
     args.no_proportional_replay = p3_ns.no_proportional_replay
     args.replay_positional_weighting = p3_ns.replay_positional_weighting
     args.exemplar_strategy = p3_ns.exemplar_strategy
+    args.lambda_llm_anchor = p3_ns.lambda_llm_anchor
+    args.llm_anchor_model = p3_ns.llm_anchor_model
+    args.llm_anchor_hidden = p3_ns.llm_anchor_hidden
+    args.llm_anchor_batch_size = p3_ns.llm_anchor_batch_size
 
     return args

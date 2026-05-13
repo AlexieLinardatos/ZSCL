@@ -3,4 +3,5 @@ ftfy
 regex
 wilds
 pandas
+transformers>=4.30
 git+https://github.com/modestyachts/ImageNetV2_pytorch
