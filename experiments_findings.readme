@@ -12,8 +12,12 @@ Chronological log of experiments and methodological decisions. Detailed analysis
 | 2026-04-30 | **v6** — positional replay weighting | w_i = (N-i)/N; budget 11k → 13k. Last 86.14, Transfer 68.24 (tied v4). |
 | 2026-05-11 | **NS2** — smart exemplar selection implemented | Herding / EL2N / GCR strategies added. `mtil/src/exemplar_selection.py`. |
 | 2026-05-13 | **NS1** — initial LLM anchor implementation | mpnet projection + cosine drift loss. First runs submitted (job IDs 13888145, 13891618). |
-| 2026-06-08 | Dataset refresh on Nibi scratch | Reset 60-day purge timer on ~267 GB of datasets via cp-rename / tar-untar trick. |
-| 2026-06-11 | **NS1 planning** — novelty axes + loss-drop hypothesis | Decided on (A) upgrade anchor to Qwen2-0.5B / e5-large-v2 and (B) add relational distillation. After NS1-additive baseline, ablate removing L_L2 and L_ZSCL-text (redundant with stronger anchor). |
+| 2026-06-08 | Dataset refresh on Nibi scratch | Reset 60-day purge timer on ~267 GB of datasets via cp-rename / tar-untar trick. Safe until ~2026-08-08. |
+| 2026-06-11 | **NS1 planning** — novelty axes + loss-drop hypothesis | Decided on (A) upgrade anchor to e5-large-v2 (with Qwen pooling support for later) and (B) add relational distillation. After NS1-additive baseline, ablate removing L_ZSCL-text (LLM anchor only replaces text-side anti-drift; image-side ZSCL must stay). |
+| 2026-06-11 | **NS1 infra fix** — Nibi offline launcher + smoke test | Compute nodes have no internet. Pre-stage HF model in project space (`prestage_hf_anchor.sh`), set `TRANSFORMERS_OFFLINE=1` + `HF_HUB_OFFLINE=1`, pre-flight cache check. Smoke launcher added. |
+| 2026-06-11 | **NS1 novelty A** — anchor upgrade to e5-large-v2 | Default `--llm_anchor_model` → `intfloat/e5-large-v2` (1024-dim). `llm_anchor.py` auto-detects decoder LLMs (qwen / llama / mistral / gpt / falcon / phi) and switches to last-token pool. mpnet still works as encoder fallback. |
+| 2026-06-11 | **NS1 ablation branch** — `llm-anchor-no-zscl-text` | Stacked off `llm-anchor`. New launcher `llm_anchor_no_zscl_text.sh` drops `--text_loss` (no code change needed). |
+| 2026-06-11 | **NS1 production submitted** — job 15969984 (lam03), 15970119 (no-zscl-text) | Both PD on Nibi waiting for scheduled maintenance window to end. Will run ~72h each on H100 3g.40gb MIG slice. Share pre-staged e5 cache at `~/projects/def-fqureshi/alexie/hf_cache/`. |
 
 ---
 
@@ -137,51 +141,71 @@ The hypothesis that late-task replay weight could be reduced to free gradient bu
 
 ## NS1 — LLM-anchored text encoder (in progress)
 
-*Started 2026-05-13. Plan refined 2026-06-11.*
+*Started 2026-05-13. Major plan refinement + infra fix + Novelty A: 2026-06-11.*
 
-Replaces the frozen-CLIP text anchor with a stronger external semantic prior (a frozen sentence transformer / LLM). Acts on CLIP's text encoder via a small projection MLP and a cosine drift loss on the Conceptual Captions reference pool.
+Replaces the frozen-CLIP text anchor with a stronger external semantic prior (a frozen sentence transformer / LLM). Acts on CLIP's text encoder via a small projection MLP + cosine drift loss on the Conceptual Captions reference pool.
 
-### Implementation status
-- `mtil/src/models/llm_anchor.py` — projection head, embedding precompute + disk cache, cosine loss, per-task projection persistence.
-- `mtil/phase3/args_phase3.py` — `--lambda_llm_anchor`, `--llm_anchor_model`, `--llm_anchor_hidden`, `--llm_anchor_batch_size`.
+### Implementation status (as of 2026-06-11)
+- `mtil/src/models/llm_anchor.py` — projection head, embedding precompute + disk cache, cosine loss, per-task projection persistence. **Encoder/decoder auto-detection** (encoder: mean-pool; decoder LLMs containing `qwen`/`llama`/`mistral`/`gpt`/`falcon`/`phi` in name: last-token pool). Auto-sets pad token from EOS for decoder models.
+- `mtil/phase3/args_phase3.py` — `--lambda_llm_anchor`, `--llm_anchor_model` (default `intfloat/e5-large-v2`), `--llm_anchor_hidden` (default 768), `--llm_anchor_batch_size` (default 64).
 - `mtil/phase3/trainer_phase3.py` — loss term (6), wired into the existing 5-loss Phase 3 loop.
-- `mtil/scripts/11task/llm_anchor_lam03.sh` — 72h H100-3g.40gb launcher, λ_anchor = 0.3, mpnet baseline.
-- `mtil/scripts/11task/llm_anchor_smoke.sh` — 100-iter smoke test (added 2026-06-11).
-- `mtil/scripts/prestage_hf_anchor.sh` — login-node HF model pre-staging helper (added 2026-06-11).
+- `mtil/scripts/prestage_hf_anchor.sh` — login-node HF download helper. Defaults to `intfloat/e5-large-v2`; override via `HF_MODELS` env var.
+- `mtil/scripts/11task/llm_anchor_lam03.sh` — NS1-additive launcher (e5-large-v2, λ_anchor=0.3, 72h H100-3g.40gb).
+- `mtil/scripts/11task/llm_anchor_smoke.sh` — 250-iter smoke test on Aircraft. **Note:** must be ≥ warmup_length to avoid `ZeroDivisionError` in `src/utils.py:28` LR scheduler (`es = steps - warmup_length` divides by zero when equal). Pre-existing bug; production runs (1500+ iters) clear warmup safely.
+- `mtil/scripts/11task/llm_anchor_no_zscl_text.sh` — drop-ZSCL-text ablation launcher (omits `--text_loss`). On stacked branch `llm-anchor-no-zscl-text`.
 
-### Sequencing
-1. **Fix launcher offline mode** (done 2026-06-11) — pre-staged HF cache in project space, `TRANSFORMERS_OFFLINE=1`, `HF_HUB_OFFLINE=1`, drop the PyPI fallback that breaks on compute nodes.
-2. **Smoke test** — 100 iters on Aircraft, verify anchor loss decreases and pipeline runs end-to-end.
-3. **Novelty axis A — upgrade anchor model.** mpnet-base-v2 is sentence-BERT-era; reviewers will challenge the "LLM" framing. Swap default to Qwen2-0.5B or `intfloat/e5-large-v2`.
-4. **Novelty axis B — relational distillation.** Add a similarity-matrix KL term: `KL(softmax(t @ tᵀ / τ) ‖ softmax(llm @ llmᵀ / τ))` per minibatch. Anchors inter-caption *geometry*, not just point-wise alignment. Cleaner thesis story: "we preserve semantic relations under continual drift."
-5. **Loss-drop ablation** (see below).
+### Refined ablation grid
 
-### Hypothesis: drop conflicting anti-drift losses
+LLM only anchors text (no image encoder in the LLM). So **dropping ZSCL image** removes anti-drift signal that NS1 doesn't replace — image-side ZSCL must stay. The headline ablation is drop-text only; drop-all is a control.
 
-Phase 3 currently regularizes the text encoder against drift via two weaker anchors:
+| Variant | L_L2 | L_ZSCL-image | L_ZSCL-text | L_RTD | L_LLM_anchor | Total | Status / role |
+|---|---|---|---|---|---|---|---|
+| Phase 3 (v4) | ✓ | ✓ | ✓ | ✓ | ✗ | 5 | base (done) |
+| NS1-additive (lam03) | ✓ | ✓ | ✓ | ✓ | ✓ | 6 | **submitted (job 15969984)** |
+| **NS1-drop-text-ZSCL** | ✓ | ✓ | ✗ | ✓ | ✓ | 5 | **submitted (job 15970119)** — headline |
+| NS1-drop-all-ZSCL | ✓ | ✗ | ✗ | ✓ | ✓ | 4 | control (not yet built) |
+| NS1-drop-L2 | ✗ | ✓ | ✓ | ✓ | ✓ | 5 | optional (not yet built) |
+| NS1-minimal | ✗ | ✓ | ✗ | ✓ | ✓ | 4 | optional (not yet built) |
 
-- `L_L2` — pulls weights toward the **original CLIP** weights.
-- `L_ZSCL` (text branch) — pulls text outputs toward the **original CLIP teacher**'s outputs on CC.
+**Killer result framing:** if **NS1-drop-text-ZSCL ≥ Phase 3**, the thesis story becomes *"a single stronger anchor replaces the weaker text-side ZSCL anchor — simpler method, same or better numbers."* That's a much cleaner contribution than "+1 loss."
 
-NS1's `L_LLM_anchor` pulls the text encoder toward a **stronger external** anchor (LLM). The hypothesis is that `L_L2` and `L_ZSCL`-text become redundant — and possibly counterproductive — because they pull toward a weaker reference (original CLIP) while NS1 simultaneously pulls toward a stronger one (LLM). The two signals partially cancel.
+**No new CLI flags needed.** Existing args provide full ablation granularity:
+- Drop ZSCL text → omit `--text_loss`
+- Drop ZSCL image → omit `--image_loss`
+- Drop L_L2 → `--l2 0` (gated at `trainer_phase3.py:457`)
 
-Planned ablation grid (run after NS1-additive baseline lands):
+### Submitted runs (2026-06-11)
 
-| Variant | L_L2 | L_ZSCL-text | L_LLM_anchor | Total losses |
-|---|---|---|---|---|
-| Phase 3 (v4) | ✓ | ✓ | ✗ | 5 |
-| NS1-additive | ✓ | ✓ | ✓ | 6 |
-| NS1-drop-L2 | ✗ | ✓ | ✓ | 5 |
-| NS1-drop-ZSCL-text | ✓ | ✗ | ✓ | 5 |
-| NS1-minimal | ✗ | ✗ | ✓ | 4 |
+| Job ID | Branch | Launcher | Status |
+|---|---|---|---|
+| 15969984 | `llm-anchor` | `llm_anchor_lam03.sh` | PD — held by scheduled maintenance reservation; starts when maintenance ends |
+| 15970119 | `llm-anchor-no-zscl-text` | `llm_anchor_no_zscl_text.sh` | PD — same reservation |
 
-**Killer result for the thesis:** NS1-minimal ≥ Phase 3. That tells reviewers the LLM anchor isn't additive bloat — it *replaces* weaker anchors. Cleaner story: "−2 losses + 1 stronger anchor = simpler, principled, and matches/beats the 5-loss baseline."
+Both 72h on H100 3g.40gb. Shared e5 cache at `~/projects/def-fqureshi/alexie/hf_cache/hub/models--intfloat--e5-large-v2/`.
 
-If instead NS1-additive wins outright: framing falls back to "our anchor *complements* existing terms" — still a fine story, just less spicy.
+### Next steps when picking this up again
 
-**Required code changes for the drop-flags:**
-- `phase3/args_phase3.py` — add `--no_l2_reg`, `--no_zscl_text_branch` (existing `--no_existing_distill` already kills both ZSCL branches; need a finer-grained text-only flag).
-- `phase3/trainer_phase3.py` — gate L_L2 on the new flag; pass a `text_only_skip` flag through to `compute_zscl_loss`.
+1. **Check job status:** `squeue -u alexie`. When `ST` flips PD → R, tail `/scratch/alexie/logs/11t_llm_anchor_lam03-*.out` and `11t_llm_anchor_no_zscl_text-*.out`.
+2. **After both runs finish (~72h after queue start):** compute metrics, compare to Phase 3 v4 baseline.
+   - Last and Transfer numbers from `compute_metrics.py`
+   - Per-task forgetting table (vs v4)
+   - Check `llm_anchor_X.XXXX` column in `losses_*.csv` — should decrease over training
+3. **If NS1-additive ≥ Phase 3 AND NS1-drop-text ≥ Phase 3** → write the killer-result section, build remaining ablation launchers:
+   - `llm_anchor_no_zscl_all.sh` — drop `--text_loss` AND `--image_loss` (control)
+   - `llm_anchor_no_l2.sh` — `--l2 0`
+   - `llm_anchor_minimal.sh` — `--l2 0` + no `--text_loss`
+4. **Novelty B — relational distillation** (still pending). Add `compute_llm_anchor_relational_loss(t, llm, τ)` (~25 lines in `llm_anchor.py`), new arg `--lambda_llm_anchor_relational`, new launcher. Anchors inter-caption similarity geometry: `KL(softmax(t @ tᵀ / τ) ‖ softmax(llm @ llmᵀ / τ))`.
+5. **Qwen sanity-check run** for the "result holds across encoder *and* decoder anchors" story:
+   - On login node: `HF_MODELS="Qwen/Qwen2-0.5B" bash mtil/scripts/prestage_hf_anchor.sh`
+   - New launcher: same as `lam03.sh` but `--llm_anchor_model Qwen/Qwen2-0.5B --llm_anchor_hidden 896`. Pooling auto-switches to last-token.
+
+### Resume context (operational)
+
+- **Branches:** `llm-anchor` (parent, NS1-additive code) → `llm-anchor-no-zscl-text` (child, stacked; only diff is the drop-text-ZSCL launcher).
+- **HF cache:** `~/projects/def-fqureshi/alexie/hf_cache/hub/models--intfloat--e5-large-v2/` (~1.3 GB, project space — persistent).
+- **Dataset purge timer:** reset 2026-06-08, safe until ~2026-08-08. After that, re-run `refresh_scratch_data.sh` from login node.
+- **Pre-existing scheduler bug** (`mtil/src/utils.py:28`): division by zero when training iterations == warmup length. Affects only ultra-short smoke runs. Production safe.
+- **Bug from this session, not yet diagnosed in detail:** the `--loss_interval` CLI arg from old reference scripts is no longer in the base parser. If you need finer-grained loss logging, find a different flag or add one to `args.py`.
 
 ---
 
