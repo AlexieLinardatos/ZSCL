@@ -47,14 +47,27 @@ pip install --upgrade pip
 pip install --no-index torch torchvision
 pip install --no-index tqdm ftfy regex pandas scipy
 pip install --no-index wandb
-# transformers: try the CC offline mirror first; fall back to PyPI if absent
-pip install --no-index transformers \
-  || pip install transformers --index-url https://pypi.org/simple/
+# transformers must be available offline (compute nodes have no internet).
+# If the Alliance wheelhouse lacks it, run prestage_hf_anchor.sh on a login
+# node first OR `pip download transformers` to ~/projects/.../wheels.
+pip install --no-index transformers
 export WANDB_MODE=offline
 
-# Force HF cache into a job-local dir so it's wiped/predictable
-export HF_HOME="$SLURM_TMPDIR/hf_cache"
-export TRANSFORMERS_OFFLINE=0
+# HF cache lives in project space (persistent, pre-staged on a login node via
+# mtil/scripts/prestage_hf_anchor.sh). Offline mode forbids any network call.
+export HF_HOME="$HOME/projects/def-fqureshi/alexie/hf_cache"
+export TRANSFORMERS_OFFLINE=1
+export HF_HUB_OFFLINE=1
+
+# Pre-flight: fail fast with a clear message if the anchor model isn't cached.
+ANCHOR_MODEL="sentence-transformers/all-mpnet-base-v2"
+ANCHOR_DIR="$HF_HOME/hub/models--${ANCHOR_MODEL//\//--}"
+if [ ! -d "$ANCHOR_DIR" ]; then
+  echo "[FATAL] anchor model not pre-staged at $ANCHOR_DIR"
+  echo "        run: bash mtil/scripts/prestage_hf_anchor.sh   (on a LOGIN node)"
+  exit 4
+fi
+echo "[`date`] anchor model cache OK: $ANCHOR_DIR"
 
 export PYTORCH_ALLOC_CONF=expandable_segments:True
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True

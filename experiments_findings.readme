@@ -1,5 +1,22 @@
 # Experiments — Findings
 
+## Timeline
+
+Chronological log of experiments and methodological decisions. Detailed analysis lives in the sections below.
+
+| Date | Event | Summary |
+|---|---|---|
+| 2026-04-11 | **v3** — baseline | Doubled replay budget (5.5k → 11k); SUN397 → 5000 iters. Last 85.94, Transfer 68.13. |
+| 2026-04-16 | **v4** — λ_RTD tuning | λ_RTD 0.5 → 0.3; Aircraft 2000 → 3000 iters. Last 86.17, Transfer 68.37. **Best base run.** |
+| 2026-04-23 | **v5** — replay rebalance attempt | replay_w 1.0 → 1.5; replay_bs 8 → 16. Last 86.13, Transfer 68.11 (slight regression). |
+| 2026-04-30 | **v6** — positional replay weighting | w_i = (N-i)/N; budget 11k → 13k. Last 86.14, Transfer 68.24 (tied v4). |
+| 2026-05-11 | **NS2** — smart exemplar selection implemented | Herding / EL2N / GCR strategies added. `mtil/src/exemplar_selection.py`. |
+| 2026-05-13 | **NS1** — initial LLM anchor implementation | mpnet projection + cosine drift loss. First runs submitted (job IDs 13888145, 13891618). |
+| 2026-06-08 | Dataset refresh on Nibi scratch | Reset 60-day purge timer on ~267 GB of datasets via cp-rename / tar-untar trick. |
+| 2026-06-11 | **NS1 planning** — novelty axes + loss-drop hypothesis | Decided on (A) upgrade anchor to Qwen2-0.5B / e5-large-v2 and (B) add relational distillation. After NS1-additive baseline, ablate removing L_L2 and L_ZSCL-text (redundant with stronger anchor). |
+
+---
+
 ## 11-task Phase 3 (no LoRA)
 
 Benchmark: MTIL 11-task order (Aircraft → Caltech101 → CIFAR100 → DTD → EuroSAT → Flowers → Food → MNIST → OxfordPet → StanfordCars → SUN397), ImageNet as held-out zero-shot eval. Scripts: `mtil/scripts/11task/phase3_no_lora_11t_v{N}.sh`.
@@ -115,6 +132,56 @@ v6 essentially tied v4 on Last (84.66 vs 84.65, +0.01) and slightly regressed on
 The hypothesis that late-task replay weight could be reduced to free gradient budget for ZSCL was partially validated (MNIST forgetting slightly up, ImageNet slightly down — both consistent with rebalancing away from late tasks). But EuroSAT's regression is unexplained and cancels the Aircraft gain. Net effect on Last is a wash.
 
 **Conclusion:** v4 and v6 are essentially indistinguishable on Last (84.65 vs 84.66). v4 wins on ImageNet (68.37 vs 68.24). For the paper's Row 5, **v4 is the safer choice** — it has the best ImageNet retention of any run and matches v6 on Last within noise.
+
+---
+
+## NS1 — LLM-anchored text encoder (in progress)
+
+*Started 2026-05-13. Plan refined 2026-06-11.*
+
+Replaces the frozen-CLIP text anchor with a stronger external semantic prior (a frozen sentence transformer / LLM). Acts on CLIP's text encoder via a small projection MLP and a cosine drift loss on the Conceptual Captions reference pool.
+
+### Implementation status
+- `mtil/src/models/llm_anchor.py` — projection head, embedding precompute + disk cache, cosine loss, per-task projection persistence.
+- `mtil/phase3/args_phase3.py` — `--lambda_llm_anchor`, `--llm_anchor_model`, `--llm_anchor_hidden`, `--llm_anchor_batch_size`.
+- `mtil/phase3/trainer_phase3.py` — loss term (6), wired into the existing 5-loss Phase 3 loop.
+- `mtil/scripts/11task/llm_anchor_lam03.sh` — 72h H100-3g.40gb launcher, λ_anchor = 0.3, mpnet baseline.
+- `mtil/scripts/11task/llm_anchor_smoke.sh` — 100-iter smoke test (added 2026-06-11).
+- `mtil/scripts/prestage_hf_anchor.sh` — login-node HF model pre-staging helper (added 2026-06-11).
+
+### Sequencing
+1. **Fix launcher offline mode** (done 2026-06-11) — pre-staged HF cache in project space, `TRANSFORMERS_OFFLINE=1`, `HF_HUB_OFFLINE=1`, drop the PyPI fallback that breaks on compute nodes.
+2. **Smoke test** — 100 iters on Aircraft, verify anchor loss decreases and pipeline runs end-to-end.
+3. **Novelty axis A — upgrade anchor model.** mpnet-base-v2 is sentence-BERT-era; reviewers will challenge the "LLM" framing. Swap default to Qwen2-0.5B or `intfloat/e5-large-v2`.
+4. **Novelty axis B — relational distillation.** Add a similarity-matrix KL term: `KL(softmax(t @ tᵀ / τ) ‖ softmax(llm @ llmᵀ / τ))` per minibatch. Anchors inter-caption *geometry*, not just point-wise alignment. Cleaner thesis story: "we preserve semantic relations under continual drift."
+5. **Loss-drop ablation** (see below).
+
+### Hypothesis: drop conflicting anti-drift losses
+
+Phase 3 currently regularizes the text encoder against drift via two weaker anchors:
+
+- `L_L2` — pulls weights toward the **original CLIP** weights.
+- `L_ZSCL` (text branch) — pulls text outputs toward the **original CLIP teacher**'s outputs on CC.
+
+NS1's `L_LLM_anchor` pulls the text encoder toward a **stronger external** anchor (LLM). The hypothesis is that `L_L2` and `L_ZSCL`-text become redundant — and possibly counterproductive — because they pull toward a weaker reference (original CLIP) while NS1 simultaneously pulls toward a stronger one (LLM). The two signals partially cancel.
+
+Planned ablation grid (run after NS1-additive baseline lands):
+
+| Variant | L_L2 | L_ZSCL-text | L_LLM_anchor | Total losses |
+|---|---|---|---|---|
+| Phase 3 (v4) | ✓ | ✓ | ✗ | 5 |
+| NS1-additive | ✓ | ✓ | ✓ | 6 |
+| NS1-drop-L2 | ✗ | ✓ | ✓ | 5 |
+| NS1-drop-ZSCL-text | ✓ | ✗ | ✓ | 5 |
+| NS1-minimal | ✗ | ✗ | ✓ | 4 |
+
+**Killer result for the thesis:** NS1-minimal ≥ Phase 3. That tells reviewers the LLM anchor isn't additive bloat — it *replaces* weaker anchors. Cleaner story: "−2 losses + 1 stronger anchor = simpler, principled, and matches/beats the 5-loss baseline."
+
+If instead NS1-additive wins outright: framing falls back to "our anchor *complements* existing terms" — still a fine story, just less spicy.
+
+**Required code changes for the drop-flags:**
+- `phase3/args_phase3.py` — add `--no_l2_reg`, `--no_zscl_text_branch` (existing `--no_existing_distill` already kills both ZSCL branches; need a finer-grained text-only flag).
+- `phase3/trainer_phase3.py` — gate L_L2 on the new flag; pass a `text_only_skip` flag through to `compute_zscl_loss`.
 
 ---
 
