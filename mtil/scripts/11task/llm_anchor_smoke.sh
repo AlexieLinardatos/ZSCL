@@ -96,7 +96,6 @@ srun python -m phase3.train_phase3 \
   --llm_anchor_model intfloat/e5-large-v2 \
   --llm_anchor_hidden 1024 \
   --llm_anchor_batch_size 64 \
-  --loss_interval 10 \
   --task_iterations "Aircraft:100"
 
 echo "[`date`] Smoke done. Inspect:"
