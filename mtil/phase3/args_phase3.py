@@ -61,8 +61,10 @@ def parse_phase3_arguments():
     )
     p3_parser.add_argument(
         "--llm_anchor_model", type=str,
-        default="sentence-transformers/all-mpnet-base-v2",
-        help="HuggingFace model id used as the frozen text-encoder anchor"
+        default="intfloat/e5-large-v2",
+        help="HuggingFace model id used as the frozen text-encoder anchor. "
+             "Encoder models (mpnet, e5) use mean-pooling; decoder LLMs "
+             "(Qwen, Llama, Mistral, etc.) auto-switch to last-token pooling."
     )
     p3_parser.add_argument(
         "--llm_anchor_hidden", type=int, default=768,

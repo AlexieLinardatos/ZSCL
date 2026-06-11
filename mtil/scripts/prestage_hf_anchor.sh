@@ -17,9 +17,10 @@ export HF_HOME="${HF_HOME:-$HOME/projects/def-fqureshi/alexie/hf_cache}"
 mkdir -p "$HF_HOME"
 echo "[prestage] HF_HOME = $HF_HOME"
 
-# Default model: the V1 mpnet anchor used in llm_anchor_lam03.sh
-# Override via $HF_MODELS (space-separated list).
-MODELS="${HF_MODELS:-sentence-transformers/all-mpnet-base-v2}"
+# Default model: e5-large-v2 (NS1 headline anchor; strong sentence encoder).
+# Override via $HF_MODELS (space-separated list), e.g.:
+#   HF_MODELS="intfloat/e5-large-v2 Qwen/Qwen2-0.5B" bash mtil/scripts/prestage_hf_anchor.sh
+MODELS="${HF_MODELS:-intfloat/e5-large-v2}"
 
 module load python/3.11.5 2>/dev/null || true
 
