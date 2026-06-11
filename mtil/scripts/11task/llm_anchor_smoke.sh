@@ -73,7 +73,7 @@ srun python -m phase3.train_phase3 \
   --train-mode=whole \
   --lr=5e-6 \
   --ls 0.1 \
-  --iterations 100 \
+  --iterations 250 \
   --method ZSCL \
   --image_loss \
   --text_loss \
@@ -84,7 +84,7 @@ srun python -m phase3.train_phase3 \
   --ref-sentences conceptual_captions \
   --save "${SAVE_PATH}" \
   --eval-datasets "${EVAL_DATASETS}" \
-  --eval-interval 100 \
+  --eval-interval 250 \
   --use_replay \
   --replay_budget 1000 \
   --replay_batch_size 8 \
@@ -96,7 +96,7 @@ srun python -m phase3.train_phase3 \
   --llm_anchor_model intfloat/e5-large-v2 \
   --llm_anchor_hidden 1024 \
   --llm_anchor_batch_size 64 \
-  --task_iterations "Aircraft:100"
+  --task_iterations "Aircraft:250"
 
 echo "[`date`] Smoke done. Inspect:"
 echo "  ${SAVE_PATH}/losses_Aircraft.csv  (llm_anchor column should trend down)"
