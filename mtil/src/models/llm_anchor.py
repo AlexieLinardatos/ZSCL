@@ -46,6 +46,30 @@ def _model_slug(model_name: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", model_name).strip("_")
 
 
+_DECODER_PATTERNS = ("qwen", "llama", "mistral", "gpt", "falcon", "phi")
+
+
+def _is_decoder_model(model_name: str) -> bool:
+    name = model_name.lower()
+    return any(p in name for p in _DECODER_PATTERNS)
+
+
+def _mean_pool(hidden: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    """Mean-pool encoder hidden states using the attention mask."""
+    mask = mask.unsqueeze(-1).float()
+    return (hidden * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1e-6)
+
+
+def _last_token_pool(hidden: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    """Take the last non-pad token's hidden state. Standard for decoder LLMs
+    (Qwen, Llama, Mistral). Handles both left and right padding."""
+    left_padded = (mask[:, -1].sum() == mask.shape[0])
+    if left_padded:
+        return hidden[:, -1]
+    seq_lens = mask.sum(dim=1) - 1
+    return hidden[torch.arange(hidden.shape[0], device=hidden.device), seq_lens]
+
+
 def precompute_llm_embeddings(
     model_name: str,
     sentences: List[str],
@@ -53,15 +77,23 @@ def precompute_llm_embeddings(
     batch_size: int = 64,
     max_length: int = 128,
 ) -> torch.Tensor:
-    """Encode `sentences` with a frozen HF sentence model. Returns a CPU tensor
-    of shape [N, llm_dim], L2-normalized along the last dim.
+    """Encode `sentences` with a frozen HF model. Returns a CPU tensor of shape
+    [N, llm_dim], L2-normalized along the last dim.
 
-    For mpnet / bert-style encoders we mean-pool the last hidden states using
-    the attention mask, then L2-normalize."""
+    Pooling strategy is chosen by model family:
+      - encoder models (BERT/RoBERTa/mpnet/e5): mean-pool the last hidden states
+      - decoder LLMs (Qwen, Llama, Mistral, etc.): last-token pool
+    """
     from transformers import AutoModel, AutoTokenizer
 
-    print(f"[LLM anchor] Loading {model_name} on {device}")
+    is_decoder = _is_decoder_model(model_name)
+    pooling = "last-token" if is_decoder else "mean"
+    print(f"[LLM anchor] Loading {model_name} on {device}  pooling={pooling}")
+
     tokenizer = AutoTokenizer.from_pretrained(model_name)
+    # Decoder LLMs usually lack a pad token; reuse EOS so batched padding works.
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token = tokenizer.eos_token
     model = AutoModel.from_pretrained(model_name).to(device).eval()
 
     out = []
@@ -73,8 +105,11 @@ def precompute_llm_embeddings(
                 max_length=max_length, return_tensors="pt",
             ).to(device)
             hidden = model(**enc).last_hidden_state  # [B, L, D]
-            mask = enc["attention_mask"].unsqueeze(-1).float()  # [B, L, 1]
-            pooled = (hidden * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1e-6)
+            mask = enc["attention_mask"]
+            if is_decoder:
+                pooled = _last_token_pool(hidden, mask)
+            else:
+                pooled = _mean_pool(hidden, mask)
             pooled = F.normalize(pooled, dim=-1)
             out.append(pooled.float().cpu())
 

@@ -44,7 +44,7 @@ export HF_HOME="$HOME/projects/def-fqureshi/alexie/hf_cache"
 export TRANSFORMERS_OFFLINE=1
 export HF_HUB_OFFLINE=1
 
-ANCHOR_MODEL="sentence-transformers/all-mpnet-base-v2"
+ANCHOR_MODEL="intfloat/e5-large-v2"
 ANCHOR_DIR="$HF_HOME/hub/models--${ANCHOR_MODEL//\//--}"
 if [ ! -d "$ANCHOR_DIR" ]; then
   echo "[FATAL] anchor model not pre-staged at $ANCHOR_DIR"
@@ -93,8 +93,8 @@ srun python -m phase3.train_phase3 \
   --dataset_order Aircraft \
   --lambda_replay_teacher_distill 0.3 \
   --lambda_llm_anchor 0.3 \
-  --llm_anchor_model sentence-transformers/all-mpnet-base-v2 \
-  --llm_anchor_hidden 768 \
+  --llm_anchor_model intfloat/e5-large-v2 \
+  --llm_anchor_hidden 1024 \
   --llm_anchor_batch_size 64 \
   --loss_interval 10 \
   --task_iterations "Aircraft:100"
