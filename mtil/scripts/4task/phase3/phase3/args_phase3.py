@@ -50,6 +50,33 @@ def parse_phase3_arguments():
         help="Weight replay CE per task by (N-i)/N where i=task position, N=total tasks"
     )
 
+    # Multi-teacher merge (NS3) — trajectory-aware distillation.
+    p3_parser.add_argument(
+        "--use_multi_teacher_merge", action="store_true", default=False,
+        help="Replace the frozen ZSCL teacher with θ_0 + Σ w_i·δ_i built from prior task snapshots."
+    )
+    p3_parser.add_argument(
+        "--merge_strategy", type=str, default="data_driven",
+        choices=["equal", "data_driven"],
+        help="Weighting strategy for merging prior task deltas."
+    )
+    p3_parser.add_argument(
+        "--merge_alpha", type=float, default=0.1,
+        help="Overall magnitude cap on merge weights (per-teacher for equal; softmax scale for data_driven)."
+    )
+    p3_parser.add_argument(
+        "--merge_softmax_temp", type=float, default=1.0,
+        help="Softmax temperature τ for data_driven weights (lower = sharper)."
+    )
+    p3_parser.add_argument(
+        "--merge_signature_batches", type=int, default=10,
+        help="Number of batches averaged when computing a per-task signature."
+    )
+    p3_parser.add_argument(
+        "--merge_dtype", type=str, default="fp16", choices=["fp16", "fp32"],
+        help="On-disk dtype for stored task deltas."
+    )
+
     p3_ns, remaining_argv = p3_parser.parse_known_args()
 
     # ------------------------------------------------------------------ #
@@ -96,5 +123,13 @@ def parse_phase3_arguments():
 
     args.no_proportional_replay = p3_ns.no_proportional_replay
     args.replay_positional_weighting = p3_ns.replay_positional_weighting
+
+    # Multi-teacher merge (NS3)
+    args.use_multi_teacher_merge = p3_ns.use_multi_teacher_merge
+    args.merge_strategy = p3_ns.merge_strategy
+    args.merge_alpha = p3_ns.merge_alpha
+    args.merge_softmax_temp = p3_ns.merge_softmax_temp
+    args.merge_signature_batches = p3_ns.merge_signature_batches
+    args.merge_dtype = p3_ns.merge_dtype
 
     return args

@@ -22,8 +22,68 @@ import torch
 import clip.clip as clip
 
 from src import datasets, templates
+from src.models import multi_teacher_merge as mtm
 from src.replay_buffer import ReplayBuffer
 from .trainer_phase3 import custom_finetune_phase3
+
+
+# ---------------------------------------------------------------------------
+# Multi-teacher merge helpers (NS3) — outer-loop side: delta save after task.
+# ---------------------------------------------------------------------------
+
+_THETA0_CACHE = None  # zero-shot CLIP state dict cached across tasks
+
+
+def _get_theta0_state(args):
+    """Lazy-load + cache zero-shot CLIP state dict (CPU fp32)."""
+    global _THETA0_CACHE
+    if _THETA0_CACHE is None:
+        model0, _, _ = clip.load(args.model, jit=False)
+        _THETA0_CACHE = {
+            k: v.detach().to("cpu", torch.float32).clone()
+            for k, v in model0.state_dict().items()
+        }
+        del model0
+        print(f"[MultiTeacherMerge] Outer loop cached θ_0 "
+              f"({len(_THETA0_CACHE)} tensors).")
+    return _THETA0_CACHE
+
+
+def _maybe_save_delta(args, task_idx, task_name, task_names):
+    """After a task finishes, compute and save δ_t = θ_t − θ_{t-1} to disk.
+
+    For task 0, θ_{t-1} = θ_0 (zero-shot CLIP).
+    For task t>0, θ_{t-1} is loaded from {prev_task}.pth on disk.
+    Safe to call repeatedly — skips if the δ file already exists.
+    """
+    if not getattr(args, "use_multi_teacher_merge", False):
+        return
+
+    curr_ckpt = os.path.join(args.save, f"{task_name}.pth")
+    if not os.path.exists(curr_ckpt):
+        print(f"[MultiTeacherMerge] WARN: {curr_ckpt} missing — cannot save δ_{task_idx}.")
+        return
+
+    delta_p = mtm.delta_path(args.save, task_idx, task_name)
+    if os.path.exists(delta_p):
+        print(f"[MultiTeacherMerge] δ_{task_idx} ({task_name}) already on disk — skipping.")
+        return
+
+    curr_state = mtm._load_state_dict_from_ckpt(curr_ckpt)
+    if task_idx == 0:
+        prev_state = _get_theta0_state(args)
+    else:
+        prev_name = task_names[task_idx - 1]
+        prev_ckpt = os.path.join(args.save, f"{prev_name}.pth")
+        if not os.path.exists(prev_ckpt):
+            print(f"[MultiTeacherMerge] WARN: {prev_ckpt} missing — cannot save δ_{task_idx}.")
+            return
+        prev_state = mtm._load_state_dict_from_ckpt(prev_ckpt)
+
+    mtm.compute_and_save_delta(
+        prev_state, curr_state, args.save, task_idx, task_name,
+        dtype=getattr(args, "merge_dtype", "fp16"),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -139,6 +199,8 @@ def finetune_multi_task_phase3(args):
         raise ValueError("--dataset_order must specify at least one dataset name.")
 
     os.makedirs(args.save, exist_ok=True)
+    if getattr(args, "use_multi_teacher_merge", False):
+        mtm.ensure_merge_dirs(args.save)
 
     replay_buffer = ReplayBuffer(total_budget=args.replay_budget)
 
@@ -151,6 +213,18 @@ def finetune_multi_task_phase3(args):
         _load_buffer_memory(args.save, replay_buffer)
     else:
         print("[Phase3] Starting fresh (no previous state found).")
+
+    # Resume-safety for multi-teacher merge: backfill any missing δ files for
+    # tasks that completed in a previous run before --use_multi_teacher_merge
+    # was enabled. Signatures are NOT backfilled (they need θ_0 + that task's
+    # dataloader, which is set up by the trainer) — they'll be regenerated on
+    # next eligible task or absorbed into equal-weights fallback.
+    if getattr(args, "use_multi_teacher_merge", False) and completed_tasks:
+        on_disk = {n for (_, n, _) in mtm.list_available_deltas(args.save)}
+        for idx, name in enumerate(completed_tasks):
+            if name not in on_disk:
+                print(f"[MultiTeacherMerge] Backfilling missing δ_{idx} ({name}).")
+                _maybe_save_delta(args, idx, name, completed_tasks)
 
     _, train_preprocess, _ = clip.load(args.model, jit=False)
     initial_load = args.load
@@ -192,6 +266,7 @@ def finetune_multi_task_phase3(args):
         # ------------------------------------------------------------------
         args_task = copy.copy(args)
         args_task.train_dataset = task_name
+        args_task._task_idx = task_idx
 
         # Per-task iteration override
         task_iters = getattr(args, "task_iterations", {})
@@ -270,6 +345,10 @@ def finetune_multi_task_phase3(args):
         print(replay_buffer)
 
         _save_buffer_state(args.save, replay_buffer, task_name)
+
+        # Persist trajectory-aware merge artifact for this task (δ_t).
+        # Signature s_t was saved by the trainer at the start of this task.
+        _maybe_save_delta(args, task_idx, task_name, task_names)
 
         # Save per-task accuracy snapshot before metrics CSVs get cleared
         eval_ds = args.eval_datasets if isinstance(args.eval_datasets, list) else (args.eval_datasets.split(",") if args.eval_datasets else [])

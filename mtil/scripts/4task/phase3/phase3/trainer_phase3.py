@@ -63,6 +63,7 @@ from src.models.training import (
 )
 from src.models.helpers import l2_loss
 from src.models.evaluation import zeroshot_classifier
+from src.models import multi_teacher_merge as mtm
 from .losses_phase3 import compute_replay_teacher_distill_loss
 
 
@@ -76,6 +77,7 @@ class _P3TrainingState:
     args: Optional[Any] = None
     iteration: int = 0
     gradient_tracker: GradientTracker = field(default_factory=GradientTracker)
+    theta0_state: Optional[dict] = None  # Cached zero-shot CLIP state dict (CPU fp32).
 
     def get_saveable_model(self):
         if self.model is None:
@@ -239,6 +241,96 @@ def custom_finetune_phase3(args, replay_buffer=None):
             f"{' + ' if enable_existing_distill and enable_replay_teacher else ''}"
             f"{'replay teacher distill' if enable_replay_teacher else ''})"
         )
+
+    # ------------------------------------------------------------------ #
+    # Multi-teacher merge (NS3): save current task's signature, and (if   #
+    # task_idx > 0) replace the frozen θ_0 teacher with a merged teacher  #
+    # T̂ = θ_0 + Σ w_i·δ_i built from prior task snapshots. ref_model is   #
+    # the freshly-loaded θ_0 at this point, so signatures across tasks    #
+    # all use the SAME encoder.                                           #
+    # ------------------------------------------------------------------ #
+    task_idx_attr = getattr(args, "_task_idx", None)
+    if (getattr(args, "use_multi_teacher_merge", False)
+            and ref_model is not None
+            and task_idx_attr is not None):
+        mtm.ensure_merge_dirs(args.save)
+
+        # Cache θ_0 state dict (CPU fp32) for both merging now and δ at task end.
+        if _p3_state.theta0_state is None:
+            _p3_state.theta0_state = {
+                k: v.detach().to("cpu", torch.float32).clone()
+                for k, v in ref_model.module.state_dict().items()
+            }
+            print(f"[MultiTeacherMerge] Cached θ_0 state dict "
+                  f"({len(_p3_state.theta0_state)} tensors).")
+
+        # Save THIS task's signature (using θ_0, before any merge).
+        sig_p = mtm.signature_path(args.save, task_idx_attr, args.train_dataset)
+        if os.path.exists(sig_p):
+            print(f"[MultiTeacherMerge] Signature for task {task_idx_attr} "
+                  f"({args.train_dataset}) already on disk — reusing.")
+        else:
+            sig = mtm.compute_signature(
+                ref_model, dataset.train_loader,
+                num_batches=args.merge_signature_batches,
+            )
+            mtm.save_signature(sig, args.save, task_idx_attr, args.train_dataset)
+
+        # Build merged teacher when prior deltas exist.
+        if mtm.should_use_merged_teacher(args, task_idx_attr):
+            prior_deltas = [
+                (i, n, p) for (i, n, p) in mtm.list_available_deltas(args.save)
+                if i < task_idx_attr
+            ]
+            if not prior_deltas:
+                print(f"[MultiTeacherMerge] No prior δ files on disk — "
+                      f"falling back to θ_0 teacher this task.")
+            else:
+                delta_paths = [p for (_, _, p) in prior_deltas]
+
+                if args.merge_strategy == "data_driven":
+                    prior_sigs_info = [
+                        (i, n, p) for (i, n, p) in mtm.list_available_signatures(args.save)
+                        if i < task_idx_attr
+                    ]
+                    if len(prior_sigs_info) != len(prior_deltas):
+                        print(f"[MultiTeacherMerge] WARN: prior signatures "
+                              f"({len(prior_sigs_info)}) ≠ prior deltas "
+                              f"({len(prior_deltas)}). Falling back to equal weights.")
+                        weights = mtm.compute_equal_weights(
+                            len(prior_deltas), args.merge_alpha
+                        )
+                    else:
+                        curr_sig = mtm.load_signature(sig_p)
+                        prior_sigs = [mtm.load_signature(p) for (_, _, p) in prior_sigs_info]
+                        weights = mtm.compute_data_driven_weights(
+                            curr_sig, prior_sigs,
+                            args.merge_alpha, args.merge_softmax_temp,
+                        )
+                elif args.merge_strategy == "equal":
+                    weights = mtm.compute_equal_weights(
+                        len(prior_deltas), args.merge_alpha
+                    )
+                else:
+                    raise NotImplementedError(
+                        f"merge_strategy={args.merge_strategy} not implemented"
+                    )
+
+                merged_sd = mtm.build_merged_teacher_state_dict(
+                    _p3_state.theta0_state, delta_paths, weights
+                )
+                matched = mtm.load_merged_into_ref(ref_model, merged_sd)
+                norm_ratio = mtm.compute_norm_ratio(_p3_state.theta0_state, merged_sd)
+                weights_fmt = "[" + ", ".join(f"{w:.4f}" for w in weights) + "]"
+                print(
+                    f"[MultiTeacherMerge] strategy={args.merge_strategy} "
+                    f"α={args.merge_alpha} τ={args.merge_softmax_temp} "
+                    f"num_deltas={len(delta_paths)} weights={weights_fmt} "
+                    f"norm_ratio={norm_ratio:.4f} matched={matched}"
+                )
+                if norm_ratio > 0.5:
+                    print(f"[MultiTeacherMerge] WARN: norm_ratio={norm_ratio:.4f} "
+                          f"> 0.5 — merged teacher may have drifted from θ_0.")
 
     embeddings = None
     if args.train_mode == "text":
