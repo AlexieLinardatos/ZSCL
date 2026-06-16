@@ -31,7 +31,11 @@ def parse_phase3_arguments():
     # ------------------------------------------------------------------ #
     # Step 1: pre-parse Phase 3 flags, get remaining argv for base parser #
     # ------------------------------------------------------------------ #
-    p3_parser = argparse.ArgumentParser(add_help=False)
+    # allow_abbrev=False disables argparse's prefix matching so callers passing
+    # base-parser flags like --lr=5e-6 are not flagged as ambiguous against
+    # Phase 3 flags that happen to share a leading substring (e.g. lr_scale_*,
+    # lambda_*, merge_*). Defensive even when no such collisions exist today.
+    p3_parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
     p3_parser.add_argument("--lambda_replay_teacher_distill", type=float, default=None)
     p3_parser.add_argument("--no_replay_teacher_distill", action="store_true", default=False)
     p3_parser.add_argument("--no_existing_distill", action="store_true", default=False)
