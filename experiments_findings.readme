@@ -118,6 +118,131 @@ The hypothesis that late-task replay weight could be reduced to free gradient bu
 
 ---
 
+## NS3 — Trajectory-Aware Multi-Teacher Distillation
+
+> **Timestamp:** 2026-06-16  •  **Branch:** `multi-teacher-merge`  •  **Status:** implementation landed, smoke not yet run  •  **Baseline to beat:** ExRD v4 (Transfer 68.4 / Avg 77.2 / Last 86.3)  •  **SOTA targets:** LoRA-Loop (69.8 / 77.6 / 86.0) and GIFT (69.3 / 77.3 / 86.0)
+
+This is the second post-ExRD extension explored after `llm-anchor-no-zscl-text`. Kept fully independent of the LLM-anchor work — no shared flags, no shared launchers. Branched off `llm-anchor-no-zscl-text` on 2026-06-16 but does NOT inherit any LLM-anchor args; intent is that this becomes its own contribution.
+
+### The problem this is trying to solve
+
+ExRD already wins on Last (86.3 vs 86.0). The remaining gap to SOTA is on **Transfer** (-1.0 to -1.4 vs LoRA-Loop/GIFT). Transfer measures zero-shot retention on tasks the model hasn't been trained on yet — i.e., how well the model preserves the original CLIP semantic geometry. The current ZSCL distillation pulls the student toward a single frozen teacher (θ₀ = original CLIP). The hypothesis: a *richer* teacher — one that also reflects intermediate task knowledge — gives the student a better regularization target.
+
+### Core idea
+
+After task `t` finishes training, save two artifacts to disk:
+
+1. **Sequential task vector** δₜ = θₜ − θₜ₋₁ — the *difference* between the model state at the end of task t and the model state at the start (= end of task t−1). For task 0, δ₀ = θ_after_0 − θ₀. Stored as fp16 (~10 MB per task → ~110 MB across 11 tasks).
+2. **Task signature** sₜ = mean L2-normalized CLIP image embedding over ~10 batches of task t's training data. Computed with the *original* θ₀ encoder (consistent reference across all tasks). Tiny — ~2 KB each (512-dim fp32 vector).
+
+At the start of task `t+1`, build a **merged teacher**:
+
+```
+T̂_t = θ₀ + Σ_{i=0..t-1} w_i · δ_i
+```
+
+and load it into the existing frozen `ref_model` slot. The downstream ZSCL distillation loss (`compute_zscl_loss`) is untouched — it just sees a different teacher. When all w_i → 0, T̂_t = θ₀ exactly, so the method degrades gracefully to the ExRD baseline.
+
+### A little math behind the merging
+
+Two weighting strategies are implemented; one is the headline, the other is an ablation row.
+
+**v1 — Equal weights** (ablation row, isolates the routing contribution):
+
+```
+w_i = α   for all i ∈ {0, …, t−1}
+```
+
+Total perturbation grows linearly with t: ‖T̂_t − θ₀‖ ≈ α · √t · ‖δ̄‖ (assuming roughly uncorrelated δᵢ). The merged teacher slowly drifts away from θ₀ as more tasks accumulate. Capping α ≤ 0.1 keeps the drift bounded.
+
+**v3 — Data-driven weights** (headline, routing-based):
+
+For each prior task i, compute the cosine similarity between the current task's signature and task i's signature:
+
+```
+ρ_i = ⟨ s_t ,  s_i ⟩      (signatures are L2-normalized, so this IS cosine)
+
+w_i = α · softmax_i( ρ_i / τ )
+```
+
+Properties:
+- `Σ_i w_i = α` exactly (softmax sums to 1, scaled by α). Independent of t. **No drift accumulation.**
+- Low temperature τ → sharp routing — most weight on the most semantically similar prior task.
+- High temperature τ → flat routing → degenerates toward v1 (equal weights = α/t each).
+- Defaults: α = 0.1, τ = 1.0.
+
+**Why data-driven > equal in principle:** prior task-specialists encode task-specific structure. If the current task is semantically *close* to a prior one (e.g., training CIFAR100 after StanfordCars — both natural images), pulling more from that specialist gives a sharper, more relevant regularization signal than averaging across all prior tasks (including irrelevant ones like MNIST). Equal weights wastes the signal.
+
+**The skip-list.** Adding deltas to a learned scalar temperature like `logit_scale`, or to integer buffers like `position_ids` / `attn_mask`, is meaningless. Those names are excluded from both delta save and merge. At merge time they pass through from θ₀ unchanged.
+
+**Norm-ratio diagnostic.** Every task logs `norm_ratio = ‖T̂_t − θ₀‖ / ‖θ₀‖`. Warning fires if > 0.5 — that's the drift-too-far threshold. v3's softmax bounds total weight at α; v1 can blow past this with growing t.
+
+### Planned version family
+
+| Variant | Strategy | Status | Purpose |
+|---|---|---|---|
+| **v3** | data-driven (softmax over signature cos-sim) | implemented — **headline run** | Closes the Transfer gap by routing distillation pressure to semantically relevant prior teachers |
+| **v1** | equal weights, w_i = α | implemented — ablation row | Isolates whether *routing* (v3) does anything beyond just having more teachers (v1) |
+| v2 (future) | scheduled, e.g. exponential decay w_i = α · exp(−(t−i)/τ_dec) | not implemented | Bias toward recent tasks; tests whether old teachers are stale |
+| v4 (future) | data-driven + temperature schedule (τ_t depends on t) | not implemented | Could anneal from flat → sharp routing as the model accumulates more specialists |
+| v5 (future) | LoRA-delta variant (store rank-r δ instead of full δ) | not implemented | ~50× smaller δ storage; reintroduces LoRA (we moved away from it, so deferred unless storage matters) |
+
+**Execution philosophy:** ship v3 (the strongest variant) first as proof-of-concept. If it doesn't beat ExRD, the weaker variants won't either — cut losses early. If it does, work backwards through v1 → no-merge baseline to build the ablation table for the paper.
+
+### Implementation summary
+
+Branch `multi-teacher-merge`, all code lives outside the LLM-anchor lineage.
+
+**New files:**
+- `mtil/src/models/multi_teacher_merge.py` — all merge/signature math. Skip-list, delta IO, signature IO, weight strategies, merged-state-dict builder, in-place `ref_model.module.load_state_dict` loader, `norm_ratio` diagnostic, `should_use_merged_teacher` gate.
+- `mtil/scripts/11task/multi_teacher_merge_v3.sh` — production v3 (data-driven, α=0.1, τ=1.0).
+- `mtil/scripts/11task/multi_teacher_merge_v1.sh` — production v1 (equal, α=0.1).
+- `mtil/scripts/11task/multi_teacher_merge_smoke.sh` — Nibi smoke: 4 tasks (DTD → EuroSAT → MNIST → Flowers, 250 iters each, replay_budget=400, 1h SLURM wall).
+
+**Modified files:**
+- `phase3/args_phase3.py` — six new flags: `--use_multi_teacher_merge`, `--merge_strategy {equal,data_driven}`, `--merge_alpha`, `--merge_softmax_temp`, `--merge_signature_batches`, `--merge_dtype`.
+- `phase3/finetune_phase3.py` — creates `deltas/` + `signatures/` subdirs, passes `_task_idx` into the trainer, calls `_maybe_save_delta` after each task. Backfills missing δ files on resume.
+- `phase3/trainer_phase3.py` — after `setup_zscl_reference_model`: caches θ₀, computes + saves sₜ using θ₀, builds + loads merged teacher into the existing `ref_model` slot when `t > 0`. `compute_zscl_loss` untouched — merged teacher just sits in the existing slot.
+
+**Storage layout** (per run, under `SAVE_PATH/`):
+- `deltas/task00_Aircraft.pt`, `task01_Caltech101.pt`, …  (fp16, ~10 MB each)
+- `signatures/task00_Aircraft.pt`, …  (~2 KB each)
+
+**Cost:** total merge artifacts ~110 MB for 11 tasks. Compute overhead per task: signature pass (~5–10 batches through ref_model) + one in-memory state-dict build + one in-place `load_state_dict` — well under 1% of per-task wall.
+
+### Expected outcomes and decision tree
+
+**Acceptance bar for proof-of-concept:**
+- Transfer ≥ **69.5** (vs ExRD 68.4 — closes most of the gap to LoRA-Loop's 69.8)
+- Last must not regress more than 0.3pp from ExRD 86.3
+
+**Decision tree after v3 result:**
+
+- **If v3 ≥ 69.5 Transfer AND Last ≥ 86.0** → confirmed beat. Run v1 to ablate the routing contribution. Then sweep τ ∈ {0.5, 2.0} for routing sharpness. Then sweep α ∈ {0.05, 0.2} for magnitude. Build the ablation table for the paper.
+- **If v3 between 68.4–69.5 Transfer (incremental, not SOTA)** → run v1 first to check if the gain is from routing or just from having more teachers. If v1 ≈ v3, routing doesn't matter — fold into v2 (scheduled) and try that. If v1 < v3, routing works but is too gentle — increase α to 0.2 or sharpen τ.
+- **If v3 ≤ 68.4 Transfer (no gain)** → likely culprits in order: (1) signatures too noisy — increase `--merge_signature_batches` from 10 to 30; (2) α too large causing teacher drift (check `norm_ratio` log line); (3) hypothesis itself is wrong — the merged teacher's added "specialist knowledge" hurts more than it helps. If (3), bail to NS4 (dynamic hyperparameter scheduling) instead.
+
+### Open questions / risks
+
+1. **Signature collapse.** If all task signatures are very similar (cos > 0.95 pairwise), softmax becomes uniform regardless of τ → data-driven degenerates to equal. Pairwise cos-sim should be logged per task; if collapse observed, increase signature batches or switch to a normalized feature space.
+2. **Drift accumulation.** v1 (equal) drift grows with t — by task 10, may degenerate to a "last-checkpoint teacher." v3's softmax bounds total weight at α, so this isn't a concern in v3. Don't run v1 with α > 0.1.
+3. **Compatibility with WiSE-FT.** The `--we` flag enables weight averaging during training. We haven't tested whether the WiSE-merged final model interacts cleanly with the merged-teacher distillation signal. Probably fine since the teacher is frozen during each task, but worth watching loss curves on smoke.
+4. **Resume safety partial.** δ files are backfilled from on-disk checkpoints on resume (since both prev/curr .pth are guaranteed present). Signatures are NOT backfilled — they need a fresh dataloader pass with θ₀, which only happens at the trainer's start-of-task setup. Practical effect: on resume mid-run, the first task after resume will fall back to equal weights if its signature is missing. Acceptable for proof-of-concept.
+
+### If results are good — paper framing
+
+> **"Trajectory-Aware Multi-Teacher Distillation for Continual Vision-Language Models"**
+>
+> *Claim:* sequential task vectors plus data-driven routing give a distillation teacher that simultaneously preserves the original CLIP zero-shot manifold (via the θ₀ anchor) and supplies task-relevant refinements (via the routed δ-sum). This closes the Transfer gap to SOTA without using Stable-Diffusion synthetic replay (the trick GIFT and LoRA-Loop rely on).
+>
+> *Differentiation from MoE-Adapters (NeurIPS'24):* MoE picks an expert at *inference* via routing; we route at *training* time on the *teacher* side, distilling a single student. Different mechanism, different deployment story.
+>
+> *Differentiation from Task Arithmetic (ICLR'23):* Ilharco uses task vectors computed from a single pretrained base; we use *sequential* vectors (δᵢ = θᵢ − θᵢ₋₁) that encode the *trajectory* of continual training. The sequential framing has a property independent vectors don't: θ_final = θ₀ + Σᵢ δᵢ exactly. The trajectory can be replayed.
+>
+> *Real-world deployment angle:* unlike methods that assume a closed task set, the merged teacher is naturally extensible. New task arrives → save its δ + signature → re-merge. No retraining of the prior task structure.
+
+---
+
 ## Future Experiments (deferred)
 
 ### Reference Data Scarcity (Option B — deferred, do after buffer sensitivity results are in)
@@ -133,6 +258,161 @@ The hypothesis that late-task replay weight could be reduced to free gradient bu
 **Scripts needed:** 3 new (N=100, 500, 2000 for ExRD; no-RD baseline already flat — can reuse ablation_prop_replay result). N=10599 already done (v4).
 
 **Expected result:** ExRD Transfer degrades more slowly than no-RD as N decreases, confirming replay images provide an independent anchoring signal beyond the CC pool. Connects directly to the portability result (N=0 already shows 65% recovery).
+
+---
+
+## Adaptive ZSCL — Dynamic Hyperparameter Scheduling (NS4)
+
+> **Timestamp:** 2026-06-16  •  **Branch:** `dynamic-hparam-scheduling`  •  **Status:** implementation landed + statically verified (modules compile, schedule helpers unit-checked); GPU smoke + full run pending  •  **Baseline:** v4 (Last 84.65 / ImageNet 68.37; paper Row 5)  •  **Target metric:** Transfer
+
+### The problem this is trying to solve
+
+v4 uses **fixed** hyperparameters for the entire 11-task sequence: one `lr` (5e-6), a fixed
+ZSCL distillation weight (1.0), and a fixed λ_RTD (0.3). But drift away from the frozen
+zero-shot CLIP anchor accumulates *monotonically* across tasks, so Transfer (zero-shot
+retention on unseen tasks) degrades most on the late tasks — exactly where the anchoring is
+not getting any stronger. This is the v4 config's blind spot.
+
+This builds **on v4** (v5/v6, including positional replay weighting, were discarded). All
+knobs are independent, ablatable flags that default to no-ops, so v4 is byte-for-byte
+unchanged when they are absent.
+
+### Transfer-first reasoning (which knob matters)
+
+- **Transfer** is preserved by the **ZSCL distillation anchor** to frozen CLIP and by keeping
+  overall drift small. It is *not* driven by replay (replay protects Last).
+- **Primary lever — ZSCL weight schedule** (`--zscl_loss_schedule ramp_up`): scale the ZSCL
+  distillation loss up across task position so anchoring strengthens as drift accumulates.
+  This is the single most direct Transfer lever and is new (v4 had no scalar ZSCL weight knob).
+- **Secondary lever — LR-by-class** (`--lr_scale_by_class`): small datasets (EuroSAT/DTD/MNIST)
+  inflict large destructive drift on zero-shot relative to their information content; scaling
+  their LR down preserves Transfer.
+- **λ_RTD schedule** (`--lambda_rtd_schedule warmup_cooldown`): included for completeness/ablation;
+  it operates on past-task replay images so it primarily helps Last, not forward Transfer.
+- **Loss-balanced replay weight** (3rd NS4 bullet): deferred — highest risk, targets Last, and
+  v5 already showed raising replay weight hurts.
+
+### Schedules (formulas)
+
+All position schedules return a **multiplier** in `[lo, hi]` over task position `i ∈ 0..N-1`
+(`N=11`); the no-op value is exactly `1.0`.
+
+```
+ramp_up         m(i) = lo + (hi-lo)·i/(N-1)
+ramp_down       m(i) = hi - (hi-lo)·i/(N-1)
+warmup_cooldown m(i) = lo + (hi-lo)·(1 - |2i/(N-1) - 1|)      # tent, peak at middle task
+```
+
+LR-by-class scales each task's lr by its class count:
+
+```
+lr_mult = clamp( (num_classes / ref_classes)^pow , lo , hi )   # defaults ref=100, pow=0.5
+```
+
+Applied as `args_task.lr = base_lr · lr_mult`, `loss += zscl_scale · L_zscl`, and
+`λ_RTD = base_λ_RTD · rtd_mult` per task in the Phase 3 outer loop.
+
+### Implementation summary
+
+Branch `dynamic-hparam-scheduling`. All code lives in the Phase 3 package; `src/` and the
+v4 trainer math are untouched.
+
+**New files:**
+- `mtil/phase3/schedules_phase3.py` — pure schedule functions (`task_schedule_multiplier`,
+  `lr_scale_for_classes`).
+- `mtil/scripts/11task/phase3_adaptive_v4dyn.sh` — full 11-task production run: v4 config +
+  scheduling flags (`--zscl_loss_schedule ramp_up`, `--lr_scale_by_class`,
+  `--lambda_rtd_schedule warmup_cooldown`). SLURM, `def-fqureshi_gpu`, H100-MIG.
+- `mtil/scripts/11task/phase3_adaptive_v4dyn_smoke.sh` — Canada Compute smoke (3 tasks ×
+  10 iters, all schedules ON) to verify task transitions + that the per-task schedule
+  values vary. SLURM, `def-fqureshi`, a100, 30 min.
+
+**Edited files:**
+- `mtil/phase3/args_phase3.py` — new pre-parsed flags (all no-op defaults).
+- `mtil/phase3/finetune_phase3.py` — outer loop sets per-task `lr` / `zscl_loss_scale` /
+  `lambda_replay_teacher_distill` from the schedules; logs them per task.
+- `mtil/phase3/trainer_phase3.py` — multiplies `L_zscl` by `zscl_loss_scale` before adding.
+
+### Flags
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--zscl_loss_schedule {none,ramp_up,ramp_down,warmup_cooldown}` | `none` | Shape of ZSCL-weight multiplier across tasks |
+| `--zscl_loss_min` / `--zscl_loss_max` | 1.0 / 1.5 | Multiplier endpoints |
+| `--lambda_rtd_schedule {none,ramp_up,ramp_down,warmup_cooldown}` | `none` | Shape of λ_RTD multiplier across tasks |
+| `--lambda_rtd_min` / `--lambda_rtd_max` | 0.5 / 1.5 | Multiplier endpoints (× base λ_RTD=0.3) |
+| `--lr_scale_by_class` | off | Enable per-task LR-by-class scaling |
+| `--lr_scale_ref_classes` / `--lr_scale_pow` | 100 / 0.5 | Reference class count and exponent |
+| `--lr_scale_min` / `--lr_scale_max` | 0.5 / 1.5 | LR multiplier clamp |
+
+### Per-task schedule values (v4 order, default config)
+
+Concrete multipliers the production script applies across the 11-task order. Class counts
+are resolved at runtime from `len(dataset.classnames)`; values below are illustrative.
+
+| # | Task | ~Classes | zscl_scale (ramp_up) | λ_RTD (wc × 0.3) | lr_mult (by-class) | lr |
+|---|---|---|---|---|---|---|
+| 0 | Aircraft | 100 | 1.00 | 0.15 | 1.00 | 5.0e-6 |
+| 1 | Caltech101 | 102 | 1.05 | 0.21 | 1.01 | 5.0e-6 |
+| 2 | CIFAR100 | 100 | 1.10 | 0.27 | 1.00 | 5.0e-6 |
+| 3 | DTD | 47 | 1.15 | 0.33 | 0.69 | 3.4e-6 |
+| 4 | EuroSAT | 10 | 1.20 | 0.39 | 0.50* | 2.5e-6 |
+| 5 | Flowers | 102 | 1.25 | 0.45 | 1.01 | 5.1e-6 |
+| 6 | Food | 101 | 1.30 | 0.39 | 1.00 | 5.0e-6 |
+| 7 | MNIST | 10 | 1.35 | 0.33 | 0.50* | 2.5e-6 |
+| 8 | OxfordPet | 37 | 1.40 | 0.27 | 0.61 | 3.0e-6 |
+| 9 | StanfordCars | 196 | 1.45 | 0.21 | 1.40 | 7.0e-6 |
+| 10 | SUN397 | 397 | 1.50 | 0.15 | 1.50* | 7.5e-6 |
+
+`*` = clamped to `[lr_scale_min, lr_scale_max]=[0.5,1.5]`. zscl_scale ramps monotonically up
+(strongest anchoring on the last, most-drifted tasks); λ_RTD peaks on the middle task and
+tapers at both ends; small datasets (EuroSAT, MNIST) get halved LR.
+
+### Planned ablation rows
+
+Ship the combined config first (proof-of-concept); if it beats v4 on Transfer, peel back
+to attribute the gain. Each row toggles exactly one mechanism vs the row above it.
+
+| Variant | Flags vs v4 | Purpose |
+|---|---|---|
+| **v4dyn** (headline) | ramp_up zscl + lr-by-class + wc λ_RTD | Does dynamic scheduling beat fixed v4 on Transfer? |
+| v4dyn-zscl-only | `--zscl_loss_schedule ramp_up` only | Isolate the primary Transfer lever |
+| v4dyn-lr-only | `--lr_scale_by_class` only | Isolate the LR-by-class contribution |
+| v4dyn-no-rtd-sched | drop `--lambda_rtd_schedule` | Confirm λ_RTD scheduling is Last-only (no Transfer effect) |
+| zscl ramp_down (sanity) | `--zscl_loss_schedule ramp_down` | Inverse schedule should *hurt* Transfer — validates the mechanism direction |
+
+### How to run & verify
+
+1. **Helper unit-sanity** (already done locally, no GPU): from `mtil/`,
+   `python -c "from phase3.schedules_phase3 import task_schedule_multiplier as f; print([round(f('warmup_cooldown',i,11,0.5,1.5),2) for i in range(11)])"`
+   → tent peaking at the middle task.
+2. **Canada Compute smoke:** `sbatch mtil/scripts/11task/phase3_adaptive_v4dyn_smoke.sh`.
+   In the log, confirm a `[Phase3 schedule] Task k/3 '<name>': lr=...  zscl_scale=...  lambda_RTD=...`
+   line per task with values changing across the 3 tasks, the `[Phase3 config] ... zscl_scale=...`
+   line, and that `losses_<task>.csv` is written for each task.
+3. **Regression (defaults are no-ops):** rerun the smoke with the four schedule flags removed
+   → `zscl_scale=1.0`, λ_RTD=0.3, base lr on every task; behavior identical to v4.
+4. **Full run:** `sbatch mtil/scripts/11task/phase3_adaptive_v4dyn.sh`, then fill the Results table.
+
+### Decision rules (how to read the result)
+
+- **Transfer ↑ and ImageNet ≥ v4** → the ZSCL ramp-up works; promote v4dyn and run the
+  ablation rows to attribute the gain (expect zscl-only to carry most of it).
+- **Transfer flat, Last ↑** → the gain came from λ_RTD/replay, not anchoring; reframe as a
+  Last/forgetting improvement, not a Transfer one.
+- **Transfer ↓** → over-anchoring suppressed plasticity (CE underfit on late tasks). Lower
+  `--zscl_loss_max` (1.5→1.25) or switch the headline to lr-by-class only.
+- **No movement at all** → check the `[Phase3 schedule]` log actually printed (flags reached
+  the outer loop); a silent no-op means the schedule wasn't applied.
+
+### Results
+
+*(to be filled after the run — compare against the v4 row)*
+
+| Config | Last | Avg | Transfer | ImageNet |
+|---|---|---|---|---|
+| v4 (baseline) | 84.65 | — | — | 68.37 |
+| v4dyn (ramp_up zscl + lr-by-class + wc λ_RTD) | TBD | TBD | TBD | TBD |
 
 ---
 
@@ -161,17 +441,25 @@ Replace random replay buffer construction with importance-based selection. Ablat
 - **Related:** iCaRL (2017), GCR (Tiwari CVPR'22), Rainbow Memory (Bang CVPR'21), ASER (Shim AAAI'21).
 
 #### NS3. Multi-teacher distillation with model merging
-Keep one frozen teacher per task; at task `t`, distill from all `t-1` teachers but merge on-the-fly using TIES / DARE / Task Arithmetic so memory stays O(1) full models. Alt: per-task LoRA deltas + merge.
+**↑ Now under active implementation — see the dated "NS3 — Trajectory-Aware Multi-Teacher Distillation" section above (2026-06-16) for the realized design, math, version family (v1 equal / v3 data-driven), and decision tree.**
+
+Original stub (kept for provenance): keep one frozen teacher per task; at task `t`, distill from all `t-1` teachers but merge on-the-fly using TIES / DARE / Task Arithmetic so memory stays O(1) full models. Alt: per-task LoRA deltas + merge.
 - **Difficulty:** medium-high.
 - **Risk:** overlap with MoE-Adapters (Yu NeurIPS'24); needs clear differentiation.
 
 ### Tier 2 — section-level contributions
 
-#### NS4. Dynamic hyperparameter scheduling
-Extend v6's positional replay weighting:
-- λ_RTD warmup → cooldown across tasks
-- Per-task lr scaled by dataset size / class count
-- Loss-balanced replay_w (auto-tune so |∇L_replay| ≈ |∇L_zscl|)
+#### NS4. Dynamic hyperparameter scheduling — *implemented (on v4)*
+Per-task hyperparameter schedules, built on the **v4** config (NOT v6 — positional replay
+weighting was discarded). Implemented as independent, ablatable flags that default to
+no-ops, so v4 is byte-for-byte unchanged when absent. See the **"Adaptive ZSCL"** section
+above for formulas, flags, and results.
+- ✅ λ_RTD warmup → cooldown across tasks (`--lambda_rtd_schedule warmup_cooldown`)
+- ✅ Per-task lr scaled by class count (`--lr_scale_by_class`)
+- ✅ **NEW** ZSCL distillation weight schedule (`--zscl_loss_schedule ramp_up`) — the
+  strongest direct Transfer lever; ramps anchoring strength as drift accumulates.
+- ⏸ Loss-balanced replay_w (auto-tune so |∇L_replay| ≈ |∇L_zscl|) — **deferred**: highest
+  complexity/risk, targets Last not Transfer, and v5 showed raising replay weight hurts.
 
 Low standalone novelty; works as an "Adaptive ZSCL" subsection with ablations.
 

@@ -24,6 +24,7 @@ import clip.clip as clip
 from src import datasets, templates
 from src.replay_buffer import ReplayBuffer
 from .trainer_phase3 import custom_finetune_phase3
+from .schedules_phase3 import task_schedule_multiplier, lr_scale_for_classes
 
 
 # ---------------------------------------------------------------------------
@@ -199,6 +200,60 @@ def finetune_multi_task_phase3(args):
             args_task.iterations = task_iters[task_name]
             print(f"[Phase3] Per-task iterations for '{task_name}': {args_task.iterations}")
 
+        # ------------------------------------------------------------------
+        # Dynamic hyperparameter scheduling (NS4 / "Adaptive ZSCL").
+        # Base values come from `args` (unchanged across iterations); each
+        # `args_task` is a fresh copy, so this never compounds.  All knobs
+        # are no-ops unless their flag/schedule is set.
+        # ------------------------------------------------------------------
+        n_tasks = len(task_names)
+        sched_log = []
+
+        # task_dataset_obj is (re)built after training to update the buffer.
+        # Build it early only if we need the class count for LR scaling.
+        task_dataset_obj = None
+
+        if getattr(args, "lr_scale_by_class", False):
+            task_dataset_obj = getattr(datasets, task_name)(
+                train_preprocess,
+                location=args.data_location,
+                batch_size=args.batch_size,
+                batch_size_eval=args.batch_size_eval,
+            )
+            num_classes = len(task_dataset_obj.classnames)
+            lr_mult = lr_scale_for_classes(
+                num_classes, args.lr_scale_ref_classes, args.lr_scale_pow,
+                args.lr_scale_min, args.lr_scale_max,
+            )
+            args_task.lr = args.lr * lr_mult
+            sched_log.append(
+                f"lr={args_task.lr:.2e} ({lr_mult:.3f}x, {num_classes} classes)"
+            )
+
+        if getattr(args, "zscl_loss_schedule", "none") != "none":
+            zscl_scale = task_schedule_multiplier(
+                args.zscl_loss_schedule, task_idx, n_tasks,
+                args.zscl_loss_min, args.zscl_loss_max,
+            )
+            args_task.zscl_loss_scale = zscl_scale
+            sched_log.append(f"zscl_scale={zscl_scale:.3f}")
+
+        if getattr(args, "lambda_rtd_schedule", "none") != "none":
+            rtd_mult = task_schedule_multiplier(
+                args.lambda_rtd_schedule, task_idx, n_tasks,
+                args.lambda_rtd_min, args.lambda_rtd_max,
+            )
+            args_task.lambda_replay_teacher_distill = (
+                args.lambda_replay_teacher_distill * rtd_mult
+            )
+            sched_log.append(
+                f"lambda_RTD={args_task.lambda_replay_teacher_distill:.3f} ({rtd_mult:.3f}x)"
+            )
+
+        if sched_log:
+            print(f"[Phase3 schedule] Task {task_idx + 1}/{n_tasks} '{task_name}': "
+                  + "  ".join(sched_log))
+
         task_ckpt = os.path.join(args.save, f"{task_name}.pth")
         if os.path.exists(task_ckpt):
             saved_iter = torch.load(task_ckpt, weights_only=False)["iteration"]
@@ -236,13 +291,15 @@ def finetune_multi_task_phase3(args):
         # ------------------------------------------------------------------
         # Update replay buffer with exemplars from the just-trained task
         # ------------------------------------------------------------------
-        dataset_class = getattr(datasets, task_name)
-        task_dataset_obj = dataset_class(
-            train_preprocess,
-            location=args.data_location,
-            batch_size=args.batch_size,
-            batch_size_eval=args.batch_size_eval,
-        )
+        # Reuse the object built earlier for LR scaling if available.
+        if task_dataset_obj is None:
+            dataset_class = getattr(datasets, task_name)
+            task_dataset_obj = dataset_class(
+                train_preprocess,
+                location=args.data_location,
+                batch_size=args.batch_size,
+                batch_size_eval=args.batch_size_eval,
+            )
         task_template = (
             getattr(templates, args.template)[0]
             if args.template is not None

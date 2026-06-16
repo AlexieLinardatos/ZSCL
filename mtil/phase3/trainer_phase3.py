@@ -165,6 +165,10 @@ def custom_finetune_phase3(args, replay_buffer=None):
     lambda_rtd = getattr(args, "lambda_replay_teacher_distill", 0.5)
     same_batch = getattr(args, "replay_teacher_same_batch_as_replay_sup", True)
 
+    # Per-task ZSCL distillation weight multiplier (set by the outer-loop
+    # schedule; defaults to 1.0 so the v4 baseline is unchanged).
+    zscl_scale = getattr(args, "zscl_loss_scale", 1.0)
+
     use_positional_weights = getattr(args, "replay_positional_weighting", False)
     num_total_tasks = len(args.dataset_order) if hasattr(args, "dataset_order") else 1
     replay_task_weights = None
@@ -179,7 +183,8 @@ def custom_finetune_phase3(args, replay_buffer=None):
         f"existing_distill={enable_existing_distill}  "
         f"replay_sup={enable_replay_sup}  "
         f"replay_teacher={enable_replay_teacher} (λ={lambda_rtd})  "
-        f"same_batch={same_batch}"
+        f"same_batch={same_batch}  "
+        f"zscl_scale={zscl_scale}"
         f"{'  positional_weights=' + str(replay_task_weights) if replay_task_weights else ''}\n"
     )
 
@@ -432,7 +437,7 @@ def custom_finetune_phase3(args, replay_buffer=None):
                 model, ref_model, ref_images, ref_texts, logit_scale, args,
                 ref_embeddings=cached_ref_embeddings
             )
-            loss = loss + zscl_loss
+            loss = loss + zscl_scale * zscl_loss
             loss_zscl_val = loss_zscl_raw.item()
 
         # ---- (4) Replay supervised CE loss  +  (5) Replay teacher distill ----

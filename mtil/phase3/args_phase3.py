@@ -50,6 +50,44 @@ def parse_phase3_arguments():
         help="Weight replay CE per task by (N-i)/N where i=task position, N=total tasks"
     )
 
+    # ------------------------------------------------------------------ #
+    # Dynamic hyperparameter scheduling ("Adaptive ZSCL", NS4).          #
+    # All default to a no-op so the v4 baseline is unchanged.            #
+    # ------------------------------------------------------------------ #
+    # Schedule the ZSCL distillation weight across task position.
+    p3_parser.add_argument(
+        "--zscl_loss_schedule", type=str, default="none",
+        choices=["none", "ramp_up", "ramp_down", "warmup_cooldown"],
+        help="Per-task multiplier shape applied to the ZSCL distillation loss."
+    )
+    p3_parser.add_argument("--zscl_loss_min", type=float, default=1.0,
+        help="Low-end multiplier for --zscl_loss_schedule.")
+    p3_parser.add_argument("--zscl_loss_max", type=float, default=1.5,
+        help="High-end multiplier for --zscl_loss_schedule.")
+
+    # Schedule the replay teacher-distill weight (lambda_RTD) across task position.
+    p3_parser.add_argument(
+        "--lambda_rtd_schedule", type=str, default="none",
+        choices=["none", "ramp_up", "ramp_down", "warmup_cooldown"],
+        help="Per-task multiplier shape applied to lambda_replay_teacher_distill."
+    )
+    p3_parser.add_argument("--lambda_rtd_min", type=float, default=0.5,
+        help="Low-end multiplier for --lambda_rtd_schedule.")
+    p3_parser.add_argument("--lambda_rtd_max", type=float, default=1.5,
+        help="High-end multiplier for --lambda_rtd_schedule.")
+
+    # Scale per-task LR by class count.
+    p3_parser.add_argument("--lr_scale_by_class", action="store_true", default=False,
+        help="Scale each task's lr by (num_classes/ref)^pow, clamped to [min,max].")
+    p3_parser.add_argument("--lr_scale_ref_classes", type=int, default=100,
+        help="Reference class count mapped to ~1.0x lr for --lr_scale_by_class.")
+    p3_parser.add_argument("--lr_scale_pow", type=float, default=0.5,
+        help="Exponent for --lr_scale_by_class (0.5 = sqrt).")
+    p3_parser.add_argument("--lr_scale_min", type=float, default=0.5,
+        help="Lower clamp on the LR multiplier for --lr_scale_by_class.")
+    p3_parser.add_argument("--lr_scale_max", type=float, default=1.5,
+        help="Upper clamp on the LR multiplier for --lr_scale_by_class.")
+
     p3_ns, remaining_argv = p3_parser.parse_known_args()
 
     # ------------------------------------------------------------------ #
@@ -96,5 +134,18 @@ def parse_phase3_arguments():
 
     args.no_proportional_replay = p3_ns.no_proportional_replay
     args.replay_positional_weighting = p3_ns.replay_positional_weighting
+
+    # Dynamic hyperparameter scheduling (NS4).
+    args.zscl_loss_schedule = p3_ns.zscl_loss_schedule
+    args.zscl_loss_min = p3_ns.zscl_loss_min
+    args.zscl_loss_max = p3_ns.zscl_loss_max
+    args.lambda_rtd_schedule = p3_ns.lambda_rtd_schedule
+    args.lambda_rtd_min = p3_ns.lambda_rtd_min
+    args.lambda_rtd_max = p3_ns.lambda_rtd_max
+    args.lr_scale_by_class = p3_ns.lr_scale_by_class
+    args.lr_scale_ref_classes = p3_ns.lr_scale_ref_classes
+    args.lr_scale_pow = p3_ns.lr_scale_pow
+    args.lr_scale_min = p3_ns.lr_scale_min
+    args.lr_scale_max = p3_ns.lr_scale_max
 
     return args
