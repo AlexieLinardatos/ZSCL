@@ -68,11 +68,14 @@ export PYTORCH_ALLOC_CONF=expandable_segments:True
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 REPO_ROOT="$HOME/projects/def-fqureshi/alexie/ZSCL"
-cd "$REPO_ROOT/mtil"
-export PYTHONPATH="$REPO_ROOT/mtil/scripts/4task/phase3:${PYTHONPATH:-}"
-mkdir -p logs
+# cd into the deeper phase3 package so `python -m phase3.train_phase3`
+# resolves to scripts/4task/phase3/phase3/ (which has the multi-teacher
+# merge args/logic) rather than the stale top-level mtil/phase3/.
+cd "$REPO_ROOT/mtil/scripts/4task/phase3"
+export PYTHONPATH="$REPO_ROOT/mtil:${PYTHONPATH:-}"
+mkdir -p "$REPO_ROOT/mtil/logs"
 
-SAVE_PATH="ckpt/11task/phase3_multi_teacher_merge_smoke"
+SAVE_PATH="$REPO_ROOT/mtil/ckpt/11task/phase3_multi_teacher_merge_smoke"
 mkdir -p "${SAVE_PATH}"
 
 EVAL_DATASETS="DTD,EuroSAT,MNIST,Flowers"
