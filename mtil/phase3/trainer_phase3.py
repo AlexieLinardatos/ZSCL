@@ -63,7 +63,11 @@ from src.models.training import (
 )
 from src.models.helpers import l2_loss
 from src.models.evaluation import zeroshot_classifier
-from .losses_phase3 import compute_replay_teacher_distill_loss
+from .losses_phase3 import (
+    compute_replay_teacher_distill_loss,
+    compute_replay_self_text_loss,
+    compute_replay_teacher_distill_recency_loss,
+)
 
 
 # ============================================================================
@@ -165,6 +169,11 @@ def custom_finetune_phase3(args, replay_buffer=None):
     lambda_rtd = getattr(args, "lambda_replay_teacher_distill", 0.5)
     same_batch = getattr(args, "replay_teacher_same_batch_as_replay_sup", True)
 
+    # Replay-buffer thesis extensions (all off by default).
+    lambda_self_text = getattr(args, "lambda_replay_self_text", 0.0)      # ext 2
+    use_recency_distill = getattr(args, "replay_distill_recency", False)  # ext 3
+    recency_gamma = getattr(args, "replay_distill_recency_gamma", 1.0)    # ext 3
+
     use_positional_weights = getattr(args, "replay_positional_weighting", False)
     num_total_tasks = len(args.dataset_order) if hasattr(args, "dataset_order") else 1
     replay_task_weights = None
@@ -180,7 +189,9 @@ def custom_finetune_phase3(args, replay_buffer=None):
         f"replay_sup={enable_replay_sup}  "
         f"replay_teacher={enable_replay_teacher} (λ={lambda_rtd})  "
         f"same_batch={same_batch}"
-        f"{'  positional_weights=' + str(replay_task_weights) if replay_task_weights else ''}\n"
+        f"{'  positional_weights=' + str(replay_task_weights) if replay_task_weights else ''}"
+        f"{'  self_text_anchor(λ=' + str(lambda_self_text) + ')' if lambda_self_text > 0 else ''}"
+        f"{'  recency_distill(γ=' + str(recency_gamma) + ')' if use_recency_distill else ''}\n"
     )
 
     # ------------------------------------------------------------------ #
@@ -327,7 +338,7 @@ def custom_finetune_phase3(args, replay_buffer=None):
     _loss_csv_writer = csv.writer(_loss_csv_file)
     _loss_csv_writer.writerow([
         "iteration", "total", "ce", "l2", "zscl",
-        "replay_sup", "replay_teacher", "buf_size",
+        "replay_sup", "replay_teacher", "replay_self_text", "buf_size",
     ])
     print(f"[Phase3] Loss CSV → {loss_csv_path}")
 
@@ -348,6 +359,13 @@ def custom_finetune_phase3(args, replay_buffer=None):
                 _chunks.append(_emb)
             cached_ref_embeddings = torch.cat(_chunks, dim=0)
         print(f"[Phase3] Pre-computed ref_text_embeddings: {cached_ref_embeddings.shape}")
+
+    # Oldest/newest task ids in the buffer, for recency-weighted distill (ext 3).
+    replay_max_tid = (
+        max(replay_buffer.memory.keys())
+        if (replay_buffer is not None and len(replay_buffer.memory) > 0)
+        else 0
+    )
 
     # ------------------------------------------------------------------ #
     # Main training loop                                                  #
@@ -438,6 +456,7 @@ def custom_finetune_phase3(args, replay_buffer=None):
         # ---- (4) Replay supervised CE loss  +  (5) Replay teacher distill ----
         loss_rsup_val = 0.0
         loss_rteacher_val = 0.0
+        loss_rselftext_val = 0.0
 
         if replay_iter_inf is not None:
             # Fetch one replay minibatch
@@ -464,6 +483,7 @@ def custom_finetune_phase3(args, replay_buffer=None):
                 if same_batch:
                     # Reuse the same replay images already fetched above
                     rtd_images = replay_images_cuda
+                    rtd_task_ids = replay_batch[2]
                 else:
                     # Fetch a fresh replay batch for teacher distillation
                     try:
@@ -472,13 +492,32 @@ def custom_finetune_phase3(args, replay_buffer=None):
                         replay_iter_inf = iter(replay_loader)
                         rtd_batch = next(replay_iter_inf)
                     rtd_images = rtd_batch[0].cuda()
+                    rtd_task_ids = rtd_batch[2]
 
-                loss_rtd = compute_replay_teacher_distill_loss(
-                    model, ref_model, rtd_images, ref_texts, logit_scale, args,
-                    ref_embeddings=cached_ref_embeddings
-                )
+                if use_recency_distill:
+                    # Extension 3: up-weight distillation for older replayed tasks.
+                    loss_rtd = compute_replay_teacher_distill_recency_loss(
+                        model, ref_model, rtd_images, rtd_task_ids.cuda(),
+                        ref_texts, logit_scale, args,
+                        max_tid=replay_max_tid, gamma=recency_gamma,
+                        ref_embeddings=cached_ref_embeddings
+                    )
+                else:
+                    loss_rtd = compute_replay_teacher_distill_loss(
+                        model, ref_model, rtd_images, ref_texts, logit_scale, args,
+                        ref_embeddings=cached_ref_embeddings
+                    )
                 loss = loss + lambda_rtd * loss_rtd
                 loss_rteacher_val = loss_rtd.item()
+
+            # (6) Self-text anchoring (extension 2): anchor replay images to
+            #     their own frozen-CLIP class-text embedding.
+            if lambda_self_text > 0 and ref_model is not None:
+                loss_self_text = compute_replay_self_text_loss(
+                    model, ref_model, replay_batch, logit_scale, replay_buffer, args
+                )
+                loss = loss + lambda_self_text * loss_self_text
+                loss_rselftext_val = loss_self_text.item()
 
         # ---- Backward pass ----
         optimizer.zero_grad()
@@ -505,13 +544,14 @@ def custom_finetune_phase3(args, replay_buffer=None):
                 f"zscl={loss_zscl_val:.4f}  "
                 f"replay_sup={loss_rsup_val:.4f}  "
                 f"replay_teacher={loss_rteacher_val:.4f}  "
+                f"replay_self_text={loss_rselftext_val:.4f}  "
                 f"buf={buf_size}"
             )
             _loss_csv_writer.writerow([
                 iteration, f"{total_val:.6f}", f"{loss_ce_val:.6f}",
                 f"{loss_l2_val:.6f}", f"{loss_zscl_val:.6f}",
                 f"{loss_rsup_val:.6f}", f"{loss_rteacher_val:.6f}",
-                buf_size,
+                f"{loss_rselftext_val:.6f}", buf_size,
             ])
             _loss_csv_file.flush()
             wandb.log({
@@ -521,6 +561,7 @@ def custom_finetune_phase3(args, replay_buffer=None):
                 "loss/zscl": loss_zscl_val,
                 "loss/replay_sup": loss_rsup_val,
                 "loss/replay_teacher": loss_rteacher_val,
+                "loss/replay_self_text": loss_rselftext_val,
                 "replay_buffer_size": buf_size,
             }, step=iteration)
             prev_ce = loss_ce_val

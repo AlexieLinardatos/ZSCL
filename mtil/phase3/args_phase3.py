@@ -51,9 +51,25 @@ def parse_phase3_arguments():
     )
     p3_parser.add_argument(
         "--exemplar_strategy",
-        choices=["random", "herding", "el2n", "gcr"],
+        choices=["random", "herding", "el2n", "gcr", "coverage"],
         default="random",
-        help="Replay buffer exemplar selection strategy (default: random)"
+        help="Replay buffer exemplar selection strategy (default: random). "
+             "'coverage' = transfer-coverage k-center selection (extension 1)."
+    )
+    # Extension 2: self-text anchoring (replay images -> own frozen class text).
+    p3_parser.add_argument(
+        "--lambda_replay_self_text", type=float, default=0.0,
+        help="Weight for the self-text anchoring loss (extension 2). 0 = off."
+    )
+    # Extension 3: recency-asymmetric replay teacher distillation.
+    p3_parser.add_argument(
+        "--replay_distill_recency", action="store_true", default=False,
+        help="Up-weight teacher distillation for older replayed tasks (extension 3)."
+    )
+    p3_parser.add_argument(
+        "--replay_distill_recency_gamma", type=float, default=1.0,
+        help="Strength of the recency up-weighting (extension 3). "
+             "w(tid)=1+gamma*(max_tid-tid)/max_tid."
     )
 
     p3_ns, remaining_argv = p3_parser.parse_known_args()
@@ -103,5 +119,8 @@ def parse_phase3_arguments():
     args.no_proportional_replay = p3_ns.no_proportional_replay
     args.replay_positional_weighting = p3_ns.replay_positional_weighting
     args.exemplar_strategy = p3_ns.exemplar_strategy
+    args.lambda_replay_self_text = p3_ns.lambda_replay_self_text
+    args.replay_distill_recency = p3_ns.replay_distill_recency
+    args.replay_distill_recency_gamma = p3_ns.replay_distill_recency_gamma
 
     return args

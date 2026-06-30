@@ -10,9 +10,15 @@ Strategies:
     gcr      - gradient coreset replay: pick samples whose running mean
                last-layer gradient matches the full-set mean gradient
                (Tiwari 2022, simplified greedy variant)
+    coverage - transfer-coverage selection: global k-center / farthest-point
+               sampling in frozen CLIP image-feature space (with a 1-per-class
+               floor). Tiles the embedding manifold broadly so the replay
+               distillation branch anchors more of feature space -> better
+               zero-shot transfer retention. (Replay-buffer thesis extension 1)
 
-All non-random strategies operate class-conditionally inside each task, taking
+herding/el2n/gcr operate class-conditionally inside each task, taking
 budget // num_classes slots per class (with remainder distribution).
+coverage operates *globally* across the whole task (not per class).
 """
 
 import random
@@ -45,6 +51,11 @@ def select_exemplars(
     features, logits, labels = _extract_features_logits(
         model, dataset, classnames, template, device, batch_size
     )
+
+    # Extension 1: global coverage selection (not class-conditional).
+    if strategy == "coverage":
+        return _select_coverage(features, labels, num_samples, device)
+
     probs = F.softmax(logits, dim=1)
 
     budgets = _per_class_budgets(labels, num_samples)
@@ -193,6 +204,57 @@ def _select_el2n(probs: torch.Tensor, class_id: int, k: int) -> List[int]:
     onehot[class_id] = 1.0
     scores = torch.norm(probs - onehot.unsqueeze(0), dim=1)
     return torch.topk(scores, k=min(k, n), largest=True).indices.tolist()
+
+
+def _select_coverage(
+    features: torch.Tensor, labels: torch.Tensor, k: int, device: str
+) -> List[int]:
+    """Global k-center (farthest-point) selection in frozen CLIP feature space.
+
+    Greedily builds a subset that maximises coverage of the embedding manifold:
+    seed with one sample per class (closest to its class mean, guaranteeing
+    every class is represented and protecting accuracy), then repeatedly add the
+    point with the largest distance to the already-selected set. A broadly-tiled
+    buffer anchors more of feature space under the replay distillation branch,
+    which is what zero-shot transfer retention depends on.
+    """
+    feats = features.to(device)
+    feats = feats / feats.norm(dim=-1, keepdim=True)
+    n = feats.shape[0]
+    k = min(k, n)
+
+    selected: List[int] = []
+    selected_mask = torch.zeros(n, dtype=torch.bool, device=device)
+
+    # Seed: one sample per class (nearest to class mean) for a per-class floor.
+    for c in labels.unique().tolist():
+        if len(selected) >= k:
+            break
+        idx = torch.nonzero(labels.to(device) == int(c), as_tuple=True)[0]
+        cmean = feats[idx].mean(dim=0, keepdim=True)
+        nearest = idx[int(torch.argmin(torch.norm(feats[idx] - cmean, dim=1)))]
+        nearest = int(nearest.item())
+        if not selected_mask[nearest]:
+            selected.append(nearest)
+            selected_mask[nearest] = True
+
+    # Running min-distance from every point to the selected set.
+    if selected:
+        min_dist = torch.cdist(feats, feats[selected]).min(dim=1).values
+    else:
+        min_dist = torch.full((n,), float("inf"), device=device)
+    min_dist[selected_mask] = -1.0
+
+    # Farthest-point greedy fill.
+    while len(selected) < k:
+        nxt = int(torch.argmax(min_dist).item())
+        selected.append(nxt)
+        selected_mask[nxt] = True
+        d = torch.norm(feats - feats[nxt:nxt + 1], dim=1)
+        min_dist = torch.minimum(min_dist, d)
+        min_dist[nxt] = -1.0
+
+    return selected
 
 
 def _select_gcr(
