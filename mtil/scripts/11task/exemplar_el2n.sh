@@ -82,7 +82,7 @@ srun python -m phase3.train_phase3 \
   --eval-datasets "${EVAL_DATASETS}" \
   --eval-interval 500 \
   --use_replay \
-  --replay_budget 11000 \
+  --replay_budget 13000 \
   --replay_batch_size 8 \
   --replay_loss_weight 1.0 \
   --batch-size-eval 16 \
