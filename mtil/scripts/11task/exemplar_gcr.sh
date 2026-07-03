@@ -65,6 +65,19 @@ EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,Oxfor
 
 echo "[`date`] Starting Phase 3 — exemplar strategy = gcr"
 
+# ---------------------------------------------------------------------------
+# FLAG LEGEND (inline comments can't go inside the \-continued command below)
+#   ExRD baseline block: identical to phase3_no_lora_11t_v4.sh — see
+#   multi_teacher_merge_v3.sh for the shared legend. This ablation changes ONLY
+#   how the replay buffer is filled:
+#
+#     --replay_budget 13000        saturated buffer (~11 exemplars/class)
+#     --exemplar_strategy gcr       Gradient Coreset Replay: greedily pick the
+#                                  subset whose MEAN last-layer gradient matches
+#                                  the full-set mean gradient. Closed-form
+#                                  per-sample grad g=(p-y)⊗φ, no autograd
+#                                  (Tiwari 2022). Compare vs random/herding/el2n.
+# ---------------------------------------------------------------------------
 srun python -m phase3.train_phase3 \
   --train-mode=whole \
   --lr=5e-6 \

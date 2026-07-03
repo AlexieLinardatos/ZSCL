@@ -65,6 +65,19 @@ EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,Oxfor
 
 echo "[`date`] Starting Phase 3 — exemplar strategy = herding"
 
+# ---------------------------------------------------------------------------
+# FLAG LEGEND (inline comments can't go inside the \-continued command below)
+#   ExRD baseline block: identical to phase3_no_lora_11t_v4.sh — see
+#   multi_teacher_merge_v3.sh for the shared legend. This ablation changes ONLY
+#   how the replay buffer is filled:
+#
+#     --replay_budget 13000        saturated buffer (~11 exemplars/class)
+#     --exemplar_strategy herding   iCaRL herding: greedily pick the most
+#                                  class-REPRESENTATIVE samples — those whose
+#                                  running mean feature stays closest to the
+#                                  class-mean CLIP feature (Rebuffi 2017).
+#                                  Compare vs random/el2n/gcr at same budget.
+# ---------------------------------------------------------------------------
 srun python -m phase3.train_phase3 \
   --train-mode=whole \
   --lr=5e-6 \

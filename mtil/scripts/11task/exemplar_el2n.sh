@@ -65,6 +65,20 @@ EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,Oxfor
 
 echo "[`date`] Starting Phase 3 — exemplar strategy = el2n"
 
+# ---------------------------------------------------------------------------
+# FLAG LEGEND (inline comments can't go inside the \-continued command below)
+#   ExRD baseline block (train-mode/lr/ls/method/image+text_loss/we/l2/ref-*/
+#   use_replay/RTD/dataset_order/task_iterations): identical to
+#   phase3_no_lora_11t_v4.sh — see multi_teacher_merge_v3.sh for the shared
+#   legend. This ablation changes ONLY how the replay buffer is filled:
+#
+#     --replay_budget 13000        saturated buffer (~11 exemplars/class) — the
+#                                  upper anchor where selection ~ random
+#     --exemplar_strategy el2n     keep the HARDEST examples per class:
+#                                  score = || softmax(logits) - onehot(y) ||_2,
+#                                  take top-k (Paul 2021). Compare vs random /
+#                                  herding / gcr at the same budget.
+# ---------------------------------------------------------------------------
 srun python -m phase3.train_phase3 \
   --train-mode=whole \
   --lr=5e-6 \
