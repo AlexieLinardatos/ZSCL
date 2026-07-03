@@ -52,6 +52,7 @@ pip install --no-index tqdm ftfy regex pandas scipy
 pip install --no-index wandb
 export WANDB_MODE=offline
 
+# Grow allocator segments to avoid OOM fragmentation on the 40GB MIG slice.
 export PYTORCH_ALLOC_CONF=expandable_segments:True
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
@@ -70,6 +71,17 @@ EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,Oxfor
 
 echo "[`date`] Starting NS3 v1 — equal-weight multi-teacher merge (α=0.1)"
 
+# ---------------------------------------------------------------------------
+# FLAG LEGEND — see multi_teacher_merge_v3.sh for the full ExRD-block legend.
+# This run is the ABLATION: identical to v3 but with equal (non-routed) weights.
+#     --use_multi_teacher_merge    turn on the merged teacher (off => ExRD)
+#     --merge_strategy equal       w_i = α for EVERY prior task-vector
+#                                  (no signature routing — isolates v3's gain)
+#     --merge_alpha 0.1            per-teacher weight α
+#     --merge_signature_batches 10 sigs still computed (for logging/parity)
+#     --merge_dtype fp16           task-vector deltas stored fp16 on disk
+#   NOTE: no --merge_softmax_temp here — equal weighting ignores similarity.
+# ---------------------------------------------------------------------------
 srun python -m phase3.train_phase3 \
   --train-mode=whole \
   --lr=5e-6 \

@@ -57,11 +57,15 @@ fi
 
 which python; python -V; which pip
 pip install --upgrade pip
+# --no-index: install only from the cluster's local wheelhouse (no internet on
+# compute nodes). torch/torchvision + the CLIP/eval deps.
 pip install --no-index torch torchvision
 pip install --no-index tqdm ftfy regex pandas scipy
 pip install --no-index wandb
-export WANDB_MODE=offline
+export WANDB_MODE=offline   # log locally; no calls to wandb.ai from the node
 
+# Allow the CUDA allocator to grow segments — avoids OOM fragmentation on the
+# 40GB MIG slice when the merged teacher + student are both resident.
 export PYTORCH_ALLOC_CONF=expandable_segments:True
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
@@ -80,6 +84,29 @@ EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,Oxfor
 
 echo "[`date`] Starting NS3 v3 — data-driven multi-teacher merge (α=0.1, τ=1.0)"
 
+# ---------------------------------------------------------------------------
+# FLAG LEGEND (inline comments can't go inside the \-continued command below)
+#
+#   ExRD baseline block (identical to phase3_no_lora_11t_v4.sh):
+#     --train-mode=whole        fine-tune the whole CLIP model
+#     --lr / --ls / --iterations base LR, label smoothing, fallback iter count
+#     --method ZSCL             enable ZSCL reference distillation
+#     --image_loss --text_loss  both branches of the ZSCL distillation
+#     --we --avg_freq 50        weight averaging (WiSE) every 50 steps
+#     --l2 1                    L2-to-reference weight penalty
+#     --ref-dataset / --ref-sentences  ImageNet imgs + Conceptual Captions text
+#     --use_replay --replay_*   episodic replay buffer (budget 11k, bs 8)
+#     --lambda_replay_teacher_distill 0.3   replay teacher-distill (RTD) weight
+#     --dataset_order / --task_iterations   11-task order + per-task step budget
+#
+#   Multi-teacher merge (NS3, this experiment):
+#     --use_multi_teacher_merge      turn on the merged teacher (off => ExRD)
+#     --merge_strategy data_driven   w_i = softmax(cos(s_t,s_i)/τ)·α  (v3)
+#     --merge_alpha 0.1              total mass α spread over prior task-vectors
+#     --merge_softmax_temp 1.0       τ in the signature-similarity softmax
+#     --merge_signature_batches 10   #batches used to estimate each task sig s_t
+#     --merge_dtype fp16             store task-vector deltas on disk as fp16
+# ---------------------------------------------------------------------------
 srun python -m phase3.train_phase3 \
   --train-mode=whole \
   --lr=5e-6 \

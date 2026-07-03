@@ -82,6 +82,14 @@ EVAL_DATASETS="DTD,EuroSAT,MNIST,Flowers"
 
 echo "[`date`] Starting NS3 smoke — 4 tasks × 250 iters, data-driven merge"
 
+# FLAG LEGEND — see multi_teacher_merge_v3.sh for the full legend. This is the
+# fast wiring check: shrunk vs v3 to run in <1h and exercise the merge codepath.
+#     --iterations 250 / --eval-interval 250   short tasks, one eval at the end
+#     --replay_budget 400 / --replay_batch_size 4   tiny buffer (smoke only)
+#     --dataset_order DTD,EuroSAT,MNIST,Flowers   4 semantically distinct tasks
+#                                  so cosine routing has signal to discriminate
+#     --merge_signature_batches 5   fewer sig batches (speed)
+#   (all merge flags same meaning as v3: strategy/alpha/softmax_temp/dtype)
 srun python -m phase3.train_phase3 \
   --train-mode=whole \
   --lr=5e-6 \
