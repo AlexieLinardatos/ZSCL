@@ -34,6 +34,8 @@ pip install --quiet transformers torch --index-url https://pypi.org/simple/ \
 
 for MODEL in $MODELS; do
   echo "[prestage] downloading $MODEL ..."
+  # from_pretrained() with internet populates $HF_HOME; the compute-node run
+  # later reads it with TRANSFORMERS_OFFLINE=1. Touch both tokenizer + weights.
   python - <<PY
 from transformers import AutoModel, AutoTokenizer
 m = "$MODEL"

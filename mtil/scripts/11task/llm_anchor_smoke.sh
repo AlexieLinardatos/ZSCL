@@ -8,7 +8,7 @@
 #SBATCH --output=/scratch/alexie/logs/%x-%j.out
 #SBATCH --signal=USR1@60
 
-# NS1 smoke test: 100 iters on the first task (Aircraft) to validate the full
+# NS1 smoke test: 250 iters on the first task (Aircraft) to validate the full
 # pipeline before committing to a 72h production run.
 #
 # What this verifies:
@@ -67,8 +67,13 @@ mkdir -p "${SAVE_PATH}"
 # Single task, no chained eval, low iteration count.
 EVAL_DATASETS="Aircraft"
 
-echo "[`date`] Smoke: 100 iters on Aircraft only, lambda=0.3"
+echo "[`date`] Smoke: 250 iters on Aircraft only, lambda=0.3"
 
+# FLAG LEGEND — see llm_anchor_lam03.sh for the anchor flags and
+# multi_teacher_merge_v3.sh for the ExRD block. Smoke = shrunk for a <1h check:
+# single task (Aircraft), 250 iters, tiny replay buffer (1000). The anchor flags
+# (--lambda_llm_anchor/--llm_anchor_model/_hidden/_batch_size) are identical to
+# the production run so this genuinely exercises the anchor codepath.
 srun python -m phase3.train_phase3 \
   --train-mode=whole \
   --lr=5e-6 \

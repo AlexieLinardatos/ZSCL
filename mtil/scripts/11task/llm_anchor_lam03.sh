@@ -9,8 +9,12 @@
 #SBATCH --signal=USR1@60
 
 # NS1: LLM-anchored text encoder.
-# Same v4 config + frozen sentence-transformers/all-mpnet-base-v2 as a semantic
-# anchor for CLIP's text encoder. lambda = 0.3 (same magnitude as lambda_RTD).
+# Same v4 (ExRD) config + a frozen sentence-embedding LLM (intfloat/e5-large-v2,
+# see --llm_anchor_model below) as a semantic anchor for CLIP's text encoder:
+# CLIP text feats are projected into the LLM space and pulled toward the LLM's
+# embeddings via a cosine-drift loss. lambda = 0.3 (same magnitude as lambda_RTD).
+# This is the "anchor ADDED on top of ZSCL" config (ZSCL text branch still on);
+# the substitution variant lives on branch llm-anchor-no-zscl-text.
 
 set -euo pipefail
 mkdir -p /scratch/alexie/logs
@@ -82,8 +86,22 @@ mkdir -p "${SAVE_PATH}"
 
 EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397,ImageNet"
 
-echo "[`date`] Starting Phase 3 — LLM anchor (mpnet) lambda=0.3"
+echo "[`date`] Starting Phase 3 — LLM anchor (e5-large-v2) lambda=0.3"
 
+# ---------------------------------------------------------------------------
+# FLAG LEGEND (inline comments can't go inside the \-continued command below)
+#   ExRD baseline block: see multi_teacher_merge_v3.sh for the shared legend
+#   (train-mode/lr/ls/method/image+text_loss/we/l2/ref-*/use_replay/RTD/...).
+#
+#   LLM anchor (NS1, this experiment):
+#     --lambda_llm_anchor 0.3        weight on the cosine-drift anchor loss
+#                                    (0 disables => pure ExRD)
+#     --llm_anchor_model e5-large-v2 frozen HF sentence model = the anchor space
+#     --llm_anchor_hidden 1024       hidden width of the CLIP->LLM projection MLP
+#                                    (512 -> 1024 -> e5 dim 1024)
+#     --llm_anchor_batch_size 64     #reference captions sampled per step for the
+#                                    anchor loss (embeddings precomputed+cached)
+# ---------------------------------------------------------------------------
 srun python -m phase3.train_phase3 \
   --train-mode=whole \
   --lr=5e-6 \
