@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=11t_p3_seed2
+#SBATCH --job-name=reb_rd_prev
 #SBATCH --time=72:00:00
 #SBATCH --mem=128GB
 #SBATCH --cpus-per-task=4
@@ -8,8 +8,24 @@
 #SBATCH --output=/scratch/alexie/logs/%x-%j.out
 #SBATCH --signal=USR1@60
 
-# Seed 2 replication of v4 (seed=42). Identical in every way except --seed 2
-# and save path. Used to compute mean +/- std across 3 seeds for the paper.
+# Rebuttal control C2 (Reviewer zvRY, Q3): must the RD teacher be the frozen
+# pre-trained CLIP, or does any teacher give the same gain?
+#
+# Identical to phase3_no_lora_11t_v4.sh (the headline ExRD run) in every
+# respect — same replay images, same 10,599 caption anchors, same lambda=0.3,
+# same per-task iteration schedule, same 11k buffer with supervised replay CE —
+# except that the RD term's teacher is the checkpoint produced by task t-1
+# (the student's own initialisation for the current task, i.e. the classic
+# LwF/iCaRL teacher choice) instead of the pre-trained CLIP checkpoint.  Its
+# caption embeddings come from that same checkpoint's text encoder, so the
+# distillation target is that teacher's own alignment distribution.
+#
+# The ZSCL branch keeps the frozen pre-trained teacher, so this is a
+# single-factor swap of the RD teacher rather than a different method.
+#
+# Reading: if Transfer holds up, the anchor identity does not matter and any
+# self-distillation signal suffices.  If Transfer collapses toward the no-anchor
+# ablation (64.38), the *frozen pre-trained* anchor is the load-bearing part.
 
 set -euo pipefail
 mkdir -p /scratch/alexie/logs
@@ -53,20 +69,19 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 REPO_ROOT="$HOME/projects/def-fqureshi/alexie/ZSCL"
 cd "$REPO_ROOT/mtil"
-export PYTHONPATH="$REPO_ROOT/mtil/scripts/4task/phase3:${PYTHONPATH:-}"
+# Both package roots: phase3 (unmodified) and the rebuttal control wrapper.
+export PYTHONPATH="$REPO_ROOT/mtil/scripts/4task/phase3:$REPO_ROOT/mtil/scripts/rebuttal:${PYTHONPATH:-}"
 mkdir -p logs
 
-SAVE_PATH="ckpt/11task/phase3_no_lora_seed2"
+SAVE_PATH="ckpt/11task/rebuttal_rd_prev_teacher"
 mkdir -p "${SAVE_PATH}"
 
 EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397,ImageNet"
 
-echo "[`date`] Starting seed 2 run"
+echo "[`date`] Starting control C2 — RD with previous-task checkpoint as teacher"
 
-# FLAG LEGEND — see phase3_no_lora_11t_v4.sh for the shared ExRD block.
-# seed2 = v4 replication with --seed 2 (v4 default seed=42). For variance /
-# mean±std over seeds. Everything else identical to v4.
-srun python -m phase3.train_phase3 \
+# Flags are v4's verbatim; the only addition is --rd_teacher prev_task.
+srun python -m rd_controls.run_rd_control \
   --train-mode=whole \
   --lr=5e-6 \
   --ls 0.1 \
@@ -90,6 +105,6 @@ srun python -m phase3.train_phase3 \
   --dataset_order Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397 \
   --lambda_replay_teacher_distill 0.3 \
   --task_iterations "Aircraft:3000,Caltech101:1000,CIFAR100:1500,DTD:1500,EuroSAT:1000,Flowers:1500,Food:1500,MNIST:800,OxfordPet:1500,StanfordCars:3000,SUN397:5000" \
-  --seed 2
+  --rd_teacher prev_task
 
 echo "[`date`] Done. Checkpoints in ${SAVE_PATH}/"

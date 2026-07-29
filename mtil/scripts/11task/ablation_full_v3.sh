@@ -64,6 +64,10 @@ EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,Oxfor
 
 echo "[`date`] Starting ablation: full method (prop replay + RTD), uniform 1500 iters"
 
+# FLAG LEGEND — see phase3_no_lora_11t_v4.sh for the shared ExRD block.
+# Ablation row 4 — FULL method: proportional replay + RTD at
+# --lambda_replay_teacher_distill 0.5 (note 0.5, not v4's 0.3), with uniform
+# 1500 iters/task (no per-task schedule) for a fair ablation comparison.
 srun python -m phase3.train_phase3 \
   --train-mode=whole \
   --lr=5e-6 \

@@ -1,0 +1,381 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{parskip}
+\usepackage{titlesec}
+\usepackage{xcolor}
+\usepackage{amsmath}
+
+\title{Submission 31258: Official Reviews and Meta-Review}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section*{Official Review of Submission31258 by Reviewer 3U1b}
+
+Official Review by Reviewer 3U1b, 23 Jul 2026, 03:36 (modified: 23 Jul 2026, 12:51). Program Chairs, Senior Area Chairs, Area Chairs, Reviewers Submitted, Authors, Reviewer 3U1b, Revisions
+
+\subsection*{Summary}
+This paper revisits continual learning of CLIP-style vision-language models by analyzing the trade-off between retaining previous tasks and preserving zero-shot transfer. To this end, the authors introduce Replay Distillation (RD), which applies a frozen CLIP teacher to replay images, and further propose ExRD by combining exemplar replay with RD to balance accuracy retention and transferability. Experiments demonstrate the effectiveness of the proposed method.
+
+\subsection*{Contribution Type}
+General: Most submissions will fall into this type.
+
+\subsection*{Strengths And Weaknesses}
+Strengths
+
+The motivation of this paper is straightforward. The authors address the conflict between preserving zero-shot transfer and retaining previous tasks in continual learning for CLIPs, and propose a framework combining exemplar replay and distillation to balance these objectives.
+
+The paper is well written and easy to follow.
+
+Weaknesses
+
+Despite straightforward motivation, the proposed method is essentially a combination of existing approaches, including continual learning strategies, low-rank adaptation, and exemplar replay. The introduction of multiple loss terms may lead to difficulties in hyperparameter tuning and may affect the generalization ability across different tasks and CLIP pre-trained models. The authors should provide a more comprehensive sensitivity analysis of the loss weights and conduct experiments on various pre-trained CLIP architectures, including models with different scales and different pre-training paradigms such as BLIP and LiT.
+
+In addition, I have concerns regarding the training efficiency of the proposed method. The authors should compare the proposed method with existing approaches in terms of training time, the number of additional parameters introduced when new classes/tasks are added, GPU memory consumption, and inference-time FLOPs.
+
+The authors do not provide code for reproducibility check.
+
+\subsection*{Scores}
+Quality: 2: not good
+
+Clarity: 2: not good
+
+Significance: 2: not good
+
+Originality: 2: not good
+
+\subsection*{Questions}
+My questions are listed in the Weaknesses section.
+
+\subsection*{Limitations}
+Yes
+
+\subsection*{Rating}
+2: Reject: For instance, a paper with technical flaws, weak evaluation, inadequate reproducibility and incompletely addressed ethical considerations.
+
+\subsection*{Confidence}
+4: You are confident in your assessment, but not absolutely certain. It is unlikely, but not impossible, that you did not understand some parts of the submission or that you are unfamiliar with some pieces of related work.
+
+\subsection*{Ethical Concerns}
+NO or VERY MINOR ethics concerns only
+
+\subsection*{Paper Formatting Concerns}
+The authors are suggested to replace the rasterized figures.
+
+\subsection*{Code Of Conduct Acknowledgement}
+Yes
+
+\subsection*{Responsible Reviewing Acknowledgement}
+Yes
+
+\begin{color}{red}
+\section*{Rebuttal, Reviewer 3U1b}
+
+We thank the reviewer for the detailed comments. We address the three weaknesses in turn.
+
+\textbf{Clarification.} ExRD uses \emph{no} LoRA and no adapters: we fully fine-tune one shared CLIP ViT-B/16 with a zero-shot text classifier. The LoRA discussion in our related work concerns baselines.
+
+\subsection*{W1, backbones}
+
+MTIL and all prior methods on it (ZSCL, MoE-Adapters, GIFT, LoRA-Loop) use CLIP ViT-B/16, so our comparisons follow the standard protocol and are on equal footing. BLIP and LiT use different encoders, tokenizers and pre-training objectives, requiring the distillation objective to be re-derived; we agree this is valuable and note it as future work.
+
+\subsection*{W1, sensitivity to the loss weights}
+
+ExRD introduces exactly \emph{two} weights beyond ZSCL: replay weight $w_r$ and RD weight $\lambda$. All other coefficients ($\alpha{=}1$, $T{=}2$, WE period $K{=}50$, learning rate, reference set) are inherited from ZSCL unchanged. $\lambda$ was fixed on a 4-task proxy sequence \emph{before} the 11-task benchmark; nothing was tuned on the benchmark itself or on Order~II.
+
+\begin{table}[h]\centering\small
+\begin{tabular}{lccc}
+\hline
+\textbf{Configuration} & \textbf{Last} & \textbf{Avg} & \textbf{Transfer} \\
+\hline
+\multicolumn{4}{l}{\textit{RD weight $\lambda$}} \\
+$\lambda{=}0$ (replay only) & 86.44 & 77.57 & 68.00 \\
+$\lambda{=}0.3$ (ours) & 86.17 & 77.17 & \textbf{68.37} \\
+$\lambda{=}0.5$ & 85.32 & 77.07 & 68.18 \\
+$\lambda{=}0.5$, per-task iters$^\ast$ & 85.94 & 77.06 & 68.13 \\
+\multicolumn{4}{l}{\textit{Replay-side settings}} \\
+$w_r{=}1.5$, replay bs 16$^\ast$ & 86.13 & 77.23 & 68.11 \\
+Buffer 13k $+$ positional weighting$^\ast$ & 86.14 & 77.07 & 68.24 \\
+Uniform (vs.\ prop.) allocation & 86.44 & 77.65 & 67.99 \\
+\hline
+ZSCL (reference) & 83.60 & 75.40 & 68.10 \\
+\hline
+\end{tabular}
+\\[2pt]
+{\small $^\ast$ Each row varies the stated setting relative to the default; these three
+rows additionally alter per-task iteration counts or combine two changes.}
+\end{table}
+
+\noindent Across the full grid Last varies by $1.12$, Avg by $0.59$ and Transfer by $0.38$ points. First, the method is not brittle: \emph{every} configuration exceeds ZSCL by $\geq\!1.72$ Last and $\geq\!1.66$ Avg while matching its Transfer within $0.11$, and exceeds MoE-Adapters4CL on Last. There is no setting at which it fails; $\lambda$ trades Last for Transfer smoothly, with Last decreasing monotonically in $\lambda$ and Transfer peaking at $\lambda{=}0.3$, which is the intended Pareto knob rather than a tuning hazard. Second, replay-side settings are essentially inert: varying the replay weight, batch size and buffer size moves Last by at most $0.04$ and Transfer by at most $0.26$, and the two allocation schemes match each other within $0.01$ on both Last and Transfer.
+
+A loss-magnitude analysis explains the $\lambda$ trend: ZSCL's reference term contributes $\approx$29--31 in absolute loss and stays flat, dominating the objective. At $\lambda{=}0.5$ RD reaches $\approx$33\% of the total and begins suppressing task CE ($\approx$3\%), costing Last; at $\lambda\!\leq\!0.1$ RD contributes $\approx$9\% and gives no measurable Transfer benefit. $\lambda{=}0.3$ sits between these regimes, which is why it transfers without retuning.
+
+On generalisation across sequences: the identical hyperparameters, with no retuning, transfer to Order~II, where ExRD attains $85.7$ Last / $68.6$ Transfer versus ZSCL's $83.4$ / $64.2$ ($+4.4$ Transfer), above GIFT ($65.9$) and LoRA-Loop ($66.3$). The weights are therefore not tuned to one ordering.
+
+\subsection*{W1, is the method a combination of existing components?}
+
+Our contribution is the claim we falsify and the mechanism we isolate, not the component stack.
+
+\textbf{(a) We falsify a published claim.} ZSCL argues that reference-data distillation makes exemplar replay unnecessary. This had never been tested with real replay inside the same framework. It does not hold: adding a fixed-budget buffer to ZSCL gives $+2.84$ Last ($83.60\!\to\!86.44$) at $-0.11$ Transfer, closing most of the gap to the strongest published methods with one change.
+
+\textbf{(b) RD occupies a cell of the design space no prior method does.} Distillation on exemplars is not new (iCaRL, DER++), but there the teacher is the previous-task checkpoint and the targets are old-class posteriors, so the buffer carries label information. Conversely, methods using a frozen pre-training-time anchor apply it to data other than a buffer: ZSCL to external reference images, GIFT and LoRA-Loop to synthetic images under a rolling-checkpoint teacher, MulKI to current-task data only (exemplar-free by design). The recent VLM-CL survey (arXiv:2508.04227) catalogues no replay method that distils buffer contents against a frozen pre-trained teacher. RD does exactly this, matching the image--caption alignment distribution over $N{=}10{,}599$ open-vocabulary Conceptual Captions sentences, bidirectionally, in which the exemplars are not labelled. The replay images act as probe inputs for measuring representation drift rather than label carriers: one minibatch, two orthogonal roles ($\mathcal{L}_\text{rep}$ supplies labels, $\mathcal{L}_\text{RD}$ supplies alignment). This is what lets us delete ZSCL's reference stream and ask what survives. Transfer collapses $68.00\!\to\!64.38$ with no anchor; RD on replay images alone recovers $66.72$, i.e.\ $65\%$ of ZSCL's contribution using zero external data. The conclusion is mechanistic: zero-shot preservation depends on having a \emph{stable frozen anchor}, and only secondarily on the breadth of the data it is evaluated on. This matters directly for domains lacking open-domain image--caption corpora.
+
+\textbf{(c) The decomposition separates the three MTIL metrics.} Replay drives Last and BWT (BWT $-3.33\!\to\!-0.50$); RD drives Transfer; $\lambda$ traverses the Transfer--Last frontier (Tables~3--4). Prior methods move these metrics jointly and opaquely; we show they are separately controllable. The same checkpoint also admits a free test-time frontier: WiSE-FT interpolation with the zero-shot model at $\alpha{=}0.70$ trades $-1.36$ Last for $+1.92$ ImageNet accuracy relative to $\alpha{=}1.0$ in the same sweep, at no training cost. We report this as final-checkpoint ImageNet accuracy rather than the stage-averaged Transfer metric.
+
+Simplicity here is a result: ExRD matches LoRA-Loop's Last with no generative model, no adapters, no router, and no inference-time parameters beyond CLIP.
+
+\subsection*{W2, training and inference cost}
+\begin{table}[h]\centering\small
+\begin{tabular}{lccc}
+\hline
+\textbf{Method} & \textbf{Train time} & \textbf{GPU mem.} & \textbf{Inference} \\
+\hline
+ExRD (ours) & 13.5 h (11-task seq.) & $<$40 GB & 17.5 GFLOPs/img \\
+GIFT & not reported & not reported & 17.5 GFLOPs/img \\
+LoRA-Loop & not reported & not reported & 17.5 GFLOPs/img \\
+\hline
+\end{tabular}
+\end{table}
+
+\noindent All three fully fine-tune one CLIP ViT-B/16 with no per-task adapter and no task-identity router, so inference FLOPs and parameter counts are identical to vanilla CLIP and constant in the number of tasks. ExRD adds \emph{zero} parameters to the deployed model.
+
+Training-time footprints differ. GIFT and LoRA-Loop each load a Stable Diffusion v1.5 generator ($\approx$900M parameters, $\approx$6$\times$ CLIP ViT-B/16) to synthesise rehearsal data, and LoRA-Loop additionally trains and stores a per-task rank-4 LoRA adapter on the generator, a cost growing with sequence length. ExRD needs no generative model: its only auxiliary network is a frozen copy of CLIP itself (the ZSCL teacher), and its only storage is a capped $11{,}000$-image real-exemplar buffer that does not grow with tasks. ExRD runs on a single 40\,GB GPU partition while matching LoRA-Loop's Last accuracy.
+
+\subsection*{W3, code}
+
+The code will be provided if the paper is accepted into the conference.
+
+\textbf{Formatting.} We will replace the rasterised figures with vector versions.
+\end{color}
+
+\newpage
+\section*{Meta Review of Submission31258 by Area Chair StPS}
+
+Meta Review by Area Chair StPS, 23 Jul 2026, 02:24 (modified: 23 Jul 2026, 14:32). Senior Area Chairs, Area Chairs, Authors, Reviewers Submitted, Program Chairs, Area Chair StPS, Revisions
+
+\subsection*{Metareview}
+This paper proposes ExRD, which combines exemplar replay with frozen-teacher replay distillation to retain previous tasks while preserving CLIP's zero-shot transfer. The reviewers agree that the problem is relevant, the paper is clearly written, and the empirical decomposition between replay and distillation is useful. Their main concern is whether Replay Distillation provides a sufficiently distinct contribution beyond adding standard exemplar replay to ZSCL, since most of the improvement appears to come from replay. The authors should therefore prioritize clarifying: (1) when RD helps beyond standard replay, preferably through per-task analysis; (2) whether replay images and the frozen pre-trained teacher are essential, compared with current-task images or a previous-task teacher; and (3) the practical training and memory cost relative to the strongest baselines.
+
+\newpage
+\section*{Official Review of Submission31258 by Reviewer zvRY}
+
+Official Review by Reviewer zvRY, 26 Jun 2026, 09:01 (modified: 23 Jul 2026, 12:51). Program Chairs, Senior Area Chairs, Area Chairs, Reviewers Submitted, Authors, Reviewer zvRY, Revisions
+
+\subsection*{Summary}
+ExRD performs continual learning for VLMs by combining the techniques of exemplar replaying and zero-shot distillation. They use CLIP and train the model on 11 datasets, keeping the weights close original checkpoint through an L2 regularization and distillation. They also add replay distillation, where they use the replay images from previous tasks to match the student to teacher's similarity distribution over captions. The main finding is the two are complementary with replay improving past-task accuracy and distillation helping preserve knowledge transfer.
+
+\subsection*{Contribution Type}
+General: Most submissions will fall into this type.
+
+\subsection*{Strengths And Weaknesses}
+The paper is clear, giving a clean empirical decomposition of the continual learning problem. Replay improves past task retention, while frozen distillation preserves zero-shot transfer. The method is practical compared to diffusion replay methods. One of the weaknesses is the fact that the addition over ZSCL is not fully isolated. The main improvement appears to come from adding exemplar replay, while Replay Distillation gives a smaller benefit. This makes it unclear whether ExRD is a new method or an empirical correction to the previous claim that replay is unnecessary.
+
+\subsection*{Scores}
+Quality: 3: good
+
+Clarity: 4: excellent
+
+Significance: 2: not good
+
+Originality: 2: not good
+
+\subsection*{Questions}
+Can the authors show when Replay Distillation helps beyond standard replay? A per-task analysis would be useful to decide whether it helps overall or only on tasks close to CLIP pretraining.
+
+Can you add a control where the same distillation loss is applied to current-task images or references instead of replay images? This would show if the replay images are a core part of RD.
+
+A standard distillation baseline that uses the previous task checkpoint as a teacher would be interesting to show whether the frozen original CLIP is important or whether any signal gives similar gains.
+
+I think this could help framr the paper as a real empirical clarification around the specifics of continual learning.
+
+\subsection*{Limitations}
+yes
+
+\subsection*{Rating}
+4: Borderline accept: Technically solid paper where reasons to accept outweigh reasons to reject, e.g., limited evaluation. Please use sparingly.
+
+\subsection*{Confidence}
+4: You are confident in your assessment, but not absolutely certain. It is unlikely, but not impossible, that you did not understand some parts of the submission or that you are unfamiliar with some pieces of related work.
+
+\subsection*{Ethical Concerns}
+NO or VERY MINOR ethics concerns only
+
+\subsection*{Paper Formatting Concerns}
+(none noted)
+
+\subsection*{Code Of Conduct Acknowledgement}
+Yes
+
+\subsection*{Responsible Reviewing Acknowledgement}
+Yes
+
+\begin{color}{red}
+\section*{Rebuttal, Reviewer zvRY}
+
+We thank the reviewer for the constructive review and for the suggested framing. The three proposed controls are exactly the right ones for isolating RD's contribution. We answer Q1 with results already in hand, show that half of Q2 is already reported in the paper, and are running the two genuinely new controls now.
+
+\subsection*{Q1: When does RD help beyond standard replay?}
+
+Per-task final accuracy, ExRD ($\lambda{=}0.3$) minus replay-only ($\lambda{=}0$), all else identical:
+
+\begin{table}[h]\centering\small
+\begin{tabular}{lr@{\qquad}lr}
+\hline
+\textbf{RD helps} & $\Delta$ & \textbf{RD costs} & $\Delta$ \\
+\hline
+StanfordCars & $+3.52$ & CIFAR100 & $-2.73$ \\
+SUN397       & $+1.82$ & EuroSAT  & $-2.09$ \\
+Food         & $+0.60$ & Aircraft & $-1.23$ \\
+ImageNet (zero-shot) & $+0.31$ & DTD & $-1.06$ \\
+             &         & MNIST    & $-0.88$ \\
+\hline
+\multicolumn{4}{l}{\textit{Near-neutral:} Caltech101 $-0.40$, Flowers $-0.29$, OxfordPet $-0.27$} \\
+\hline
+\end{tabular}
+\end{table}
+
+\noindent The ImageNet row is final-stage accuracy; the Transfer metric averages ImageNet across all training stages, giving $+0.37$.
+
+The reviewer's hypothesis is correct, and we state it plainly: RD's benefit is concentrated on tasks close to CLIP's pre-training distribution. The four tasks that gain (StanfordCars, SUN397, Food, ImageNet) are photographic, caption-describable web categories on which the frozen teacher's alignment distribution is genuinely informative. The tasks that lose are those furthest from that distribution: satellite imagery (EuroSAT), handwritten digits (MNIST), $32{\times}32$ low-resolution images (CIFAR100), textures (DTD) and fine-grained aircraft variants. There, the teacher's caption-space distribution carries little task-relevant signal, and matching it consumes capacity that replay CE would otherwise use. The three near-neutral tasks are photographic but saturated ($94$--$97\%$), leaving no headroom in either direction.
+
+This is not a uniform improvement and we do not claim it as one. The aggregate effect is a $-0.27$ Last cost for a $+0.37$ Transfer gain, i.e.\ RD is a mechanism for moving along the Transfer--Last frontier, not a free improvement, which is what Secs.~4.2--4.3 and Table~4 report. The per-task view sharpens the claim: the trade is favourable exactly when the deployment distribution resembles CLIP's pre-training data, and unfavourable on specialist domains. We will add this table and analysis to the paper, as it makes the scope of RD's benefit concrete rather than aggregate.
+
+One caveat we note for completeness: StanfordCars and SUN397 are tasks 10 and 11 of 11, so recency is partially confounded with the distributional effect (SUN397 is trained last, so its $+1.82$ reflects plasticity rather than retention). Food (task 7) and ImageNet (never trained) are not subject to this confound and show the same direction, so the effect is not purely positional, but we will state the confound explicitly rather than over-read the two largest gains.
+
+\subsection*{Q2: Applying the same distillation loss to other images}
+
+Half of this control is already in the paper. Applying the identical distillation objective to \emph{reference} images instead of replay images is precisely $\mathcal{L}_\text{ZSCL}$: same frozen teacher, same bidirectional KD objective, same Conceptual Captions text anchors, different image source. That configuration is the ``$+$ proportional replay'' row of Table~3 ($86.44$ / $77.57$ / $68.00$), and the full method adds $+0.37$ Transfer on top of it. The two rows therefore already bracket the question of image source, holding teacher and objective fixed.
+
+The complementary control the reviewer asks for, the same loss on \emph{current-task} images, is running now. We expect it to fall between the two: current-task images are in-distribution for the task being learned, so distilling on them should preserve teacher alignment locally while providing no anchor on the older tasks that replay images cover. If instead it matches ExRD, that would show the replay buffer is incidental to RD and we would say so.
+
+\subsection*{Q3: Previous-task checkpoint as teacher}
+
+This control is also running. We note two pieces of existing evidence that bear on it. Within Table~2, LwF is exactly this design (distillation against the evolving previous checkpoint) and reaches $56.9$ Transfer, \emph{below} sequential fine-tuning's $59.0$, consistent with the drifting-reference problem discussed in Sec.~2.3: once the teacher has itself drifted, it no longer encodes pre-training alignment. Conversely, GIFT and LoRA-Loop use rolling-checkpoint teachers and achieve strong Transfer, but pair them with a generative replay stream, which confounds the teacher choice. We will report the direct comparison, noting that in our implementation a single reference model serves both $\mathcal{L}_\text{ZSCL}$ and $\mathcal{L}_\text{RD}$, so the swap replaces the frozen anchor throughout rather than for RD alone.
+
+\subsection*{On ``new method vs.\ empirical correction''}
+
+We accept the reviewer's framing and think the paper is stronger stated that way. Two points on originality.
+
+First, the correction itself is load-bearing: ZSCL explicitly argues replay is unnecessary given reference distillation, and that claim had not been tested with real replay in the same framework. Overturning it moves ZSCL from $83.60$ to $86.44$ Last, past every non-generative published method.
+
+Second, RD is what makes the mechanistic result possible rather than being a second increment on top of replay. Because RD depends on no external data, we can delete ZSCL's reference stream entirely and ask what survives: Transfer falls $68.00 \to 64.38$ with no anchor and recovers to $66.72$ with RD alone, i.e.\ $65\%$ of ZSCL's contribution using zero external data (Table~3, bottom block). That isolates \emph{what} makes zero-shot anchoring work, a stable frozen anchor rather than the breadth of the corpus it is evaluated on, which no correction to the replay claim would produce on its own. It also has a practical consequence for domains where open-domain image--caption corpora are unavailable. On design space, distillation on exemplars is not new (iCaRL, DER++), but there the teacher is the previous checkpoint and the targets are old-class posteriors; methods using a frozen pre-training-time anchor apply it elsewhere (ZSCL to reference images, GIFT and LoRA-Loop to synthetic images, MulKI to current-task data, exemplar-free). The recent VLM-CL survey (arXiv:2508.04227) catalogues no replay method that distils buffer contents against a frozen pre-trained teacher.
+
+We will revise the introduction to lead with the empirical clarification, as the reviewer suggests, and report the two new controls in this thread within three days.
+\end{color}
+
+\newpage
+\section*{Official Review of Submission31258 by Reviewer uc1s}
+
+Official Review by Reviewer uc1s, 10 Jun 2026, 22:16 (modified: 23 Jul 2026, 12:51). Program Chairs, Senior Area Chairs, Area Chairs, Reviewers Submitted, Authors, Reviewer uc1s, Revisions
+
+\subsection*{Summary}
+This paper presents a generalization of ZSCL (Zheng et al, 2023) where the key idea lies in the proposal of replay distillation. It applies ZSCL's frozen teacher to replay images rather than external reference images. It claims that a frozen pre-trained teacher on external image-caption pairs is incorrect.
+
+\subsection*{Contribution Type}
+General: Most submissions will fall into this type.
+
+\subsection*{Strengths And Weaknesses}
+Strength
+
+the topic of this paper is interesting;
+
+writing is clear and easy to follow
+
+Weakness
+
+the contribution of this paper is limited and incremental from that of (Zheng et al, 2023);
+
+the idea of distillation has been widely studied in continual learning, and this paper doesn't clearly explain how their distillation approach differs from existing ones.
+
+Experimental results are not convincing where their method is behind in some cases.
+
+\subsection*{Scores}
+Quality: 2: not good
+
+Clarity: 2: not good
+
+Significance: 2: not good
+
+Originality: 2: not good
+
+\subsection*{Questions}
+I have no question.
+
+\subsection*{Limitations}
+Yes
+
+\subsection*{Rating}
+2: Reject: For instance, a paper with technical flaws, weak evaluation, inadequate reproducibility and incompletely addressed ethical considerations.
+
+\subsection*{Confidence}
+4: You are confident in your assessment, but not absolutely certain. It is unlikely, but not impossible, that you did not understand some parts of the submission or that you are unfamiliar with some pieces of related work.
+
+\subsection*{Ethical Concerns}
+NO or VERY MINOR ethics concerns only
+
+\subsection*{Paper Formatting Concerns}
+No concern
+
+\subsection*{Code Of Conduct Acknowledgement}
+Yes
+
+\subsection*{Responsible Reviewing Acknowledgement}
+Yes
+
+\begin{color}{red}
+\section*{Rebuttal, Reviewer uc1s}
+
+We thank the reviewer for the feedback. The review raises three weaknesses; we address each with evidence below. This response also covers the three items the meta-review asks us to prioritise: per-task analysis of when RD helps, whether replay images and the frozen teacher are essential, and training and memory cost relative to the strongest baselines.
+
+\subsection*{W1: ``The contribution is limited and incremental from ZSCL''}
+
+We would separate the increment from the finding. The paper's claim is not that RD is a large additive gain on top of ZSCL; it is that a published claim of ZSCL is false, and that testing it isolates \emph{why} zero-shot anchoring works.
+
+ZSCL explicitly argues that its reference-data distillation makes exemplar replay unnecessary. That claim had never been tested with real exemplar replay inside the same training framework. It does not hold: adding a fixed-budget buffer moves ZSCL from $83.60$ to $86.44$ Last at $-0.11$ Transfer, past every published non-generative method on the benchmark.
+
+RD is what makes the second, mechanistic result obtainable rather than a further increment. Because RD depends on no external data, we can delete ZSCL's reference stream entirely and ask what survives: Transfer falls $68.00 \to 64.38$ with no anchor, and RD applied to replay images alone recovers it to $66.72$, i.e.\ $65\%$ of ZSCL's contribution using zero external data (Table~3, bottom block). Zero-shot preservation therefore depends on having a \emph{stable frozen anchor}, and only secondarily on the breadth of the corpus that anchor is evaluated on. That is a statement about why the prior method works, which no increment on top of it would produce, and it matters practically for domains where open-domain image--caption corpora are unavailable.
+
+\textbf{Per-task scope of RD} (meta-review item 1). Per-task final accuracy, ExRD ($\lambda{=}0.3$) minus replay-only ($\lambda{=}0$), all else identical:
+
+\begin{table}[h]\centering\small
+\begin{tabular}{lr@{\qquad}lr}
+\hline
+\textbf{RD helps} & $\Delta$ & \textbf{RD costs} & $\Delta$ \\
+\hline
+StanfordCars & $+3.52$ & CIFAR100 & $-2.73$ \\
+SUN397       & $+1.82$ & EuroSAT  & $-2.09$ \\
+Food         & $+0.60$ & Aircraft & $-1.23$ \\
+ImageNet (zero-shot) & $+0.31$ & DTD & $-1.06$ \\
+             &         & MNIST    & $-0.88$ \\
+\hline
+\multicolumn{4}{l}{\textit{Near-neutral:} Caltech101 $-0.40$, Flowers $-0.29$, OxfordPet $-0.27$} \\
+\hline
+\end{tabular}
+\end{table}
+
+\noindent The ImageNet row is final-stage accuracy; the stage-averaged Transfer metric gives $+0.37$. RD's benefit concentrates on tasks close to CLIP's pre-training distribution (photographic, caption-describable web categories) and costs accuracy on domains far from it: satellite imagery, handwritten digits, low-resolution CIFAR100, textures, fine-grained aircraft. The near-neutral tasks are photographic but saturated ($94$--$97\%$). We report this as a scoped, non-uniform effect rather than a general improvement, and will add the table to the paper. (StanfordCars and SUN397 are tasks 10--11, so recency is partly confounded with the distributional effect; Food, task 7, and ImageNet, never trained, are not, and show the same direction.)
+
+\subsection*{W2: ``How does this distillation differ from existing distillation in continual learning?''}
+
+The objective is standard KD; what differs is the pairing of \emph{teacher identity} with \emph{distillation data}, and that pairing is the contribution.
+
+Classic exemplar distillation (iCaRL, DER++, LUCIR) uses the \emph{previous-task checkpoint} as teacher and matches \emph{old-class posteriors}, so the buffer carries label information. Methods that use a frozen \emph{pre-training-time} anchor apply it to data other than a buffer: ZSCL to external reference images, GIFT and LoRA-Loop to synthetic images under a rolling-checkpoint teacher, MulKI to current-task data only (exemplar-free by design). RD instead applies the frozen pre-trained CLIP teacher to stored real exemplars and matches the image--caption alignment distribution over $N{=}10{,}599$ open-vocabulary Conceptual Captions sentences, bidirectionally, in which the exemplars are not labelled. The replay images act as probe inputs for measuring representation drift rather than as label carriers: within one minibatch the same image serves two orthogonal roles, $\mathcal{L}_\text{rep}$ supplying labels and $\mathcal{L}_\text{RD}$ supplying alignment. The recent VLM-CL survey (arXiv:2508.04227) catalogues no replay method that distils buffer contents against a frozen pre-trained teacher.
+
+\textbf{Controls isolating both factors} (meta-review item 2). One half is already reported: applying the identical objective, same frozen teacher and same caption anchors, to \emph{reference} images instead of replay images is precisely $\mathcal{L}_\text{ZSCL}$, i.e.\ the ``$+$ proportional replay'' row of Table~3 ($86.44$ / $77.57$ / $68.00$); the full method adds $+0.37$ Transfer on top of it. The portability block above covers the opposite direction. The two remaining controls, the same loss on \emph{current-task} images and a variant using the \emph{previous-task checkpoint} as teacher, are running now and we will report both in this thread. On the latter, existing evidence points one way: LwF in Table~2 is exactly that design and reaches $56.9$ Transfer, \emph{below} sequential fine-tuning's $59.0$, consistent with the drifting-reference problem of Sec.~2.3.
+
+\subsection*{W3: ``Experimental results are not convincing where the method is behind in some cases''}
+
+We report our position plainly rather than selectively. ExRD leads on Last on both task orders ($86.2$ Order~I, $85.7$ Order~II) and leads Transfer on Order~II by $+2.3$ over LoRA-Loop and $+2.7$ over GIFT. We trail on Order~I Transfer by $0.9$--$1.4$ and on Order~II Avg by $0.4$--$0.6$, and we state both in the paper as the cost of avoiding a synthetic replay stream.
+
+That trade is the point rather than an omission (meta-review item 3). Every method ahead of us on those two columns requires a Stable Diffusion v1.5 generator at training time ($\approx$900M parameters, $\approx$6$\times$ CLIP ViT-B/16), and LoRA-Loop additionally trains and stores a per-task rank-4 adapter on that generator, a cost growing with sequence length. ExRD trains in $13.5$\,h for the full 11-task sequence on a single $40$\,GB GPU partition, its only auxiliary network is a frozen copy of CLIP itself, and its only storage is a capped $11{,}000$-image buffer that does not grow with tasks. It adds \emph{zero} parameters to the deployed model: no per-task adapters, no growing classifier head, no task-identity router, so inference parameters and FLOPs ($17.5$ GFLOPs/img) equal vanilla CLIP's and are constant in the number of tasks.
+
+Finally, the Order~I Transfer gap narrows at no training cost: WiSE-FT interpolation of the same checkpoint with the zero-shot model trades $-1.36$ Last for $+1.92$ ImageNet accuracy relative to $\alpha{=}1.0$ in the same sweep (final-checkpoint ImageNet accuracy, not the stage-averaged Transfer metric).
+
+\subsection*{Commitments}
+
+We will (i) add the per-task RD analysis above to the paper, (ii) report the two new controls in this thread within three days, (iii) revise the introduction to lead with the empirical clarification, (iv) provide code upon acceptance, and (v) replace the rasterised figures with vector versions.
+\end{color}
+
+\end{document}

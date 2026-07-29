@@ -76,6 +76,10 @@ EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,Oxfor
 
 echo "[`date`] Starting Phase 3 v5 — replay_w=1.5, replay_bs=16, longer CIFAR100/DTD/Aircraft"
 
+# FLAG LEGEND — see phase3_no_lora_11t_v4.sh for the shared ExRD block.
+# v5 = v4 tuned for Last: --replay_loss_weight 1.5 (stronger replay CE),
+# --replay_batch_size 16 (less noisy replay grad), and longer --task_iterations
+# on CIFAR100/DTD/Aircraft. RTD=0.3, L2=1, lr=5e-6, budget=11000 unchanged.
 srun python -m phase3.train_phase3 \
   --train-mode=whole \
   --lr=5e-6 \

@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=11t_p3_seed2
+#SBATCH --job-name=reb_r0
 #SBATCH --time=72:00:00
 #SBATCH --mem=128GB
 #SBATCH --cpus-per-task=4
@@ -8,8 +8,23 @@
 #SBATCH --output=/scratch/alexie/logs/%x-%j.out
 #SBATCH --signal=USR1@60
 
-# Seed 2 replication of v4 (seed=42). Identical in every way except --seed 2
-# and save path. Used to compute mean +/- std across 3 seeds for the paper.
+# Rebuttal baseline C0 (Reviewer zvRY, Q1): iteration-matched replay-only run.
+#
+# The existing lambda=0 ablation (ckpt/11task/ablation_prop_replay, 86.44 Last /
+# 68.00 Transfer) was trained with a UNIFORM 1500 iters/task, whereas the
+# headline ExRD run (phase3_no_lora_11t_v4.sh) uses the per-task schedule
+# (Aircraft 3000, StanfordCars 3000, SUN397 5000, MNIST 800, ...).  A per-task
+# breakdown between those two runs therefore mixes the RD effect with a
+# per-task iteration-budget effect — visible as the two largest apparent RD
+# gains landing exactly on StanfordCars (3000 vs 1500 iters) and SUN397
+# (5000 vs 1500).
+#
+# This run is v4 with lambda=0 and nothing else changed, so ExRD minus this run
+# is a clean single-factor per-task measurement of what RD contributes.  It is
+# the reference the per-task analysis script expects by default, and it also
+# supplies an iteration-matched lambda=0 row for the sensitivity table.
+#
+# It uses no rd_controls machinery — plain phase3 with --no_replay_teacher_distill.
 
 set -euo pipefail
 mkdir -p /scratch/alexie/logs
@@ -53,19 +68,18 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 REPO_ROOT="$HOME/projects/def-fqureshi/alexie/ZSCL"
 cd "$REPO_ROOT/mtil"
-export PYTHONPATH="$REPO_ROOT/mtil/scripts/4task/phase3:${PYTHONPATH:-}"
+# Both package roots: phase3 (unmodified) and the rebuttal control wrapper.
+export PYTHONPATH="$REPO_ROOT/mtil/scripts/4task/phase3:$REPO_ROOT/mtil/scripts/rebuttal:${PYTHONPATH:-}"
 mkdir -p logs
 
-SAVE_PATH="ckpt/11task/phase3_no_lora_seed2"
+SAVE_PATH="ckpt/11task/rebuttal_replay_only_matched"
 mkdir -p "${SAVE_PATH}"
 
 EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397,ImageNet"
 
-echo "[`date`] Starting seed 2 run"
+echo "[`date`] Starting matched replay-only baseline (lambda=0, v4 iteration schedule)"
 
-# FLAG LEGEND — see phase3_no_lora_11t_v4.sh for the shared ExRD block.
-# seed2 = v4 replication with --seed 2 (v4 default seed=42). For variance /
-# mean±std over seeds. Everything else identical to v4.
+# Flags are v4's verbatim; the only change is --no_replay_teacher_distill (lambda=0).
 srun python -m phase3.train_phase3 \
   --train-mode=whole \
   --lr=5e-6 \
@@ -90,6 +104,6 @@ srun python -m phase3.train_phase3 \
   --dataset_order Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397 \
   --lambda_replay_teacher_distill 0.3 \
   --task_iterations "Aircraft:3000,Caltech101:1000,CIFAR100:1500,DTD:1500,EuroSAT:1000,Flowers:1500,Food:1500,MNIST:800,OxfordPet:1500,StanfordCars:3000,SUN397:5000" \
-  --seed 2
+  --no_replay_teacher_distill
 
 echo "[`date`] Done. Checkpoints in ${SAVE_PATH}/"

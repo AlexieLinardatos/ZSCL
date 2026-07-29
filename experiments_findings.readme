@@ -120,6 +120,61 @@ The hypothesis that late-task replay weight could be reduced to free gradient bu
 
 ## Future Experiments (deferred)
 
+### NeurIPS rebuttal controls — Reviewer zvRY (run tonight, 2026-07-27; results promised in-thread within 3 days)
+
+Two ablations requested by Reviewer zvRY to isolate RD's contribution. Both are small code
+changes; the cost is runtime (~13.5 h each on a 40 GB MIG slice). Baseline for both is v4
+(`phase3_no_lora_11t_v4.sh`, λ_RTD=0.3), changing exactly one thing.
+
+**Control A — RD applied to current-task images instead of replay images.**
+Tests whether the replay buffer is a core part of RD or an incidental carrier. No existing
+flag does this: `--no_replay_teacher_same_batch` only swaps one buffer batch for another
+buffer batch. The reference-image version of this control is already reported — it *is*
+`L_zscl`, i.e. the `ablation_prop_replay` row (86.44 / 77.57 / 68.00).
+
+- Edit `phase3/trainer_phase3.py:466` — current-task images are already in scope as
+  `images` (line 399):
+  ```python
+  if getattr(args, "rtd_on_current_task", False):
+      rtd_images = images.cuda()
+  elif same_batch:
+      rtd_images = replay_images_cuda
+  else:
+      ...  # existing fresh-replay-batch path
+  ```
+- Add `--rtd_on_current_task` to `phase3/args_phase3.py` (default False).
+- Expected: falls between ExRD and no-RD. Current-task images are in-distribution for the
+  task being learned, so they should anchor locally but provide no coverage of older tasks.
+  If it matches ExRD, the buffer is incidental to RD and we say so.
+
+**Control B — previous-task checkpoint as teacher instead of frozen zero-shot CLIP.**
+Tests whether the *frozen pre-training-time* anchor matters or any distillation signal works.
+
+- Edit `phase3/finetune_phase3.py` (~line 215, where `args_task.load = prev_ckpt` is set):
+  ```python
+  if getattr(args, "rolling_teacher", False):
+      args_task.ref_model = prev_ckpt
+  ```
+  `setup_zscl_reference_model` (`src/models/training.py:389-392`) then loads it via
+  `utils.torch_load`. Add `--rolling_teacher` to `phase3/args_phase3.py`.
+- **Caveat:** one `ref_model` object serves both `L_zscl` and `L_RD`, so this swaps the
+  teacher for *both* losses, not RD alone. Describe it accurately in the rebuttal as
+  "replacing the frozen anchor throughout", not "holding everything else fixed". A
+  RD-only teacher swap would need a second teacher instance.
+- Partial evidence already exists: LwF in Table 1 is this design (distillation against the
+  evolving checkpoint) and reaches 56.9 Transfer, *below* Seq FT's 59.0 — the drifting-
+  reference problem. GIFT/LoRA-Loop use rolling teachers with strong Transfer but confound
+  it with a generative replay stream.
+
+**Priority if only one GPU slot is available: Control A.** It has no existing proxy in the
+paper; Control B is partially covered by the LwF row.
+
+**Verified (2026-07-27):** v4 passes no `--ref-model`, so `training.py:380-388` loads frozen
+zero-shot CLIP — both `L_zscl` and `L_RD` do use the frozen pretrained teacher as the paper
+claims. `compute_rd_per_task_delta.py` reproduces the per-task RD table from
+`phase3_no_lora_v4` vs `ablation_prop_replay`; its printed `mean -0.23` spans 12 columns
+incl. ImageNet, whereas the paper's Last delta (-0.27) is 11 tasks excl. ImageNet.
+
 ### Reference Data Scarcity (Option B — deferred, do after buffer sensitivity results are in)
 
 **What it tests:** Whether RD's Transfer benefit survives when the CC text anchor pool is small. Tests intermediate regime between full CC (N=10,599) and the portability experiment (N=0).
@@ -194,3 +249,42 @@ Largely covered by MoE-Adapters (NeurIPS'24) and CoLeCLIP. Skip unless reframed 
 
 For KBS journal: NS1 + NS2 + extended NS4 = coherent "system + careful ablation" story.
 For NeurIPS: lead with NS1, support with NS2.
+
+---
+
+## NeurIPS rebuttal runs — Reviewer zvRY (scripts added 2026-07-28)
+
+Five scripts added under `mtil/scripts/11task/rebuttal_*.sh`, plus analysis
+tooling in `mtil/scripts/rebuttal/` (see its README). Each training run is
+`phase3_no_lora_11t_v4.sh` with exactly one flag changed, so every row is a
+single-factor control. Nothing in `src/` or `scripts/4task/phase3/` was
+modified; the control axes are monkey-patched in at run time.
+
+| Run | Answers | Save dir | Status |
+|---|---|---|---|
+| `rebuttal_replay_only_matched.sh` (λ=0, v4 iters) | Q1 per-task baseline | `ckpt/11task/rebuttal_replay_only_matched` | not run |
+| `rebuttal_zeroshot_eval.sh` | Q1 "close to CLIP pretraining" | `ckpt/rebuttal/zeroshot` | not run |
+| `rebuttal_rd_current_images.sh` (C1) | Q2 current-task images | `ckpt/11task/rebuttal_rd_current_images` | not run |
+| `rebuttal_rd_prev_teacher.sh` (C2) | Q3 previous-task teacher | `ckpt/11task/rebuttal_rd_prev_teacher` | not run |
+| `rebuttal_rd_reference_images.sh` (C3) | Q2 reference images | `ckpt/11task/rebuttal_rd_reference_images` | not run |
+
+### Confound found while building the per-task analysis
+
+The λ=0 row quoted in the rebuttal (86.44 Last / 68.00 Transfer,
+`ckpt/11task/ablation_prop_replay`) was trained with **uniform 1500 iters/task**,
+but ExRD (`phase3_no_lora_v4`, 86.17 / 68.37) uses the **per-task schedule**
+(Aircraft 3000, StanfordCars 3000, SUN397 5000, MNIST 800, ...). The per-task
+delta between them therefore mixes RD with an iteration-budget effect:
+
+- Mean ΔLast over the 11 trained tasks is **−0.27**, not positive.
+- The two largest apparent RD gains land exactly on the two tasks with the
+  biggest iteration advantage: StanfordCars +3.52 (3000 vs 1500) and
+  SUN397 +1.82 (5000 vs 1500).
+- Where RD does look real on the current numbers: ImageNet Last +0.31 and
+  per-task pre-exposure (zero-shot before the task is trained) improves on
+  7/11 eval sets, consistent with RD acting on Transfer rather than on Last.
+
+`rebuttal_replay_only_matched.sh` removes the confound and is what
+`per_task_rd_analysis.py` expects by default. It also yields an
+iteration-matched λ=0 row for the sensitivity table in the Reviewer 3U1b
+response.

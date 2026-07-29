@@ -1,15 +1,20 @@
 #!/bin/bash
-#SBATCH --job-name=11t_p3_seed2
-#SBATCH --time=72:00:00
-#SBATCH --mem=128GB
+#SBATCH --job-name=reb_zs_eval
+#SBATCH --time=08:00:00
+#SBATCH --mem=64GB
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:nvidia_h100_80gb_hbm3_3g.40gb:1
 #SBATCH --account=def-fqureshi_gpu
 #SBATCH --output=/scratch/alexie/logs/%x-%j.out
-#SBATCH --signal=USR1@60
 
-# Seed 2 replication of v4 (seed=42). Identical in every way except --seed 2
-# and save path. Used to compute mean +/- std across 3 seeds for the paper.
+# Measures pre-trained CLIP ViT-B/16 zero-shot accuracy on all 12 eval sets.
+#
+# Needed by scripts/rebuttal/per_task_rd_analysis.py to answer the second half
+# of Reviewer zvRY's Q1 — whether RD helps everywhere or only on tasks close to
+# CLIP pre-training — without hardcoding zero-shot numbers copied from another
+# paper.  Writes ckpt/rebuttal/zeroshot/evaluate_all_results.csv.
+#
+# Evaluation only: no training, ~1 GPU-hour.
 
 set -euo pipefail
 mkdir -p /scratch/alexie/logs
@@ -45,51 +50,30 @@ which python; python -V; which pip
 pip install --upgrade pip
 pip install --no-index torch torchvision
 pip install --no-index tqdm ftfy regex pandas scipy
-pip install --no-index wandb
-export WANDB_MODE=offline
 
 export PYTORCH_ALLOC_CONF=expandable_segments:True
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 REPO_ROOT="$HOME/projects/def-fqureshi/alexie/ZSCL"
 cd "$REPO_ROOT/mtil"
-export PYTHONPATH="$REPO_ROOT/mtil/scripts/4task/phase3:${PYTHONPATH:-}"
-mkdir -p logs
 
-SAVE_PATH="ckpt/11task/phase3_no_lora_seed2"
-mkdir -p "${SAVE_PATH}"
+ZS_DIR="ckpt/rebuttal/zeroshot"
+mkdir -p "${ZS_DIR}"
 
 EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397,ImageNet"
 
-echo "[`date`] Starting seed 2 run"
+# evaluate() appends, so start from a clean file to avoid duplicated rows.
+rm -f "${ZS_DIR}/evaluate_all_results.csv"
 
-# FLAG LEGEND — see phase3_no_lora_11t_v4.sh for the shared ExRD block.
-# seed2 = v4 replication with --seed 2 (v4 default seed=42). For variance /
-# mean±std over seeds. Everything else identical to v4.
-srun python -m phase3.train_phase3 \
+python scripts/rebuttal/save_zeroshot_ckpt.py --out "${ZS_DIR}/zeroshot.pth"
+
+echo "[`date`] Evaluating pre-trained CLIP zero-shot on ${EVAL_DATASETS}"
+
+srun python -m src.main \
+  --eval-only \
   --train-mode=whole \
-  --lr=5e-6 \
-  --ls 0.1 \
-  --iterations 1500 \
-  --method ZSCL \
-  --image_loss \
-  --text_loss \
-  --we \
-  --avg_freq 50 \
-  --l2 1 \
-  --ref-dataset ImageNet \
-  --ref-sentences conceptual_captions \
-  --save "${SAVE_PATH}" \
+  --load "${ZS_DIR}/zeroshot.pth" \
   --eval-datasets "${EVAL_DATASETS}" \
-  --eval-interval 500 \
-  --use_replay \
-  --replay_budget 11000 \
-  --replay_batch_size 8 \
-  --replay_loss_weight 1.0 \
-  --batch-size-eval 16 \
-  --dataset_order Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397 \
-  --lambda_replay_teacher_distill 0.3 \
-  --task_iterations "Aircraft:3000,Caltech101:1000,CIFAR100:1500,DTD:1500,EuroSAT:1000,Flowers:1500,Food:1500,MNIST:800,OxfordPet:1500,StanfordCars:3000,SUN397:5000" \
-  --seed 2
+  --batch-size-eval 16
 
-echo "[`date`] Done. Checkpoints in ${SAVE_PATH}/"
+echo "[`date`] Done. Results in ${ZS_DIR}/evaluate_all_results.csv"

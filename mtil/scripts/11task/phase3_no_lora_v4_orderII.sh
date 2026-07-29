@@ -74,6 +74,9 @@ EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,Oxfor
 
 echo "[`date`] Starting Order II run — identical to v4, order: StanfordCars->Food->MNIST->OxfordPet->Flowers->SUN397->Aircraft->Caltech101->DTD->EuroSAT->CIFAR100"
 
+# FLAG LEGEND — see phase3_no_lora_11t_v4.sh for the shared ExRD block.
+# orderII = v4 with a DIFFERENT --dataset_order (Order II: StanfordCars->Food->
+# MNIST->...->CIFAR100). Task-order robustness check; all else identical to v4.
 srun python -m phase3.train_phase3 \
   --train-mode=whole \
   --lr=5e-6 \

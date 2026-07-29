@@ -63,6 +63,9 @@ EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,Oxfor
 
 echo "[`date`] Starting seed 1 run"
 
+# FLAG LEGEND — see phase3_no_lora_11t_v4.sh for the shared ExRD block.
+# seed1 = v4 replication with --seed 1 (v4 default seed=42). For variance /
+# mean±std over seeds. Everything else identical to v4.
 srun python -m phase3.train_phase3 \
   --train-mode=whole \
   --lr=5e-6 \

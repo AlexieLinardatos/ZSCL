@@ -63,6 +63,10 @@ EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,Oxfor
 
 echo "[`date`] Starting ablation: ZSCL only (no replay)"
 
+# FLAG LEGEND — see phase3_no_lora_11t_v4.sh for the shared ExRD block.
+# Ablation row 1 — ZSCL-only baseline: measures forgetting without the replay
+# contribution. --no_replay_teacher_distill turns RTD off (see header for the
+# row's intent).
 srun python -m phase3.train_phase3 \
   --train-mode=whole \
   --lr=5e-6 \

@@ -63,6 +63,10 @@ EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,Oxfor
 
 echo "[`date`] Starting ablation: proportional replay, no RTD"
 
+# FLAG LEGEND — see phase3_no_lora_11t_v4.sh for the shared ExRD block.
+# Ablation row 3 — ZSCL + PROPORTIONAL replay, no RTD:
+#   --no_replay_teacher_distill   RTD off (proportional-by-class alloc = default)
+# Isolates the benefit of proportional allocation (vs uniform in row 2).
 srun python -m phase3.train_phase3 \
   --train-mode=whole \
   --lr=5e-6 \

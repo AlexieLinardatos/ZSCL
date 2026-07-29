@@ -67,6 +67,10 @@ EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,Oxfor
 
 echo "[`date`] Starting ablation: replay only (no ZSCL distill, no RD)"
 
+# FLAG LEGEND — see phase3_no_lora_11t_v4.sh for the shared ExRD block.
+# Ablation — replay ONLY, BOTH distillation anchors OFF (Transfer floor):
+#   --no_existing_distill         turn off the ZSCL reference distillation
+#   --no_replay_teacher_distill   turn off the replay teacher-distill (RTD)
 srun python -m phase3.train_phase3 \
   --train-mode=whole \
   --lr=5e-6 \

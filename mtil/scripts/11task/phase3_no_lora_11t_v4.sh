@@ -71,6 +71,21 @@ EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,Oxfor
 
 echo "[`date`] Starting Phase 3 v4 — lambda_RTD=0.3, Aircraft 3000 iters"
 
+# ---------------------------------------------------------------------------
+# FLAG LEGEND — ExRD HEADLINE BASELINE (all extensions compare against this).
+# (Inline comments can't go inside the \-continued command below.)
+#   --train-mode=whole                fine-tune the whole CLIP model
+#   --lr / --ls / --iterations        LR, label smoothing, fallback iter count
+#   --method ZSCL --image_loss --text_loss   ZSCL distillation, both branches
+#   --we --avg_freq 50                WiSE weight averaging every 50 steps
+#   --l2 1                            L2-to-reference weight penalty
+#   --ref-dataset ImageNet --ref-sentences conceptual_captions   ZSCL ref data
+#   --use_replay --replay_budget 11000 --replay_batch_size 8   episodic buffer
+#                                     (proportional-by-class allocation = default)
+#   --lambda_replay_teacher_distill 0.3   replay teacher-distill (RTD) weight
+#   --dataset_order ...               11-task Order I (standard)
+#   --task_iterations ...             per-task step budget
+# ---------------------------------------------------------------------------
 srun python -m phase3.train_phase3 \
   --train-mode=whole \
   --lr=5e-6 \

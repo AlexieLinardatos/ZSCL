@@ -67,6 +67,11 @@ EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,Oxfor
 
 echo "[`date`] Starting ablation: replay + RD (no ZSCL distill), lambda_RTD=0.3"
 
+# FLAG LEGEND — see phase3_no_lora_11t_v4.sh for the shared ExRD block.
+# Ablation — does RD SUBSTITUTE for ZSCL? (ZSCL off, replay-distill on):
+#   --no_existing_distill                 turn off ZSCL reference distillation
+#   --lambda_replay_teacher_distill 0.3   keep the replay teacher-distill (RTD)
+# Pair with ablation_no_zscl_no_rd.sh: if Transfer recovers, RTD replaces ZSCL.
 srun python -m phase3.train_phase3 \
   --train-mode=whole \
   --lr=5e-6 \

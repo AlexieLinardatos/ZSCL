@@ -75,6 +75,11 @@ EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,Oxfor
 
 echo "[`date`] Starting Phase 3 v6 — positional replay weighting + budget 13k"
 
+# FLAG LEGEND — see phase3_no_lora_11t_v4.sh for the shared ExRD block.
+# v6 = v4 + two changes:
+#   --replay_positional_weighting   weight replay CE per task by (N-i)/N so
+#                                   older (more-forgotten) tasks count more
+#   --replay_budget 13000           larger buffer (v4 used 11000)
 srun python -m phase3.train_phase3 \
   --train-mode=whole \
   --lr=5e-6 \
