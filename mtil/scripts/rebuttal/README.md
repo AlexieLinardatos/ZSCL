@@ -12,24 +12,63 @@ the one used for the submitted numbers.
 |---|---|---|---|
 | Q1 "show when RD helps beyond standard replay; a per-task analysis" | iteration-matched λ=0 baseline, then the analysis script | `11task/rebuttal_replay_only_matched.sh` → `per_task_rd_analysis.py` | 13.5 h |
 | Q1 "…or only on tasks close to CLIP pretraining" | measured CLIP zero-shot row, fed into the same analysis | `11task/rebuttal_zeroshot_eval.sh` | ~1 h |
-| Q2 "same distillation loss on current-task images" | C1 | `11task/rebuttal_rd_current_images.sh` | 13.5 h |
+| Q2 "same distillation loss on current-task images" | C1b (or C1) | `11task/rebuttal_rd_current_images_noZSCL.sh` | 13.5 h |
 | Q2 "…or references instead of replay images" | C3 | `11task/rebuttal_rd_reference_images.sh` | 13.5 h |
-| Q3 "previous task checkpoint as teacher" | C2 | `11task/rebuttal_rd_prev_teacher.sh` | 13.5 h |
+| Q3 "previous task checkpoint as teacher" | C2b (or C2) | `11task/rebuttal_rd_prev_teacher_noZSCL.sh` | 13.5 h |
+
+### Why the `_noZSCL` variants are the ones to run
+
+C1 and C2 keep the ZSCL branch on, which is the deployed configuration — but
+there RD is worth only +0.37 Transfer in total, so *any* change to the RD term
+is bounded by that. A null result would not distinguish "the image source /
+teacher does not matter" from "the effect is too small to resolve".
+
+C1b and C2b drop the reference stream (`--no_existing_distill`), making RD the
+only anchor in the run. That is the setting the paper's mechanistic claim lives
+in, and it has two iteration-matched reference points already computed:
+
+| Reference run | Transfer |
+|---|---|
+| `ablation_no_zscl_no_rd` — no anchor at all | 64.38 |
+| `ablation_no_zscl_with_rd` — RD on replay, frozen teacher | 66.72 |
+
+A 2.34-point range instead of a 0.37-point one. Both `_noZSCL` scripts use the
+same per-task iteration schedule as those two runs, so all four rows are
+directly comparable. Run C1/C2 as well if there is GPU time — reporting both the
+deployed and the isolated configuration is stronger — but if only two control
+slots exist, spend them on C1b and C2b.
 
 Every training run is `phase3_no_lora_11t_v4.sh` (the headline ExRD run) with a
 single flag changed, so each is a clean single-factor control: same lr, label
 smoothing, per-task iteration schedule, ZSCL branch, 11k proportional buffer,
 replay CE weight, λ=0.3, and the same 10,599 Conceptual Captions anchors.
 
+## Before submitting anything: the smoke test
+
+`sbatch mtil/scripts/11task/rebuttal_smoke_test.sh` (~40 min) runs all four
+control variants over a 2-task sequence at 20 iterations each and asserts that
+the RD term actually fires at task 2 with a finite, non-zero value, that the
+prev-task teacher really loads the task-1 checkpoint, and that the process fits
+in a 40 GB MIG slice. It ends with an explicit PASS/FAIL block.
+
+This exists because the first attempt reached task 1 only, and RD cannot execute
+until a replay buffer exists at task 2 — so a bug in the control path would
+otherwise surface hours into a 13.5 h job. `scripts/rebuttal/test_rd_controls.py`
+(2 s, no GPU, no torch) covers the wiring at the stub level and is run first by
+the same job.
+
 ## Priority if GPU time is tight
 
-1. `rebuttal_replay_only_matched.sh` — needed for Q1 **and** it fixes a confound
-   in the current λ ablation (see below). Highest value.
-2. `rebuttal_zeroshot_eval.sh` — cheap, and Q1's second half needs it.
-3. `rebuttal_rd_prev_teacher.sh` (C2) — the reviewer's sharpest question; it
-   tests the paper's central mechanistic claim head-on.
-4. `rebuttal_rd_current_images.sh` (C1).
-5. `rebuttal_rd_reference_images.sh` (C3) — lowest value, because RD on
+1. `rebuttal_smoke_test.sh` — 40 min, protects everything below.
+2. `rebuttal_replay_only_matched.sh` — needed for Q1 **and** it fixes a confound
+   in the current λ ablation (see below). Highest value of the real runs.
+3. `rebuttal_zeroshot_eval.sh` — cheap, and Q1's second half needs it.
+4. `rebuttal_rd_prev_teacher_noZSCL.sh` (C2b) — the reviewer's sharpest question,
+   in the configuration that can actually answer it.
+5. `rebuttal_rd_current_images_noZSCL.sh` (C1b).
+6. `rebuttal_rd_prev_teacher.sh` (C2) and `rebuttal_rd_current_images.sh` (C1) —
+   the same two questions in the deployed configuration; nice to have both.
+7. `rebuttal_rd_reference_images.sh` (C3) — lowest value, because RD on
    reference images with the frozen teacher *is* `L_ZSCL`; the run measures ZSCL
    at effective weight 1.3 plus replay. Worth stating that equivalence in the
    response rather than spending 13.5 h to rediscover it. Run it only if the
@@ -66,8 +105,17 @@ sbatch mtil/scripts/11task/rebuttal_rd_prev_teacher.sh
 sbatch mtil/scripts/11task/rebuttal_rd_reference_images.sh
 ```
 
-All five write to `ckpt/11task/rebuttal_*` (and `ckpt/rebuttal/zeroshot/`), and
-all are resume-safe through phase3's existing checkpoint/completed-task logic.
+All five write to `/scratch/alexie/ckpt/11task/rebuttal_*` (and
+`/scratch/alexie/ckpt/rebuttal/zeroshot/`), and all are resume-safe through
+phase3's existing checkpoint/completed-task logic.
+
+Output goes to `/scratch`, not to the repo's `ckpt/` under `/project`: the first
+attempt (2026-07-28, jobs 18680773/781/785/790) died within 90 s with
+`OSError: [Errno 122] Disk quota exceeded` — the training runs at `wandb.init`,
+which is the first thing that creates a directory under `--save`, and the
+zero-shot eval when writing its results CSV. Note `/scratch` is purged on the
+usual Alliance schedule, so pull the CSVs back with the rsync below once a run
+finishes rather than leaving them there.
 
 To run a control by hand, take the ExRD command line verbatim and swap the
 entry point plus one flag:
@@ -94,6 +142,15 @@ Control flags (everything else passes through to phase3 unchanged):
   distillation batch than ExRD. This flag disables that.
 
 ## Analysis
+
+Pull the result CSVs off the cluster first (they are small; this ignores
+checkpoints):
+
+```bash
+rsync -av --include='*/' --include='task_summary.csv' \
+      --include='evaluate_all_results.csv' --exclude='*' \
+      nibi:/scratch/alexie/ckpt/ mtil/ckpt/
+```
 
 ```bash
 # Q1 per-task breakdown (after the matched baseline and zero-shot eval finish)

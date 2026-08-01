@@ -41,6 +41,16 @@ DEFAULT_RUNS = [
      "mtil/ckpt/11task/rebuttal_rd_prev_teacher/task_summary.csv"),
     ("RD on reference images (C3)",
      "mtil/ckpt/11task/rebuttal_rd_reference_images/task_summary.csv"),
+    # High-contrast block: ZSCL branch off, so RD is the only anchor.
+    # Compare these three against each other, not against the rows above.
+    ("no ZSCL: RD on replay, frozen teacher",
+     "mtil/ckpt/11task/ablation_no_zscl_with_rd/task_summary.csv"),
+    ("no ZSCL: RD on current-task images (C1b)",
+     "mtil/ckpt/11task/rebuttal_rd_current_images_noZSCL/task_summary.csv"),
+    ("no ZSCL: RD teacher = prev-task ckpt (C2b)",
+     "mtil/ckpt/11task/rebuttal_rd_prev_teacher_noZSCL/task_summary.csv"),
+    ("no ZSCL: no RD (no anchor at all)",
+     "mtil/ckpt/11task/ablation_no_zscl_no_rd/task_summary.csv"),
     ("Replay only, lambda=0 (uniform 1500 it.)",
      "mtil/ckpt/11task/ablation_prop_replay/task_summary.csv"),
     ("ZSCL only, no replay",

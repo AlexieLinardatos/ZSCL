@@ -57,7 +57,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 REPO_ROOT="$HOME/projects/def-fqureshi/alexie/ZSCL"
 cd "$REPO_ROOT/mtil"
 
-ZS_DIR="ckpt/rebuttal/zeroshot"
+ZS_DIR="/scratch/alexie/ckpt/rebuttal/zeroshot"
 mkdir -p "${ZS_DIR}"
 
 EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397,ImageNet"

@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=reb_rd_prev
+#SBATCH --job-name=reb_cur_nz
 #SBATCH --time=72:00:00
 #SBATCH --mem=128GB
 #SBATCH --cpus-per-task=4
@@ -8,24 +8,23 @@
 #SBATCH --output=/scratch/alexie/logs/%x-%j.out
 #SBATCH --signal=USR1@60
 
-# Rebuttal control C2 (Reviewer zvRY, Q3): must the RD teacher be the frozen
-# pre-trained CLIP, or does any teacher give the same gain?
+# Rebuttal control C1b (Reviewer zvRY, Q2), HIGH-CONTRAST variant: are replay
+# images essential to RD, measured where RD is the only anchor?
 #
-# Identical to phase3_no_lora_11t_v4.sh (the headline ExRD run) in every
-# respect — same replay images, same 10,599 caption anchors, same lambda=0.3,
-# same per-task iteration schedule, same 11k buffer with supervised replay CE —
-# except that the RD term's teacher is the checkpoint produced by task t-1
-# (the student's own initialisation for the current task, i.e. the classic
-# LwF/iCaRL teacher choice) instead of the pre-trained CLIP checkpoint.  Its
-# caption embeddings come from that same checkpoint's text encoder, so the
-# distillation target is that teacher's own alignment distribution.
+# C1 (rebuttal_rd_current_images.sh) keeps the ZSCL branch on, so RD is worth
+# only +0.37 Transfer there and any effect of the image source is bounded by
+# that; a null result would be uninterpretable.  This variant drops the ZSCL
+# reference stream (--no_existing_distill), which is the setting where the
+# paper's mechanistic claim lives, and where two iteration-matched reference
+# points already exist:
 #
-# The ZSCL branch keeps the frozen pre-trained teacher, so this is a
-# single-factor swap of the RD teacher rather than a different method.
+#   ablation_no_zscl_no_rd    (no anchor at all)          Transfer 64.38
+#   ablation_no_zscl_with_rd  (RD on replay images)       Transfer 66.72
 #
-# Reading: if Transfer holds up, the anchor identity does not matter and any
-# self-distillation signal suffices.  If Transfer collapses toward the no-anchor
-# ablation (64.38), the *frozen pre-trained* anchor is the load-bearing part.
+# Same per-task iteration schedule as both, so the three are directly
+# comparable.  Reading: land near 66.72 and the buffer is not special — any
+# images will probe drift.  Land near 64.38 and stored exemplars are doing the
+# work that current-task images cannot.
 
 set -euo pipefail
 mkdir -p /scratch/alexie/logs
@@ -73,14 +72,14 @@ cd "$REPO_ROOT/mtil"
 export PYTHONPATH="$REPO_ROOT/mtil/scripts/4task/phase3:$REPO_ROOT/mtil/scripts/rebuttal:${PYTHONPATH:-}"
 mkdir -p logs
 
-SAVE_PATH="/scratch/alexie/ckpt/11task/rebuttal_rd_prev_teacher"
+SAVE_PATH="/scratch/alexie/ckpt/11task/rebuttal_rd_current_images_noZSCL"
 mkdir -p "${SAVE_PATH}"
 
 EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397,ImageNet"
 
-echo "[`date`] Starting control C2 — RD with previous-task checkpoint as teacher"
+echo "[`date`] Starting control C1b — RD on current-task images, ZSCL branch OFF"
 
-# Flags are v4's verbatim; the only addition is --rd_teacher prev_task.
+# Flags are v4's verbatim; the only addition is --rd_image_source current.
 srun python -m rd_controls.run_rd_control \
   --train-mode=whole \
   --lr=5e-6 \
@@ -105,6 +104,7 @@ srun python -m rd_controls.run_rd_control \
   --dataset_order Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397 \
   --lambda_replay_teacher_distill 0.3 \
   --task_iterations "Aircraft:3000,Caltech101:1000,CIFAR100:1500,DTD:1500,EuroSAT:1000,Flowers:1500,Food:1500,MNIST:800,OxfordPet:1500,StanfordCars:3000,SUN397:5000" \
-  --rd_teacher prev_task
+  --no_existing_distill \
+  --rd_image_source current
 
 echo "[`date`] Done. Checkpoints in ${SAVE_PATH}/"

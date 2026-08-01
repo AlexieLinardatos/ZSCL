@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=reb_rd_prev
+#SBATCH --job-name=reb_prev_nz
 #SBATCH --time=72:00:00
 #SBATCH --mem=128GB
 #SBATCH --cpus-per-task=4
@@ -8,24 +8,23 @@
 #SBATCH --output=/scratch/alexie/logs/%x-%j.out
 #SBATCH --signal=USR1@60
 
-# Rebuttal control C2 (Reviewer zvRY, Q3): must the RD teacher be the frozen
-# pre-trained CLIP, or does any teacher give the same gain?
+# Rebuttal control C2b (Reviewer zvRY, Q3), HIGH-CONTRAST variant: must the RD
+# teacher be the frozen pre-trained CLIP, measured where RD is the only anchor?
 #
-# Identical to phase3_no_lora_11t_v4.sh (the headline ExRD run) in every
-# respect — same replay images, same 10,599 caption anchors, same lambda=0.3,
-# same per-task iteration schedule, same 11k buffer with supervised replay CE —
-# except that the RD term's teacher is the checkpoint produced by task t-1
-# (the student's own initialisation for the current task, i.e. the classic
-# LwF/iCaRL teacher choice) instead of the pre-trained CLIP checkpoint.  Its
-# caption embeddings come from that same checkpoint's text encoder, so the
-# distillation target is that teacher's own alignment distribution.
+# C2 (rebuttal_rd_prev_teacher.sh) keeps the frozen teacher on the ZSCL branch,
+# which props Transfer up regardless of what the RD teacher does, so it can only
+# ever move ~0.4 points.  This variant removes the ZSCL reference stream
+# (--no_existing_distill) so the previous-task checkpoint is the ONLY teacher in
+# the run.  Iteration-matched reference points:
 #
-# The ZSCL branch keeps the frozen pre-trained teacher, so this is a
-# single-factor swap of the RD teacher rather than a different method.
+#   ablation_no_zscl_no_rd    (no anchor at all)              Transfer 64.38
+#   ablation_no_zscl_with_rd  (RD, frozen pre-trained teacher) Transfer 66.72
 #
-# Reading: if Transfer holds up, the anchor identity does not matter and any
-# self-distillation signal suffices.  If Transfer collapses toward the no-anchor
-# ablation (64.38), the *frozen pre-trained* anchor is the load-bearing part.
+# This is the decisive form of the reviewer's question.  Land near 64.38 and a
+# rolling self-teacher supplies no zero-shot preservation, i.e. the frozen
+# pre-trained anchor is the load-bearing component, exactly as the paper claims.
+# Land near 66.72 and any teacher suffices, which would refute that claim -- in
+# which case report it; it is a stronger paper for having tested it.
 
 set -euo pipefail
 mkdir -p /scratch/alexie/logs
@@ -73,12 +72,12 @@ cd "$REPO_ROOT/mtil"
 export PYTHONPATH="$REPO_ROOT/mtil/scripts/4task/phase3:$REPO_ROOT/mtil/scripts/rebuttal:${PYTHONPATH:-}"
 mkdir -p logs
 
-SAVE_PATH="/scratch/alexie/ckpt/11task/rebuttal_rd_prev_teacher"
+SAVE_PATH="/scratch/alexie/ckpt/11task/rebuttal_rd_prev_teacher_noZSCL"
 mkdir -p "${SAVE_PATH}"
 
 EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397,ImageNet"
 
-echo "[`date`] Starting control C2 — RD with previous-task checkpoint as teacher"
+echo "[`date`] Starting control C2b — RD with previous-task teacher, ZSCL branch OFF"
 
 # Flags are v4's verbatim; the only addition is --rd_teacher prev_task.
 srun python -m rd_controls.run_rd_control \
@@ -105,6 +104,7 @@ srun python -m rd_controls.run_rd_control \
   --dataset_order Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397 \
   --lambda_replay_teacher_distill 0.3 \
   --task_iterations "Aircraft:3000,Caltech101:1000,CIFAR100:1500,DTD:1500,EuroSAT:1000,Flowers:1500,Food:1500,MNIST:800,OxfordPet:1500,StanfordCars:3000,SUN397:5000" \
+  --no_existing_distill \
   --rd_teacher prev_task
 
 echo "[`date`] Done. Checkpoints in ${SAVE_PATH}/"
