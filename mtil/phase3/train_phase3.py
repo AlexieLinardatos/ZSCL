@@ -32,6 +32,10 @@ Phase 3 specific flags (all optional):
     --no_existing_distill                   Disable existing ZSCL branch
     --no_replay_supervised_loss             Disable supervised CE on replay samples
     --no_replay_teacher_same_batch          Use separate batch for teacher distill
+    --replay_storage {pixel,feature}        What the buffer stores (default pixel)
+    --rd_source {replay,current}            Images for the replay teacher distill
+                                            term (default follows --replay_storage)
+    --replay_encode_batch_size INT          Batch size for the boundary encode pass
 
 All other flags are identical to the Phase 2 replay script.
 """
@@ -67,6 +71,8 @@ def main():
     print(f"  enable_replay_teacher_distill:        {args.enable_replay_teacher_distill}")
     print(f"  lambda_replay_teacher_distill:        {args.lambda_replay_teacher_distill}")
     print(f"  replay_teacher_same_batch:            {args.replay_teacher_same_batch_as_replay_sup}")
+    print(f"  replay_storage:                       {args.replay_storage}")
+    print(f"  rd_source:                            {args.rd_source}")
     print(f"  save dir:                             {args.save}")
     print("=" * 60 + "\n")
 

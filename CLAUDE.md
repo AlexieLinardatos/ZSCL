@@ -115,6 +115,38 @@ Defines: model architecture, dataset path, number of classes per task, learning 
 --save/--load     # Checkpoint paths
 ```
 
+## Active Work: Feature Replay (as of 2026-09-10)
+
+Next extension being implemented. Store CLIP's final 512-d image embedding (fp16, ~1 KB) in the
+replay buffer instead of the preprocessed image tensor (224x224x3 fp32, 602 KB). At the 11k budget
+this is 6.6 GB -> ~11 MB.
+
+**Rationale (verified in code).** `L_zscl` (`src/models/training.py:548`) and `L_RD`
+(`phase3/losses_phase3.py`) compute teacher text embeddings under `no_grad`, so both send gradient
+to the **image encoder only**. `compute_replay_loss` (`training.py:765`) recomputes class-name
+embeddings with the live model, making it the **only term that updates the text encoder for
+previous-task classes**. Replay's image-side gradient is redundant with two distillation terms; its
+text-side gradient is unique. Feature replay drops the former and keeps the latter.
+
+Note: the `--text_loss` flag transposes the logits (changes softmax direction). It does **not**
+route gradient into the text encoder.
+
+**Two variants.**
+- **A (pure):** buffer holds embeddings only. Replay CE becomes
+  `logits = scale * stored_feat @ text_emb.T`; only `text_emb` carries grad.
+- **B (hybrid):** small pixel buffer (feeds `L_RD` + full-gradient CE) plus large feature buffer
+  (text-side CE only). Safer, and contains A as its zero-pixel endpoint.
+
+**Required side-effect.** `L_RD` needs real pixels. Under variant A it must switch to current-task
+images; rebuttal control C1b measured this as free (66.66 vs 66.72 Transfer).
+
+**Do this first.** Drift gate — re-encode the v4 buffer with the task-0 and final checkpoints,
+compare per-task cosine similarity against a Seq-FT control. One day, existing checkpoints, no GPU.
+Cosine > ~0.95 licenses the direction; ~0.7 means drop it.
+
+Full write-up: `replay_storage_proposal.md`. Note `replay_extensions_slides.md` is stale (still
+lists class-name and VQ-token replay, both dropped).
+
 ## Web Application
 
 A web UI for this model is available at: https://github.com/JuicedCooky/zscl_ui

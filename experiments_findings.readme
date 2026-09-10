@@ -262,11 +262,56 @@ modified; the control axes are monkey-patched in at run time.
 
 | Run | Answers | Save dir | Status |
 |---|---|---|---|
-| `rebuttal_replay_only_matched.sh` (λ=0, v4 iters) | Q1 per-task baseline | `ckpt/11task/rebuttal_replay_only_matched` | not run |
-| `rebuttal_zeroshot_eval.sh` | Q1 "close to CLIP pretraining" | `ckpt/rebuttal/zeroshot` | not run |
-| `rebuttal_rd_current_images.sh` (C1) | Q2 current-task images | `ckpt/11task/rebuttal_rd_current_images` | not run |
-| `rebuttal_rd_prev_teacher.sh` (C2) | Q3 previous-task teacher | `ckpt/11task/rebuttal_rd_prev_teacher` | not run |
-| `rebuttal_rd_reference_images.sh` (C3) | Q2 reference images | `ckpt/11task/rebuttal_rd_reference_images` | not run |
+| `rebuttal_replay_only_matched.sh` (λ=0, v4 iters) | Q1 per-task baseline | `/scratch/.../rebuttal_replay_only_matched` | done, job 18943387 |
+| `rebuttal_zeroshot_eval.sh` | Q1 "close to CLIP pretraining" | `/scratch/.../rebuttal/zeroshot` | done, job 18943385 |
+| `rebuttal_rd_current_images_noZSCL.sh` (C1b) | Q2 current-task images | `/scratch/.../rebuttal_rd_current_images_noZSCL` | done, job 18943392 |
+| `rebuttal_rd_prev_teacher_noZSCL.sh` (C2b) | Q3 previous-task teacher | `/scratch/.../rebuttal_rd_prev_teacher_noZSCL` | done, job 18943389 |
+| `rebuttal_rd_current_images.sh` / `_prev_teacher.sh` / `_reference_images.sh` | same questions, ZSCL branch on | — | not run (≤0.4 pt ceiling) |
+
+### Results (2026-08-02)
+
+All rows below computed with `scripts/rebuttal/rd_control_table.py`; the two
+pre-existing no-ZSCL rows reproduce 66.72 / 64.38 exactly, confirming one
+metric definition across the table.
+
+| Run | Last | Avg | Transfer |
+|---|---|---|---|
+| ExRD, λ=0.3 (headline) | 86.17 | 87.15 | 68.37 |
+| Replay only, λ=0, iteration-matched | **86.83** | 87.12 | 68.17 |
+| Replay only, λ=0, uniform 1500 it. (old row) | 86.44 | 86.95 | 68.00 |
+| ZSCL only, no replay | 83.79 | 87.12 | 68.69 |
+| no ZSCL: RD on replay, frozen teacher | 86.24 | 87.05 | 66.72 |
+| no ZSCL: RD on current-task images (C1b) | 86.71 | 86.70 | 66.66 |
+| no ZSCL: RD teacher = prev-task ckpt (C2b) | 86.73 | 86.81 | 65.42 |
+| no ZSCL: no anchor at all | 86.62 | 86.86 | 64.38 |
+
+**Q3 — the frozen anchor is load-bearing (confirms the paper's claim).** RD's
+recovery over no-anchor is 2.34 Transfer; the previous-task teacher recovers
+only 1.04, i.e. **56% of RD's benefit is specifically the teacher being the
+frozen pre-trained model**. A rolling self-teacher lands nearer to no anchor
+than to a frozen one.
+
+**Q2 — the replay images are NOT a core part of RD.** Current-task images
+recover 66.66 vs the buffer's 66.72 (0.06 against a 2.34 range) *and* are 0.47
+better on Last. In the no-ZSCL block Last is flat (86.24–86.73), so Transfer is
+the only moving metric. Implication: the buffer is a label carrier for
+L_rep; RD needs some in-domain probe images but not stored ones. This
+contradicts the "one minibatch, two orthogonal roles" novelty framing in the
+uc1s response, and makes RD-on-current-task-images ≈ MulKI's design point.
+
+**Q1 — RD is a Transfer-for-Last trade, smaller than reported.** Against the
+iteration-matched λ=0 baseline: **−0.66 Last, +0.20 Transfer** (the confounded
+comparison suggested −0.27 / +0.37). Per task, RD lowers final accuracy on 9/12
+eval sets and raises pre-exposure (zero-shot) accuracy on 8/11. The reviewer's
+hypothesis is directionally supported: mean Δpre-exposure is +0.31 for the six
+high-zero-shot tasks vs −0.12 for the six low ones (Spearman +0.47), but n=11
+so this is not statistically significant.
+
+**Action required on the submitted text:** the λ=0 row in the 3U1b sensitivity
+table (86.44 / 77.57 / 68.00) is iteration-mismatched and must be replaced by
+86.83 / 87.12 / 68.17. Note the matched λ=0 run now has the best Last of any
+configuration, so "ExRD leads on Last" needs restating as the λ knob's
+Last-optimal endpoint.
 
 ### Confound found while building the per-task analysis
 
@@ -288,3 +333,8 @@ delta between them therefore mixes RD with an iteration-budget effect:
 `per_task_rd_analysis.py` expects by default. It also yields an
 iteration-matched λ=0 row for the sensitivity table in the Reviewer 3U1b
 response.
+
+**Resolved 2026-08-02.** The matched baseline ran; the −0.27 figure above was
+the confounded estimate and the true matched value is **−0.66 ΔLast /
++0.20 ΔTransfer**. See the results table above; the numbers in this subsection
+are retained only as a record of the confound.

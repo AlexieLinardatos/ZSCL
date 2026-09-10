@@ -1,0 +1,128 @@
+% Response to Reviewer zvRY (submission 31258).
+% Paste into the empty \begin{color}{red} block after zvRY's review in
+% reviews_rebuttal_final.tex.  Drop the \section* line if the heading should
+% sit outside the coloured block, as in the 3U1b and uc1s responses.
+%
+% All numbers: mtil/scripts/rebuttal/{rd_control_table,per_task_rd_analysis}.py
+% Runs 18943385 / 18943387 / 18943389 / 18943392 (Aug 2026).
+%
+% Ordered mechanism-first: Q3 leads, Q2 shares its table, Q1 last.
+
+\section*{Rebuttal, Reviewer zvRY}
+
+We ran all three requested experiments. Together they isolate a factor we had
+not separated in the submission: zero-shot preservation in CLIP continual
+learning is a property of the anchor being \emph{frozen and pre-trained}, not of
+distillation in general and not of the images the anchor is evaluated on.
+
+\subsection*{Q3: is the frozen original CLIP important, or does any teacher work?}
+
+We disabled the ZSCL reference stream so that RD is the only anchor in the run,
+which is where the effect is measurable, and swapped only the RD teacher for the
+checkpoint produced by task $t{-}1$, the classic LwF/iCaRL choice. Its caption
+embeddings are re-derived from that checkpoint, so the target is that teacher's
+own alignment distribution. The same setting also gives the image control of Q2,
+so we report both from one set of runs.
+
+\begin{table}[h]\centering\small
+\begin{tabular}{lccc}
+\hline
+\textbf{Configuration (no ZSCL branch)} & \textbf{Last} & \textbf{Avg} & \textbf{Transfer} \\
+\hline
+No anchor at all & 86.62 & 86.86 & 64.38 \\
+RD on replay images, frozen teacher & 86.24 & 87.05 & \textbf{66.72} \\
+RD on current-task images, frozen teacher & 86.71 & 86.70 & 66.66 \\
+RD on replay images, previous-task teacher & 86.73 & 86.81 & 65.42 \\
+\hline
+\end{tabular}
+\end{table}
+
+\noindent Against the frozen pre-trained teacher, a rolling self-teacher
+recovers less than half of the available anchoring benefit and lands closer to
+having no anchor at all. \textbf{The majority of RD's zero-shot preservation
+comes specifically from the teacher being frozen and pre-trained}, and a
+distillation signal on its own does not substitute for it. Prior methods vary
+teacher and probe data together, so we are not aware of a controlled isolation
+of this factor. It is consistent with the drifting-reference argument of
+Sec.~2.3 and with LwF's behaviour in Table~2, but is now a direct test rather
+than an inference.
+
+\subsection*{Q2: are the replay images a core part of RD?}
+
+Third row above, with only the probe images changed and the batch held at the
+replay batch size so no arm receives a larger distillation batch. Current-task
+images recover essentially all of the anchoring benefit, and Last is flat across
+the block. The replay images are therefore not a core part of RD: it needs
+in-domain probe images, not \emph{stored} ones, and we will drop the description
+of the exemplars as serving two orthogonal roles within one minibatch, since
+only $\mathcal{L}_\text{rep}$ requires them. This places RD on current-task
+images at MulKI's design point and we will cite it there. Practically, the
+anchoring term needs no reference image dataset and no buffer, which is a
+setting where ZSCL cannot operate. Applying RD with the frozen teacher to
+reference images is by construction $\mathcal{L}_\text{ZSCL}$, so that arm is a
+re-weighting of the ZSCL term rather than an independent control; we state the
+equivalence rather than reporting a run that rediscovers it.
+
+\subsection*{Q1: when does RD help beyond standard replay?}
+
+The $\lambda{=}0$ baseline below was re-run under ExRD's per-task iteration
+schedule so that the two rows differ only in RD.
+
+\begin{table}[h]\centering\small
+\begin{tabular}{lccc}
+\hline
+\textbf{Configuration} & \textbf{Last} & \textbf{Avg} & \textbf{Transfer} \\
+\hline
+ExRD, $\lambda{=}0.3$ & 86.17 & 87.15 & \textbf{68.37} \\
+Replay only, $\lambda{=}0$ (iteration-matched) & \textbf{86.83} & 87.12 & 68.17 \\
+ZSCL only, no replay & 83.79 & 87.12 & 68.69 \\
+\hline
+\end{tabular}
+\end{table}
+
+\noindent On top of ZSCL, RD buys $0.20$ Transfer for $0.66$ Last. We therefore
+present $\lambda$ as a Pareto knob rather than a uniform improvement, with
+$\lambda{=}0$ as the Last-optimal endpoint and $\lambda{=}0.3$ as the
+Transfer-favouring one. RD's distinct contribution is the anchoring quantified
+above, where it replaces ZSCL's reference image stream entirely.
+
+\begin{table}[h]\centering\small
+\begin{tabular}{lrrr}
+\hline
+\textbf{Task} & \textbf{CLIP ZS} & \textbf{$\Delta$Last} & \textbf{$\Delta$Pre-exp.} \\
+\hline
+Aircraft      & 24.21 & $-0.33$ & n/a \\
+DTD           & 44.73 & $-0.96$ & $-0.25$ \\
+EuroSAT       & 55.24 & $-2.17$ & $+0.13$ \\
+MNIST         & 59.42 & $-0.44$ & $-1.30$ \\
+SUN397        & 63.50 & $+0.03$ & $+0.16$ \\
+StanfordCars  & 64.72 & $-0.09$ & $+0.65$ \\
+CIFAR100      & 68.25 & $-2.72$ & $-0.01$ \\
+Flowers       & 71.07 & $-0.02$ & $+0.38$ \\
+Food          & 88.54 & $+0.13$ & $+0.10$ \\
+Caltech101    & 88.65 & $-0.63$ & $+0.12$ \\
+OxfordPet     & 89.10 & $-0.08$ & $+0.96$ \\
+ImageNet (held out) & 70.81 & $+0.37$ & $+0.20$ \\
+\hline
+mean (trained tasks) & & $-0.66$ & $+0.09$ \\
+\hline
+\end{tabular}
+\\[2pt]
+{\small Pre-exp.\ is the mean accuracy on a task over the stages \emph{before}
+it was trained, i.e.\ the per-task analogue of Transfer; it is undefined for
+Aircraft, which is trained first, so the $\Delta$Pre-exp.\ mean is over the
+remaining ten trained tasks. CLIP ZS is the measured zero-shot accuracy of the
+pre-trained backbone, our proxy for proximity to pre-training.}
+\end{table}
+
+\noindent The trade is visible task by task rather than only in aggregate. The
+cost in final accuracy is concentrated on a small number of tasks rather than
+spread evenly across the sequence, while pre-exposure accuracy rises on most
+eval sets, including held-out ImageNet. Splitting the tasks at the median
+zero-shot accuracy, the gain is larger on the tasks closer to CLIP pre-training
+than on the distant ones, which is the direction the reviewer suggested; at this
+number of tasks the correlation is not statistically significant, so we report
+it as suggestive rather than established.
+
+\noindent These controls are additive to the submission and we will fold them,
+and the framing above, into the revised paper.

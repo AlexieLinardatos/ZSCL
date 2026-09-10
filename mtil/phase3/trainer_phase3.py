@@ -63,7 +63,10 @@ from src.models.training import (
 )
 from src.models.helpers import l2_loss
 from src.models.evaluation import zeroshot_classifier
-from .losses_phase3 import compute_replay_teacher_distill_loss
+from .losses_phase3 import (
+    compute_replay_teacher_distill_loss,
+    compute_feature_replay_loss,
+)
 
 
 # ============================================================================
@@ -174,12 +177,28 @@ def custom_finetune_phase3(args, replay_buffer=None):
             for i in range(num_total_tasks)
         }
 
+    # Replay storage mode: 'pixel' re-encodes exemplars every step, 'feature'
+    # reads a stored embedding so only the text tower gets gradient.  Under
+    # feature storage there are no pixels left for the RTD term, so it falls
+    # back to the current task's batch (rebuttal control C1b: 66.66 vs 66.72
+    # Transfer, i.e. free).
+    replay_storage = getattr(args, "replay_storage", "pixel")
+    rd_source = getattr(
+        args, "rd_source", "current" if replay_storage == "feature" else "replay"
+    )
+    if replay_storage == "feature" and rd_source == "replay":
+        raise ValueError(
+            "rd_source='replay' needs pixel exemplars, but replay_storage="
+            "'feature' keeps only embeddings. Use rd_source='current'."
+        )
+
     print(
         f"\n[Phase3 config] "
         f"existing_distill={enable_existing_distill}  "
         f"replay_sup={enable_replay_sup}  "
         f"replay_teacher={enable_replay_teacher} (λ={lambda_rtd})  "
-        f"same_batch={same_batch}"
+        f"same_batch={same_batch}  "
+        f"replay_storage={replay_storage}  rd_source={rd_source}"
         f"{'  positional_weights=' + str(replay_task_weights) if replay_task_weights else ''}\n"
     )
 
@@ -269,6 +288,10 @@ def custom_finetune_phase3(args, replay_buffer=None):
     replay_iter_inf = None
     replay_batch_size = getattr(args, "replay_batch_size", 32)
     replay_loss_weight = getattr(args, "replay_loss_weight", 1.0)
+    replay_ce_fn = (
+        compute_feature_replay_loss if replay_storage == "feature"
+        else compute_replay_loss
+    )
 
     if replay_buffer is not None and len(replay_buffer) > 0:
         print(f"[Phase3 Replay] {replay_buffer}")
@@ -287,6 +310,7 @@ def custom_finetune_phase3(args, replay_buffer=None):
         replay_iter_inf = iter(replay_loader)
         print(
             f"[Phase3 Replay] Loader ready: {len(replay_dataset)} exemplars  "
+            f"storage={replay_storage}  "
             f"batch_size={replay_batch_size}  "
             f"sup_weight={replay_loss_weight}  "
             f"teacher_weight={lambda_rtd}"
@@ -447,12 +471,9 @@ def custom_finetune_phase3(args, replay_buffer=None):
                 replay_iter_inf = iter(replay_loader)
                 replay_batch = next(replay_iter_inf)
 
-            # Stash replay images in case we reuse them for teacher distill
-            replay_images_cuda = replay_batch[0].cuda()
-
             # (4) Supervised CE on replay samples
             if enable_replay_sup:
-                replay_ce = compute_replay_loss(
+                replay_ce = replay_ce_fn(
                     model, replay_batch, logit_scale, replay_buffer, args,
                     task_weights=replay_task_weights
                 )
@@ -461,9 +482,13 @@ def custom_finetune_phase3(args, replay_buffer=None):
 
             # (5) Replay teacher distillation (Phase 3 new term)
             if enable_replay_teacher and ref_model is not None and ref_texts is not None:
-                if same_batch:
+                if rd_source == "current":
+                    # A feature buffer holds no pixels, so distil on the current
+                    # task's batch instead — already fetched and on device.
+                    rtd_images = images
+                elif same_batch:
                     # Reuse the same replay images already fetched above
-                    rtd_images = replay_images_cuda
+                    rtd_images = replay_batch[0].cuda()
                 else:
                     # Fetch a fresh replay batch for teacher distillation
                     try:

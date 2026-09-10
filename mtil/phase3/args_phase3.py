@@ -49,6 +49,58 @@ def parse_phase3_arguments():
         "--replay_positional_weighting", action="store_true", default=False,
         help="Weight replay CE per task by (N-i)/N where i=task position, N=total tasks"
     )
+    p3_parser.add_argument(
+        "--replay_storage", choices=["pixel", "feature"], default="pixel",
+        help="What the replay buffer stores. 'pixel' keeps preprocessed image "
+             "tensors (602 KB each, gradient reaches both towers). 'feature' "
+             "keeps the final 512-d image embedding (1 KB each, gradient reaches "
+             "the text tower only)."
+    )
+    p3_parser.add_argument(
+        "--rd_source", choices=["replay", "current"], default=None,
+        help="Images fed to the replay teacher distillation term. 'replay' uses "
+             "buffer exemplars (requires --replay_storage pixel); 'current' uses "
+             "the current task's training batch. Defaults to 'replay' under pixel "
+             "storage and 'current' under feature storage, which has no pixels."
+    )
+    p3_parser.add_argument(
+        "--replay_encode_batch_size", type=int, default=64,
+        help="Batch size for the one-time encoding pass that fills the feature "
+             "buffer at each task boundary."
+    )
+    # --- stale-feature adaptation (feature storage only) ------------------
+    p3_parser.add_argument(
+        "--feature_adapt", choices=["none", "sdc", "lp", "linear", "mlp"],
+        default="none",
+        help="How to move already-stored features onto the new encoder's "
+             "manifold at each task boundary. 'none' is pure feature replay; "
+             "'sdc' is kernel-weighted drift (Yu CVPR20); 'lp' is label "
+             "propagation with augmented anchors (Zhang ECCV20); 'linear'/'mlp' "
+             "fit a learned old->new map (Iscen ECCV20)."
+    )
+    p3_parser.add_argument(
+        "--feature_adapt_anchors", choices=["image", "text", "both"],
+        default="both",
+        help="Where drift is observed. 'image': current-task images encoded "
+             "with both encoders, plus their class means. 'text': old classes' "
+             "text embeddings recomputed with both text encoders — free, and "
+             "located at the old classes themselves. 'both': the union."
+    )
+    p3_parser.add_argument(
+        "--feature_adapt_samples", type=int, default=2000,
+        help="Current-task images used to observe drift for image anchors."
+    )
+    p3_parser.add_argument("--feature_adapt_k", type=int, default=None,
+                           help="Neighbours per node (sdc: 32, lp: 20).")
+    p3_parser.add_argument("--feature_adapt_alpha", type=float, default=0.85,
+                           help="Propagation coefficient for --feature_adapt lp.")
+    p3_parser.add_argument("--feature_adapt_iters", type=int, default=30,
+                           help="Propagation iterations for --feature_adapt lp.")
+    p3_parser.add_argument("--feature_adapt_sigma", type=float, default=None,
+                           help="Kernel width for --feature_adapt sdc. Default "
+                                "adapts to the k-th neighbour distance.")
+    p3_parser.add_argument("--feature_adapt_steps", type=int, default=500,
+                           help="Fitting steps for --feature_adapt linear/mlp.")
 
     p3_ns, remaining_argv = p3_parser.parse_known_args()
 
@@ -96,5 +148,48 @@ def parse_phase3_arguments():
 
     args.no_proportional_replay = p3_ns.no_proportional_replay
     args.replay_positional_weighting = p3_ns.replay_positional_weighting
+
+    # ------------------------------------------------------------------ #
+    # Step 5: replay storage mode and its knock-on effect on L_RD         #
+    # ------------------------------------------------------------------ #
+    args.replay_storage = p3_ns.replay_storage
+    args.replay_encode_batch_size = p3_ns.replay_encode_batch_size
+
+    if p3_ns.rd_source is not None:
+        args.rd_source = p3_ns.rd_source
+    else:
+        args.rd_source = "current" if args.replay_storage == "feature" else "replay"
+
+    if args.replay_storage == "feature" and args.rd_source == "replay":
+        raise ValueError(
+            "--rd_source replay needs pixel exemplars, but --replay_storage "
+            "feature keeps only embeddings. Use --rd_source current, or disable "
+            "the term with --no_replay_teacher_distill."
+        )
+
+    # ------------------------------------------------------------------ #
+    # Step 6: stale-feature adaptation                                    #
+    # ------------------------------------------------------------------ #
+    args.feature_adapt = p3_ns.feature_adapt
+    args.feature_adapt_anchors = p3_ns.feature_adapt_anchors
+    args.feature_adapt_samples = p3_ns.feature_adapt_samples
+    args.feature_adapt_alpha = p3_ns.feature_adapt_alpha
+    args.feature_adapt_iters = p3_ns.feature_adapt_iters
+    args.feature_adapt_sigma = p3_ns.feature_adapt_sigma
+    args.feature_adapt_steps = p3_ns.feature_adapt_steps
+    # Per-estimator neighbour default: SDC averages over a wider set because
+    # each neighbour only contributes a kernel weight, while LP's graph gets
+    # dense and over-smoothed at high k.
+    if p3_ns.feature_adapt_k is not None:
+        args.feature_adapt_k = p3_ns.feature_adapt_k
+    else:
+        args.feature_adapt_k = 32 if args.feature_adapt == "sdc" else 20
+
+    if args.feature_adapt != "none" and args.replay_storage != "feature":
+        raise ValueError(
+            f"--feature_adapt {args.feature_adapt} only applies to stored "
+            f"features, but --replay_storage is '{args.replay_storage}'. Pixel "
+            f"exemplars are re-encoded every step, so they never go stale."
+        )
 
     return args

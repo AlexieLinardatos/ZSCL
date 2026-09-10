@@ -22,8 +22,77 @@ import torch
 import clip.clip as clip
 
 from src import datasets, templates
+from src.feature_replay_buffer import FeatureReplayBuffer
 from src.replay_buffer import ReplayBuffer
 from .trainer_phase3 import custom_finetune_phase3
+
+
+# ---------------------------------------------------------------------------
+# Feature-buffer encoding
+# ---------------------------------------------------------------------------
+
+def _load_encoder(args, ckpt_path):
+    """
+    Rebuild the image encoder from a task checkpoint, for the one-time pass
+    that fills the feature buffer.
+
+    Goes through load_base_model so LoRA layers are applied before the state
+    dict lands, matching however the run was trained.
+    """
+    from src.models.training import load_base_model
+
+    args_enc = copy.copy(args)
+    args_enc.load = ckpt_path
+    args_enc.start_iteration = None
+    model, _, _, _ = load_base_model(args_enc)
+    return model.cuda()
+
+
+def _log_drift_stats(save_dir, task_idx, task_name, method, anchors, stats):
+    """Append one row per task boundary to drift_adaptation.csv."""
+    path = os.path.join(save_dir, "drift_adaptation.csv")
+    fieldnames = ["task_idx", "task_name", "method", "anchors"] + list(stats.keys())
+    write_header = not os.path.exists(path)
+    with open(path, "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        if write_header:
+            writer.writeheader()
+        row = {"task_idx": task_idx, "task_name": task_name,
+               "method": method, "anchors": anchors}
+        row.update(stats)
+        writer.writerow(row)
+
+
+def _materialize_anchor_loader(dataset, num_samples, batch_size):
+    """
+    Build a loader over a fixed, already-decoded slice of the current task.
+
+    Drift is observed by encoding the *same* pixels with two encoders and
+    subtracting.  Iterating a train_dataset twice would re-run its random
+    augmentation and hand each encoder a different crop, so the images are
+    stacked into a tensor once here and both passes read from that.
+    """
+    n = len(dataset)
+    num_samples = min(num_samples, n)
+    step = n / num_samples
+    indices = [int(i * step) for i in range(num_samples)]
+
+    images, labels = [], []
+    for idx in indices:
+        item = dataset[idx]
+        if isinstance(item, (tuple, list)):
+            img, label = item[0], item[1]
+        else:
+            img, label = item["images"], item["labels"]
+        images.append(img)
+        labels.append(int(label))
+
+    tensor_ds = torch.utils.data.TensorDataset(
+        torch.stack(images), torch.tensor(labels, dtype=torch.long)
+    )
+    return torch.utils.data.DataLoader(
+        tensor_ds, batch_size=batch_size, shuffle=False, num_workers=0
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -140,7 +209,12 @@ def finetune_multi_task_phase3(args):
 
     os.makedirs(args.save, exist_ok=True)
 
-    replay_buffer = ReplayBuffer(total_budget=args.replay_budget)
+    replay_storage = getattr(args, "replay_storage", "pixel")
+    if replay_storage == "feature":
+        replay_buffer = FeatureReplayBuffer(total_budget=args.replay_budget)
+    else:
+        replay_buffer = ReplayBuffer(total_budget=args.replay_budget)
+    print(f"[Phase3] Replay storage mode: {replay_storage}")
 
     # ------------------------------------------------------------------
     # Resume detection
@@ -249,13 +323,76 @@ def finetune_multi_task_phase3(args):
             else task_dataset_obj.template
         )
 
-        replay_buffer.add_task(
-            task_id=task_idx,
-            dataset=task_dataset_obj.train_dataset,
-            num_samples=args.replay_budget,
-            classnames=task_dataset_obj.classnames,
-            template=task_template,
-        )
+        if replay_storage == "feature":
+            # Encode this task's exemplars with the checkpoint that just
+            # finished training on it.  They are never re-encoded afterwards,
+            # so they go stale as the encoder keeps moving through later tasks.
+            encoder = _load_encoder(args, os.path.join(args.save, f"{task_name}.pth"))
+
+            # Before adding this task, move everything already in the buffer
+            # onto the new encoder's manifold.  Runs first so text anchors are
+            # built from previous tasks' class names only — this task's own
+            # features are fresh and need no correction.
+            feature_adapt = getattr(args, "feature_adapt", "none")
+            if feature_adapt != "none" and len(replay_buffer) > 0:
+                prev_ckpt = os.path.join(args.save, f"{task_names[task_idx - 1]}.pth")
+                anchors = getattr(args, "feature_adapt_anchors", "both")
+                print(f"[Phase3] Adapting {len(replay_buffer)} stored features: "
+                      f"method={feature_adapt}  anchors={anchors}")
+
+                old_encoder = _load_encoder(args, prev_ckpt)
+                old_encoder.eval()
+                encoder.eval()
+
+                anchor_loader = None
+                if anchors in ("image", "both"):
+                    anchor_loader = _materialize_anchor_loader(
+                        task_dataset_obj.train_dataset,
+                        getattr(args, "feature_adapt_samples", 2000),
+                        getattr(args, "replay_encode_batch_size", 64),
+                    )
+
+                stats = replay_buffer.adapt(
+                    method=feature_adapt,
+                    old_model=old_encoder,
+                    new_model=encoder,
+                    current_loader=anchor_loader,
+                    anchors=anchors,
+                    k=getattr(args, "feature_adapt_k", 20),
+                    alpha=getattr(args, "feature_adapt_alpha", 0.85),
+                    iters=getattr(args, "feature_adapt_iters", 30),
+                    sigma=getattr(args, "feature_adapt_sigma", None),
+                    steps=getattr(args, "feature_adapt_steps", 500),
+                )
+                print("[Phase3] Drift: " + "  ".join(
+                    f"{k}={v:.4f}" if isinstance(v, float) else f"{k}={v}"
+                    for k, v in stats.items()
+                ))
+                _log_drift_stats(args.save, task_idx, task_name, feature_adapt,
+                                 anchors, stats)
+
+                del old_encoder, anchor_loader
+                torch.cuda.empty_cache()
+
+            replay_buffer.add_task(
+                task_id=task_idx,
+                dataset=task_dataset_obj.train_dataset,
+                num_samples=args.replay_budget,
+                classnames=task_dataset_obj.classnames,
+                template=task_template,
+                model=encoder,
+                batch_size=getattr(args, "replay_encode_batch_size", 64),
+            )
+            del encoder
+            torch.cuda.empty_cache()
+        else:
+            replay_buffer.add_task(
+                task_id=task_idx,
+                dataset=task_dataset_obj.train_dataset,
+                num_samples=args.replay_budget,
+                classnames=task_dataset_obj.classnames,
+                template=task_template,
+            )
         class_counts = {
             tid: len(replay_buffer.task_info[tid]["classnames"])
             for tid in replay_buffer.memory

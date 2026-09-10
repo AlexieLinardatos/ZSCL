@@ -13,6 +13,9 @@ The formulation mirrors compute_zscl_loss in src/models/training.py:
 """
 
 import torch
+import torch.nn.functional as F
+
+import clip.clip as clip
 from src.models.helpers import distillation
 
 
@@ -69,4 +72,74 @@ def compute_replay_teacher_distill_loss(
             logits_teacher.t(), logits_student.t(), T=T
         )
 
+    return total_loss
+
+
+def compute_feature_replay_loss(model, replay_batch, logit_scale, replay_buffer, args,
+                                task_weights=None):
+    """
+    Replay CE over stored image embeddings instead of stored images.
+
+    The pixel version (compute_replay_loss in src/models/training.py) re-encodes
+    the exemplar every step, so gradient reaches both towers.  Here the image
+    embedding is a constant read out of the buffer, so only the text embeddings
+    it is scored against carry gradient.  That is the half of the replay signal
+    nothing else in the objective supplies: L_zscl and L_RD both compute their
+    teacher text embeddings under no_grad and update the image tower alone.
+
+    Batch layout and task grouping match compute_replay_loss exactly, so the two
+    are interchangeable at the call site.
+
+    Args:
+        model:         The fine-tuned model (DataParallel-wrapped).
+        replay_batch:  Tuple of (features, labels, task_ids) from
+                       FlatFeatureReplayDataset.
+        logit_scale:   Scalar logit scale (from model.logit_scale).
+        replay_buffer: FeatureReplayBuffer instance (for task metadata).
+        args:          Training arguments (uses args.ls for label smoothing).
+        task_weights:  Optional dict mapping task_id -> scalar weight.
+
+    Returns:
+        Scalar loss tensor (mean over all replay samples).
+    """
+    replay_feats, replay_labels, task_ids = replay_batch
+    replay_feats = replay_feats.cuda()
+    replay_labels = replay_labels.cuda()
+    task_ids = task_ids.cuda()
+
+    unique_tasks = task_ids.unique().tolist()
+    total_loss = torch.tensor(0.0, device="cuda")
+    total_samples = 0
+
+    for tid in unique_tasks:
+        tid_int = int(tid)
+        mask = task_ids == tid_int
+        task_feats = replay_feats[mask]
+        task_labels = replay_labels[mask]
+
+        task_info = replay_buffer.get_task_info(tid_int)
+        classnames = task_info["classnames"]
+        template = task_info["template"]
+
+        # Build text tokens for this task's classes
+        texts = clip.tokenize([template(c) for c in classnames]).cuda()
+
+        # Text embeddings (with grad) — the only gradient path in this term
+        text_emb = model(None, texts)
+        text_emb = text_emb / text_emb.norm(dim=-1, keepdim=True)
+
+        # Stored image embeddings are already L2-normalised; they are fp16 on
+        # disk, so match the live model's dtype before the matmul.
+        task_feats = task_feats.to(text_emb.dtype)
+
+        logits = logit_scale.exp() * task_feats @ text_emb.t()
+        task_loss = F.cross_entropy(logits, task_labels, label_smoothing=args.ls)
+
+        w = task_weights.get(tid_int, 1.0) if task_weights else 1.0
+        n = mask.sum().float()
+        total_loss = total_loss + w * task_loss * n
+        total_samples += mask.sum().item()
+
+    if total_samples > 0:
+        return total_loss / total_samples
     return total_loss
