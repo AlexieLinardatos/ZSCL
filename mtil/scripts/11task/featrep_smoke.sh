@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=featrep_smoke
-#SBATCH --time=00:40:00
-#SBATCH --mem=32GB
+#SBATCH --time=01:00:00
+#SBATCH --mem=64GB
 #SBATCH --cpus-per-task=4
-#SBATCH --gres=gpu:a100:1
-#SBATCH --account=def-fqureshi
+#SBATCH --gres=gpu:nvidia_h100_80gb_hbm3_3g.40gb:1
+#SBATCH --account=def-fqureshi_gpu
 #SBATCH --output=/scratch/alexie/logs/%x-%j.out
 
 # Smoke test for feature replay (--replay_storage feature).
