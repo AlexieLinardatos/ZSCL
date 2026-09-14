@@ -22,9 +22,43 @@ import torch
 import clip.clip as clip
 
 from src import datasets, templates
+from src.drift_probe import DriftProbe
 from src.feature_replay_buffer import FeatureReplayBuffer
+from src.remind_buffer import RemindReplayBuffer
 from src.replay_buffer import ReplayBuffer
 from .trainer_phase3 import custom_finetune_phase3
+
+
+def _probe_path(save_dir):
+    return os.path.join(save_dir, "drift_probe.pt")
+
+
+def _log_probe_drift(save_dir, task_idx, task_name, results):
+    """
+    Append one row per (measured-at, stored-task) pair to feature_drift.csv.
+
+    Long format rather than wide so the plot script can pivot it without
+    knowing the task order in advance, and so a resumed run appends cleanly.
+    """
+    path = os.path.join(save_dir, "feature_drift.csv")
+    fieldnames = ["measured_after_idx", "measured_after", "stored_task_idx",
+                  "tasks_elapsed", "mean_cos", "p05_cos", "min_cos", "n"]
+    write_header = not os.path.exists(path)
+    with open(path, "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        if write_header:
+            writer.writeheader()
+        for stored_idx, stats in sorted(results.items()):
+            writer.writerow({
+                "measured_after_idx": task_idx,
+                "measured_after": task_name,
+                "stored_task_idx": stored_idx,
+                "tasks_elapsed": task_idx - stored_idx,
+                "mean_cos": f"{stats['mean_cos']:.6f}",
+                "p05_cos": f"{stats['p05_cos']:.6f}",
+                "min_cos": f"{stats['min_cos']:.6f}",
+                "n": stats["n"],
+            })
 
 
 # ---------------------------------------------------------------------------
@@ -108,8 +142,17 @@ def _completed_tasks_path(save_dir):
 
 
 def _save_buffer_state(save_dir, replay_buffer, completed_task_name):
-    """Persist buffer memory and append completed task name to disk."""
-    torch.save(replay_buffer.memory, _buffer_memory_path(save_dir))
+    """
+    Persist buffer contents and append completed task name to disk.
+
+    A REMIND buffer carries a fitted PQ codebook alongside its codes, and the
+    codes are meaningless without it, so buffers exposing a state_dict save that
+    instead of the bare memory dict.
+    """
+    if hasattr(replay_buffer, "state_dict"):
+        torch.save(replay_buffer.state_dict(), _buffer_memory_path(save_dir))
+    else:
+        torch.save(replay_buffer.memory, _buffer_memory_path(save_dir))
     with open(_completed_tasks_path(save_dir), "a") as f:
         f.write(completed_task_name + "\n")
     print(f"[Phase3 Replay] Buffer state saved after task '{completed_task_name}'.")
@@ -129,7 +172,15 @@ def _load_buffer_memory(save_dir, replay_buffer):
     path = _buffer_memory_path(save_dir)
     if not os.path.exists(path):
         return False
-    replay_buffer.memory = torch.load(path, weights_only=False)
+    state = torch.load(path, weights_only=False)
+    # Distinguish a state_dict (REMIND: codes + codebook) from a bare memory
+    # dict, which is keyed by integer task id.
+    if isinstance(state, dict) and "memory" in state and hasattr(
+        replay_buffer, "load_state_dict"
+    ):
+        replay_buffer.load_state_dict(state)
+    else:
+        replay_buffer.memory = state
     print(
         f"[Phase3 Replay] Reloaded buffer: {len(replay_buffer)} exemplars "
         f"across {len(replay_buffer.memory)} tasks."
@@ -212,9 +263,28 @@ def finetune_multi_task_phase3(args):
     replay_storage = getattr(args, "replay_storage", "pixel")
     if replay_storage == "feature":
         replay_buffer = FeatureReplayBuffer(total_budget=args.replay_budget)
+    elif replay_storage == "remind":
+        replay_buffer = RemindReplayBuffer(
+            total_budget=args.replay_budget,
+            layer=getattr(args, "remind_layer", 6),
+            m=getattr(args, "remind_pq_m", 32),
+        )
     else:
         replay_buffer = ReplayBuffer(total_budget=args.replay_budget)
     print(f"[Phase3] Replay storage mode: {replay_storage}")
+
+    # Diagnostic probe: a few images per task, kept only to measure how stale
+    # stored features become. Never enters a loss. Excluded from storage claims.
+    probe_size = getattr(args, "drift_probe_size", 0)
+    drift_probe = DriftProbe(per_task=probe_size) if probe_size > 0 else None
+    if drift_probe is not None:
+        if os.path.exists(_probe_path(args.save)):
+            drift_probe.load_state_dict(
+                torch.load(_probe_path(args.save), weights_only=False)
+            )
+            print(f"[Phase3] Reloaded {drift_probe}")
+        else:
+            print(f"[Phase3] Drift probe enabled: {probe_size} images/task")
 
     # ------------------------------------------------------------------
     # Resume detection
@@ -329,6 +399,31 @@ def finetune_multi_task_phase3(args):
             # so they go stale as the encoder keeps moving through later tasks.
             encoder = _load_encoder(args, os.path.join(args.save, f"{task_name}.pth"))
 
+            # Measure how stale every previously stored task has become, before
+            # any correction is applied. The baseline is never refreshed, so
+            # this number means the same thing in every arm — cosine between a
+            # feature as originally stored and what the model produces for that
+            # same image now — which is what makes the arms comparable.
+            if drift_probe is not None and len(drift_probe.probes) > 0:
+                try:
+                    encoder.eval()
+                    probe_results = drift_probe.measure(
+                        encoder,
+                        batch_size=getattr(args, "replay_encode_batch_size", 64),
+                    )
+                    print(f"[Phase3] Feature drift after '{task_name}':")
+                    for stored_idx, st in sorted(probe_results.items()):
+                        print(f"    task {stored_idx} "
+                              f"({task_names[stored_idx]:<14}) stored "
+                              f"{task_idx - stored_idx} task(s) ago: "
+                              f"mean_cos={st['mean_cos']:.4f}  "
+                              f"p05={st['p05_cos']:.4f}")
+                    _log_probe_drift(args.save, task_idx, task_name, probe_results)
+                except Exception as exc:
+                    print(f"[Phase3] WARNING: drift measurement failed "
+                          f"({type(exc).__name__}: {exc}). Training continues; "
+                          f"only the diagnostic is lost.")
+
             # Before adding this task, move everything already in the buffer
             # onto the new encoder's manifold.  Runs first so text anchors are
             # built from previous tasks' class names only — this task's own
@@ -383,6 +478,76 @@ def finetune_multi_task_phase3(args):
                 model=encoder,
                 batch_size=getattr(args, "replay_encode_batch_size", 64),
             )
+
+            # Freeze this task's probe with the same encoder that just stored
+            # its features, so the two share a baseline.
+            if drift_probe is not None:
+                try:
+                    drift_probe.add_task(
+                        task_id=task_idx,
+                        dataset=task_dataset_obj.train_dataset,
+                        model=encoder,
+                        batch_size=getattr(args, "replay_encode_batch_size", 64),
+                    )
+                    torch.save(drift_probe.state_dict(), _probe_path(args.save))
+                    print(f"[Phase3] {drift_probe}")
+                except Exception as exc:
+                    print(f"[Phase3] WARNING: could not store drift probe "
+                          f"({type(exc).__name__}: {exc}). Training continues.")
+
+            del encoder
+            torch.cuda.empty_cache()
+        elif replay_storage == "remind":
+            # Encode to the split layer and store PQ codes. The codebook is
+            # fitted on task 0 only; every later task reuses it, because
+            # refitting would change the meaning of codes already stored.
+            encoder = _load_encoder(args, os.path.join(args.save, f"{task_name}.pth"))
+
+            # Under REMIND this measures how far the *full* encoder moved, not
+            # how stale the stored codes are — the codes sit below the frozen
+            # line and cannot move at all. A large number here alongside intact
+            # accuracy is the evidence that freezing did its job.
+            if drift_probe is not None and len(drift_probe.probes) > 0:
+                try:
+                    encoder.eval()
+                    probe_results = drift_probe.measure(
+                        encoder,
+                        batch_size=getattr(args, "replay_encode_batch_size", 32),
+                    )
+                    print(f"[Phase3] Encoder drift after '{task_name}':")
+                    for stored_idx, st in sorted(probe_results.items()):
+                        print(f"    task {stored_idx} "
+                              f"({task_names[stored_idx]:<14}) "
+                              f"mean_cos={st['mean_cos']:.4f}")
+                    _log_probe_drift(args.save, task_idx, task_name, probe_results)
+                except Exception as exc:
+                    print(f"[Phase3] WARNING: drift measurement failed "
+                          f"({type(exc).__name__}: {exc}). Training continues.")
+
+            replay_buffer.add_task(
+                task_id=task_idx,
+                dataset=task_dataset_obj.train_dataset,
+                num_samples=args.replay_budget,
+                classnames=task_dataset_obj.classnames,
+                template=task_template,
+                model=encoder,
+                batch_size=getattr(args, "replay_encode_batch_size", 32),
+            )
+
+            if drift_probe is not None:
+                try:
+                    drift_probe.add_task(
+                        task_id=task_idx,
+                        dataset=task_dataset_obj.train_dataset,
+                        model=encoder,
+                        batch_size=getattr(args, "replay_encode_batch_size", 32),
+                    )
+                    torch.save(drift_probe.state_dict(), _probe_path(args.save))
+                    print(f"[Phase3] {drift_probe}")
+                except Exception as exc:
+                    print(f"[Phase3] WARNING: could not store drift probe "
+                          f"({type(exc).__name__}: {exc}). Training continues.")
+
             del encoder
             torch.cuda.empty_cache()
         else:

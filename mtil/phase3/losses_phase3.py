@@ -75,6 +75,73 @@ def compute_replay_teacher_distill_loss(
     return total_loss
 
 
+def compute_remind_replay_loss(model, replay_batch, logit_scale, replay_buffer, args,
+                               task_weights=None):
+    """
+    Replay CE over PQ-compressed mid-network activations (REMIND).
+
+    Sits between the other two replay losses. The pixel version re-encodes from
+    raw images, so gradient reaches the whole vision tower. The feature version
+    reads a dead constant, so gradient reaches only the text tower. This one
+    decodes stored tokens at the split layer and runs them through the *upper*
+    blocks, so gradient reaches the top of the vision tower and the text tower
+    both — while the frozen lower blocks guarantee the stored codes never go
+    stale in the first place.
+
+    Args:
+        replay_batch:  Tuple of (codes, labels, task_ids) from FlatRemindDataset,
+                       codes being uint8 (B, tokens, m).
+        replay_buffer: RemindReplayBuffer, for the codebook and task metadata.
+    """
+    from src.remind_buffer import encode_from_layer
+
+    replay_codes, replay_labels, task_ids = replay_batch
+    replay_codes = replay_codes.cuda()
+    replay_labels = replay_labels.cuda()
+    task_ids = task_ids.cuda()
+
+    visual = model.module.visual if hasattr(model, "module") else model.visual
+    use_ckpt = getattr(visual.transformer, "use_checkpoint", False)
+
+    unique_tasks = task_ids.unique().tolist()
+    total_loss = torch.tensor(0.0, device="cuda")
+    total_samples = 0
+
+    for tid in unique_tasks:
+        tid_int = int(tid)
+        mask = task_ids == tid_int
+        task_labels = replay_labels[mask]
+
+        task_info = replay_buffer.get_task_info(tid_int)
+        texts = clip.tokenize(
+            [task_info["template"](c) for c in task_info["classnames"]]
+        ).cuda()
+
+        text_emb = model(None, texts)
+        text_emb = text_emb / text_emb.norm(dim=-1, keepdim=True)
+
+        # Decoding is a codebook lookup and carries no gradient; the tokens it
+        # produces are the input to the trainable upper blocks.
+        tokens = replay_buffer.decode_tokens(replay_codes[mask])
+        img_emb = encode_from_layer(
+            visual, tokens.to(text_emb.dtype), replay_buffer.layer,
+            use_checkpoint=use_ckpt,
+        )
+        img_emb = img_emb / img_emb.norm(dim=-1, keepdim=True)
+
+        logits = logit_scale.exp() * img_emb @ text_emb.t()
+        task_loss = F.cross_entropy(logits, task_labels, label_smoothing=args.ls)
+
+        w = task_weights.get(tid_int, 1.0) if task_weights else 1.0
+        n = mask.sum().float()
+        total_loss = total_loss + w * task_loss * n
+        total_samples += mask.sum().item()
+
+    if total_samples > 0:
+        return total_loss / total_samples
+    return total_loss
+
+
 def compute_feature_replay_loss(model, replay_batch, logit_scale, replay_buffer, args,
                                 task_weights=None):
     """

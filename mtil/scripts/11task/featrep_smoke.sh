@@ -7,7 +7,7 @@
 #SBATCH --account=def-fqureshi_gpu
 #SBATCH --output=/scratch/alexie/logs/%x-%j.out
 
-# Smoke test for feature replay (--replay_storage feature).
+# Smoke test for all three replay storage modes.
 #
 # Two passes of 3 tasks x 10 iterations: pure feature replay (V0), then the same
 # thing with label-propagation drift adaptation (V2). Between them they exercise
@@ -92,7 +92,6 @@ run_pass () {
     --eval-datasets "DTD,EuroSAT" \
     --eval-interval 10 \
     --use_replay \
-    --replay_storage feature \
     --replay_budget 200 \
     --replay_batch_size 8 \
     --replay_loss_weight 1.0 \
@@ -105,14 +104,30 @@ run_pass () {
 }
 
 # V0: pure feature replay, stored features never touched again.
-run_pass v0
+run_pass v0 --replay_storage feature
 
 # V2: same, plus label propagation with augmented anchors at each boundary.
 run_pass lp \
+  --replay_storage feature \
   --feature_adapt lp \
   --feature_adapt_anchors both \
-  --feature_adapt_samples 200
+  --feature_adapt_samples 200 \
+  --drift_probe_size 16
+
+# REMIND: PQ-compressed mid-network activations, lower blocks frozen after
+# task 0. Exercises the split forward pass, the codebook fit, and the freeze.
+run_pass remind \
+  --replay_storage remind \
+  --remind_layer 6 \
+  --remind_pq_m 32 \
+  --drift_probe_size 16
 
 echo ""
 echo "[`date`] Smoke test passed. Drift log:"
 cat ckpt/11task/featrep_smoke_lp/drift_adaptation.csv
+echo ""
+echo "[`date`] Feature drift log (lp pass):"
+cat ckpt/11task/featrep_smoke_lp/feature_drift.csv
+echo ""
+echo "[`date`] REMIND buffer size check:"
+grep -h "RemindReplayBuffer" "$(ls -t /scratch/alexie/logs/featrep_smoke-*.out | head -1)" | tail -3 || true

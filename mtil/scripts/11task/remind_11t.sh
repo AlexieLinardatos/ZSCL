@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=11t_featrep_v0
+#SBATCH --job-name=11t_remind
 #SBATCH --time=72:00:00
 #SBATCH --mem=128GB
 #SBATCH --cpus-per-task=4
@@ -8,24 +8,34 @@
 #SBATCH --output=/scratch/alexie/logs/%x-%j.out
 #SBATCH --signal=USR1@60
 
-# Feature replay V0 (pure): v4 with the buffer storing 512-d embeddings instead
-# of images. Every other flag is byte-identical to phase3_no_lora_11t_v4.sh, so
-# the A/B against v4 isolates the storage change.
+# REMIND (Hayes et al., ECCV 2020) adapted to CLIP, as a baseline arm against
+# feature replay. Identical to featrep_v0_11t.sh except for what the buffer
+# stores and which half of the network is allowed to train.
 #
-# Two things change as a consequence, both forced rather than chosen:
-#   1. Replay CE scores stored embeddings against live text embeddings, so its
-#      gradient reaches the text tower only. L_zscl and L_RD already supply the
-#      image-side gradient (both compute teacher text embeddings under no_grad).
-#   2. L_RD has no pixels to distil on, so --rd_source defaults to 'current'
-#      (the current task's batch). Rebuttal control C1b measured this swap at
-#      66.66 vs 66.72 Transfer, i.e. free. To attribute cleanly, run v4 with
-#      --rd_source current as a third arm.
+# The mechanism, and why it is a different bet from feature replay:
+#   - Stores PQ-compressed activations from the MIDDLE of the vision tower
+#     (block LAYER), not the final embedding. Replayed samples still flow
+#     through the upper blocks, so the image tower keeps a real gradient path.
+#   - Freezes every block BELOW the split after task 0. Stored activations
+#     therefore cannot go stale: drift is eliminated by construction rather
+#     than corrected afterwards, which is the opposite of --feature_adapt.
+#   - Costs plasticity. Half the vision tower stops learning after task 0,
+#     which on MTIL (MNIST through SUN397) may hurt more than on a single
+#     ImageNet stream. That trade is what this arm measures.
 #
-# Storage: 11,000 exemplars at 224x224x3 fp32 = 6.6 GB -> 512-d fp16 = 11 MB.
+# Storage per exemplar at layer 6, m=32:  197 tokens x 32 B = 6.3 KB
+#   vs. pixel replay  602 KB   (96x smaller)
+#   vs. feature replay  1 KB   (6x larger, but with gradient and no staleness)
 #
-# Note on replay_batch_size: kept at 8 to match v4 exactly. Feature replay makes
-# a replay sample nearly free (no vision forward), so a much larger batch is
-# affordable — but that is a separate experiment, not this one.
+# Parameterised by environment variable:
+#   LAYER=6  PQ_M=32  sbatch remind_11t.sh    # the default configuration
+#   LAYER=3  PQ_M=32  sbatch remind_11t.sh    # freeze less, store earlier
+#   LAYER=9  PQ_M=32  sbatch remind_11t.sh    # freeze more, compress better
+#   LAYER=6  PQ_M=16  sbatch remind_11t.sh    # half the storage, coarser codes
+#
+# Run src/test_remind.py first: it verifies the split forward pass reproduces
+# the unsplit one exactly, which is the failure mode that would otherwise show
+# up only as quietly bad accuracy hours in.
 
 set -euo pipefail
 mkdir -p /scratch/alexie/logs
@@ -72,12 +82,15 @@ cd "$REPO_ROOT/mtil"
 export PYTHONPATH="$REPO_ROOT/mtil/scripts/4task/phase3:${PYTHONPATH:-}"
 mkdir -p logs
 
-SAVE_PATH="ckpt/11task/featrep_v0"
+LAYER="${LAYER:-6}"
+PQ_M="${PQ_M:-32}"
+
+SAVE_PATH="ckpt/11task/remind_l${LAYER}_m${PQ_M}"
 mkdir -p "${SAVE_PATH}"
 
 EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397,ImageNet"
 
-echo "[`date`] Starting feature replay V0 — storage=feature, lambda_RTD=0.3"
+echo "[`date`] Starting REMIND — split at block ${LAYER}, PQ m=${PQ_M}"
 
 # ---------------------------------------------------------------------------
 # FLAG LEGEND — ExRD HEADLINE BASELINE (all extensions compare against this).
@@ -111,14 +124,16 @@ srun python -m phase3.train_phase3 \
   --eval-datasets "${EVAL_DATASETS}" \
   --eval-interval 500 \
   --use_replay \
-  --replay_storage feature \
+  --replay_storage remind \
+  --remind_layer "${LAYER}" \
+  --remind_pq_m "${PQ_M}" \
   --replay_budget 11000 \
   --replay_batch_size 8 \
-  --drift_probe_size 64 \
   --replay_loss_weight 1.0 \
   --batch-size-eval 16 \
   --dataset_order Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397 \
   --lambda_replay_teacher_distill 0.3 \
+  --drift_probe_size 64 \
   --task_iterations "Aircraft:3000,Caltech101:1000,CIFAR100:1500,DTD:1500,EuroSAT:1000,Flowers:1500,Food:1500,MNIST:800,OxfordPet:1500,StanfordCars:3000,SUN397:5000"
 
 echo "[`date`] Done. Checkpoints in ${SAVE_PATH}/"

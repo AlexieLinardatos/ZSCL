@@ -33,8 +33,8 @@
 #      than the exemplars.
 #
 # Optional environment overrides:
-#   RD_RUN=phase3_no_lora_v4        run whose checkpoints + buffer to measure
-#   CTRL_RUN=ablation_no_zscl_no_rd control run for contrast ("" to skip)
+#   BUFFER_RUN=phase3_no_lora_v4    pixel run supplying the probe images
+#   CKPT_RUNS="a b c"               trajectories to encode those images with
 #   QUICK=1                         subsample to 200 exemplars/task (~2 min)
 #
 # Next step after this passes: sbatch scripts/11task/featrep_smoke.sh
@@ -70,7 +70,9 @@ else
 fi
 
 which python; python -V; which pip
-pip install --upgrade pip
+# No --no-index on the pip self-upgrade would reach the internet; compute nodes
+# cannot, and under `set -e` that kills the job in seconds. Not worth the risk
+# for a version bump, so it is simply skipped.
 pip install --no-index torch torchvision
 pip install --no-index tqdm ftfy regex pandas scipy
 
@@ -85,8 +87,12 @@ mkdir -p "${RESULTS_DIR}"
 
 DATASET_ORDER="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397"
 
-RD_RUN="${RD_RUN:-phase3_no_lora_v4}"
-CTRL_RUN="${CTRL_RUN:-ablation_no_zscl_no_rd}"
+# The buffer supplies the IMAGES; each ckpt dir supplies a trajectory to encode
+# them with. Decoupled on purpose: a feature-replay run keeps no images, so the
+# only way to measure the drift ITS embeddings experienced is to borrow a pixel
+# buffer and re-encode it with that run's own checkpoints.
+BUFFER_RUN="${BUFFER_RUN:-phase3_no_lora_v4}"
+CKPT_RUNS="${CKPT_RUNS:-phase3_no_lora_v4 featrep_v0 ablation_no_zscl_no_rd}"
 
 QUICK_FLAG=""
 if [[ "${QUICK:-0}" == "1" ]]; then
@@ -148,49 +154,45 @@ echo "=========================================================="
 echo "[`date`] STEP 2/2 — representation drift gate"
 echo "=========================================================="
 
-if ! BUFFER_DIR="$(find_run_dir "${RD_RUN}")"; then
+if ! BUFFER_DIR="$(find_run_dir "${BUFFER_RUN}")"; then
   echo ""
-  echo "[`date`] ERROR: no replay_buffer_memory.pt found for run '${RD_RUN}'."
-  echo "The gate needs a saved *pixel* buffer to re-encode. Locate one with:"
+  echo "[`date`] ERROR: no pixel replay_buffer_memory.pt found for run '${BUFFER_RUN}'."
+  echo "The gate re-encodes stored IMAGES, so it needs a buffer from a pixel run."
+  echo "A feature-replay run's buffer holds embeddings and is rejected by design."
+  echo "Locate a usable one with:"
   echo "    find \$HOME/projects/def-fqureshi/alexie/ZSCL /scratch/alexie \\"
   echo "         -name replay_buffer_memory.pt 2>/dev/null"
-  echo "then re-submit with RD_RUN=<that run's directory name>."
+  echo "then re-submit with BUFFER_RUN=<that run's directory name>."
   exit 4
 fi
 
 BUFFER="${BUFFER_DIR}/replay_buffer_memory.pt"
-echo "[`date`] Buffer:      ${BUFFER}"
-echo "[`date`] Checkpoints: ${BUFFER_DIR}"
+echo "[`date`] Buffer images from: ${BUFFER}"
 
-srun python -m src.measure_drift \
-  --buffer "${BUFFER}" \
-  --ckpt-dir "${BUFFER_DIR}" \
-  --dataset_order "${DATASET_ORDER}" \
-  --label "${RD_RUN}" \
-  --out "${RESULTS_DIR}/drift_${RD_RUN}.csv" \
-  ${QUICK_FLAG}
-
-# Control arm: same buffer images, a different training trajectory. Skipped
-# without failing the job, since the headline number is the ZSCL+RD one.
-if [[ -n "${CTRL_RUN}" ]]; then
-  if CTRL_DIR="$(find_ckpt_dir "${CTRL_RUN}")"; then
-    echo ""
-    echo "[`date`] Control arm: re-encoding the SAME buffer with '${CTRL_RUN}'"
-    echo "[`date`] Checkpoints: ${CTRL_DIR}"
+# Every trajectory sees the SAME images, so differences between arms are the
+# encoder's doing rather than the exemplars'. A missing run is skipped with a
+# note instead of failing the job.
+MEASURED=0
+for RUN in ${CKPT_RUNS}; do
+  echo ""
+  if CKPT_DIR="$(find_ckpt_dir "${RUN}")"; then
+    echo "[`date`] --- trajectory '${RUN}'  (${CKPT_DIR})"
     srun python -m src.measure_drift \
       --buffer "${BUFFER}" \
-      --ckpt-dir "${CTRL_DIR}" \
+      --ckpt-dir "${CKPT_DIR}" \
       --dataset_order "${DATASET_ORDER}" \
-      --label "${CTRL_RUN}" \
-      --out "${RESULTS_DIR}/drift_${CTRL_RUN}.csv" \
+      --label "${RUN}" \
+      --out "${RESULTS_DIR}/drift_${RUN}.csv" \
       ${QUICK_FLAG}
+    MEASURED=$((MEASURED + 1))
   else
-    echo ""
-    echo "[`date`] No checkpoints found for control run '${CTRL_RUN}' — skipping."
-    echo "[`date`] The ZSCL+RD number above still stands on its own; the control"
-    echo "[`date`] only strengthens the claim that distillation is what holds the"
-    echo "[`date`] encoder still. Re-submit with CTRL_RUN=<run name> to add it."
+    echo "[`date`] --- no checkpoints for '${RUN}' — skipping."
   fi
+done
+
+if [[ "${MEASURED}" -eq 0 ]]; then
+  echo "[`date`] ERROR: none of the requested runs had checkpoints: ${CKPT_RUNS}"
+  exit 5
 fi
 
 echo ""

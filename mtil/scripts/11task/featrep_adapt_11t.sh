@@ -125,6 +125,7 @@ srun python -m phase3.train_phase3 \
   --feature_adapt "${ADAPT}" \
   --feature_adapt_anchors "${ANCHORS}" \
   --feature_adapt_samples 2000 \
+  --drift_probe_size 64 \
   --task_iterations "Aircraft:3000,Caltech101:1000,CIFAR100:1500,DTD:1500,EuroSAT:1000,Flowers:1500,Food:1500,MNIST:800,OxfordPet:1500,StanfordCars:3000,SUN397:5000"
 
 echo "[`date`] Done. Checkpoints in ${SAVE_PATH}/"

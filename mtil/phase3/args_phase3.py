@@ -50,11 +50,25 @@ def parse_phase3_arguments():
         help="Weight replay CE per task by (N-i)/N where i=task position, N=total tasks"
     )
     p3_parser.add_argument(
-        "--replay_storage", choices=["pixel", "feature"], default="pixel",
+        "--replay_storage", choices=["pixel", "feature", "remind"], default="pixel",
         help="What the replay buffer stores. 'pixel' keeps preprocessed image "
              "tensors (602 KB each, gradient reaches both towers). 'feature' "
              "keeps the final 512-d image embedding (1 KB each, gradient reaches "
-             "the text tower only)."
+             "the text tower only). 'remind' keeps PQ-compressed mid-network "
+             "tokens (6.3 KB each, gradient reaches the upper vision blocks and "
+             "the text tower, with the lower blocks frozen so nothing goes stale)."
+    )
+    p3_parser.add_argument(
+        "--remind_layer", type=int, default=6,
+        help="Visual transformer block to split at for --replay_storage remind. "
+             "Blocks below it are frozen after task 0. Lower stores earlier, "
+             "more general activations and frees more of the network to train; "
+             "higher compresses better and freezes more."
+    )
+    p3_parser.add_argument(
+        "--remind_pq_m", type=int, default=32,
+        help="Product-quantization subvectors per token for --replay_storage "
+             "remind. Bytes per token equals this. 768 must divide by it."
     )
     p3_parser.add_argument(
         "--rd_source", choices=["replay", "current"], default=None,
@@ -101,6 +115,14 @@ def parse_phase3_arguments():
                                 "adapts to the k-th neighbour distance.")
     p3_parser.add_argument("--feature_adapt_steps", type=int, default=500,
                            help="Fitting steps for --feature_adapt linear/mlp.")
+    p3_parser.add_argument(
+        "--drift_probe_size", type=int, default=0,
+        help="Images per task held aside purely to measure how stale stored "
+             "features become. Re-encoded at every later task boundary and "
+             "logged to feature_drift.csv. Never enters a loss, and must be "
+             "excluded from storage claims (~0.3 MB/image in fp16). 0 = off; "
+             "64 is a good default for a diagnostic run."
+    )
 
     p3_ns, remaining_argv = p3_parser.parse_known_args()
 
@@ -154,17 +176,25 @@ def parse_phase3_arguments():
     # ------------------------------------------------------------------ #
     args.replay_storage = p3_ns.replay_storage
     args.replay_encode_batch_size = p3_ns.replay_encode_batch_size
+    args.remind_layer = p3_ns.remind_layer
+    args.remind_pq_m = p3_ns.remind_pq_m
 
     if p3_ns.rd_source is not None:
         args.rd_source = p3_ns.rd_source
     else:
-        args.rd_source = "current" if args.replay_storage == "feature" else "replay"
+        args.rd_source = "replay" if args.replay_storage == "pixel" else "current"
 
-    if args.replay_storage == "feature" and args.rd_source == "replay":
+    if args.replay_storage != "pixel" and args.rd_source == "replay":
         raise ValueError(
-            "--rd_source replay needs pixel exemplars, but --replay_storage "
-            "feature keeps only embeddings. Use --rd_source current, or disable "
-            "the term with --no_replay_teacher_distill."
+            f"--rd_source replay needs pixel exemplars, but --replay_storage "
+            f"{args.replay_storage} keeps no images. Use --rd_source current, or "
+            f"disable the term with --no_replay_teacher_distill."
+        )
+
+    if args.replay_storage == "remind" and 768 % args.remind_pq_m:
+        raise ValueError(
+            f"--remind_pq_m {args.remind_pq_m} does not divide the ViT-B/16 "
+            f"token width of 768. Use 16, 24, 32, 48, 64, 96 or 128."
         )
 
     # ------------------------------------------------------------------ #
@@ -184,6 +214,13 @@ def parse_phase3_arguments():
         args.feature_adapt_k = p3_ns.feature_adapt_k
     else:
         args.feature_adapt_k = 32 if args.feature_adapt == "sdc" else 20
+
+    args.drift_probe_size = p3_ns.drift_probe_size
+    if args.drift_probe_size > 0 and args.replay_storage == "pixel":
+        raise ValueError(
+            "--drift_probe_size does not apply to pixel storage. Pixel "
+            "exemplars are re-encoded every step and cannot go stale."
+        )
 
     if args.feature_adapt != "none" and args.replay_storage != "feature":
         raise ValueError(

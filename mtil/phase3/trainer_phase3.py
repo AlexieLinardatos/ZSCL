@@ -66,7 +66,9 @@ from src.models.evaluation import zeroshot_classifier
 from .losses_phase3 import (
     compute_replay_teacher_distill_loss,
     compute_feature_replay_loss,
+    compute_remind_replay_loss,
 )
+from src.remind_buffer import freeze_below_layer
 
 
 # ============================================================================
@@ -184,12 +186,12 @@ def custom_finetune_phase3(args, replay_buffer=None):
     # Transfer, i.e. free).
     replay_storage = getattr(args, "replay_storage", "pixel")
     rd_source = getattr(
-        args, "rd_source", "current" if replay_storage == "feature" else "replay"
+        args, "rd_source", "replay" if replay_storage == "pixel" else "current"
     )
-    if replay_storage == "feature" and rd_source == "replay":
+    if replay_storage != "pixel" and rd_source == "replay":
         raise ValueError(
-            "rd_source='replay' needs pixel exemplars, but replay_storage="
-            "'feature' keeps only embeddings. Use rd_source='current'."
+            f"rd_source='replay' needs pixel exemplars, but replay_storage="
+            f"'{replay_storage}' keeps no images. Use rd_source='current'."
         )
 
     print(
@@ -206,6 +208,17 @@ def custom_finetune_phase3(args, replay_buffer=None):
     # Model setup (identical to Phase 2)                                  #
     # ------------------------------------------------------------------ #
     model, train_preprocess, val_preprocess, model_iter_count = load_base_model(args)
+
+    # REMIND freezes everything below the split layer once the codebook is
+    # fitted, which is what keeps stored activations valid for the rest of the
+    # run. Must happen before get_trainable_params so the optimizer never sees
+    # the frozen tensors. Task 0 trains unfrozen (no buffer yet, nothing stored).
+    if replay_storage == "remind" and replay_buffer is not None:
+        remind_layer = getattr(args, "remind_layer", 6)
+        n_frozen = freeze_below_layer(model, remind_layer)
+        print(f"[REMIND] Froze {n_frozen} parameter tensors below visual block "
+              f"{remind_layer} — stored activations cannot go stale.")
+
     model_fix = setup_wise_model(args, model)
     we_model, we_n = setup_averaging_model(args, model)
     l2_model = setup_l2_model(args, model)
@@ -288,10 +301,10 @@ def custom_finetune_phase3(args, replay_buffer=None):
     replay_iter_inf = None
     replay_batch_size = getattr(args, "replay_batch_size", 32)
     replay_loss_weight = getattr(args, "replay_loss_weight", 1.0)
-    replay_ce_fn = (
-        compute_feature_replay_loss if replay_storage == "feature"
-        else compute_replay_loss
-    )
+    replay_ce_fn = {
+        "feature": compute_feature_replay_loss,
+        "remind": compute_remind_replay_loss,
+    }.get(replay_storage, compute_replay_loss)
 
     if replay_buffer is not None and len(replay_buffer) > 0:
         print(f"[Phase3 Replay] {replay_buffer}")
