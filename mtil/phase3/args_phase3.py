@@ -71,6 +71,19 @@ def parse_phase3_arguments():
              "remind. Bytes per token equals this. 768 must divide by it."
     )
     p3_parser.add_argument(
+        "--remind_shared_codebook", action="store_true",
+        help="Fit one PQ codebook on task 0 and reuse it, as REMIND does. That "
+             "is sound on a single-domain stream; on MTIL it asks a codebook "
+             "fitted on Aircraft to quantize MNIST. Default is one codebook per "
+             "task, kept beside that task's codes. Ablation flag."
+    )
+    p3_parser.add_argument(
+        "--remind_no_whiten", action="store_true",
+        help="Skip per-channel standardization before quantizing. Whitening is "
+             "on by default because transformer residual streams carry outlier "
+             "channels that swamp the few PQ subspaces they land in. Ablation flag."
+    )
+    p3_parser.add_argument(
         "--rd_source", choices=["replay", "current"], default=None,
         help="Images fed to the replay teacher distillation term. 'replay' uses "
              "buffer exemplars (requires --replay_storage pixel); 'current' uses "
@@ -178,6 +191,8 @@ def parse_phase3_arguments():
     args.replay_encode_batch_size = p3_ns.replay_encode_batch_size
     args.remind_layer = p3_ns.remind_layer
     args.remind_pq_m = p3_ns.remind_pq_m
+    args.remind_shared_codebook = p3_ns.remind_shared_codebook
+    args.remind_no_whiten = p3_ns.remind_no_whiten
 
     if p3_ns.rd_source is not None:
         args.rd_source = p3_ns.rd_source

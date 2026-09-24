@@ -122,7 +122,7 @@ def compute_remind_replay_loss(model, replay_batch, logit_scale, replay_buffer, 
 
         # Decoding is a codebook lookup and carries no gradient; the tokens it
         # produces are the input to the trainable upper blocks.
-        tokens = replay_buffer.decode_tokens(replay_codes[mask])
+        tokens = replay_buffer.decode_tokens(replay_codes[mask], tid_int)
         img_emb = encode_from_layer(
             visual, tokens.to(text_emb.dtype), replay_buffer.layer,
             use_checkpoint=use_ckpt,

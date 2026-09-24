@@ -268,6 +268,8 @@ def finetune_multi_task_phase3(args):
             total_budget=args.replay_budget,
             layer=getattr(args, "remind_layer", 6),
             m=getattr(args, "remind_pq_m", 32),
+            per_task_codebook=not getattr(args, "remind_shared_codebook", False),
+            whiten=not getattr(args, "remind_no_whiten", False),
         )
     else:
         replay_buffer = ReplayBuffer(total_budget=args.replay_budget)

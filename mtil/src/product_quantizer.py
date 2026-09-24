@@ -143,6 +143,12 @@ class ProductQuantizer:
     def bytes_per_vector(self) -> int:
         return self.m
 
+    def codebook_nbytes(self) -> int:
+        """Size of the fitted codebooks themselves, stored fp16."""
+        if self.codebooks is None:
+            return 0
+        return self.codebooks.numel() * 2
+
     def state_dict(self):
         return {"m": self.m, "n_centroids": self.n_centroids,
                 "codebooks": self.codebooks}
