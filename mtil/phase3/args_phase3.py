@@ -78,10 +78,31 @@ def parse_phase3_arguments():
              "task, kept beside that task's codes. Ablation flag."
     )
     p3_parser.add_argument(
-        "--remind_no_whiten", action="store_true",
-        help="Skip per-channel standardization before quantizing. Whitening is "
-             "on by default because transformer residual streams carry outlier "
-             "channels that swamp the few PQ subspaces they land in. Ablation flag."
+        "--remind_no_standardize", "--remind_no_whiten", action="store_true",
+        dest="remind_no_standardize",
+        help="Skip per-channel standardization before quantizing. On by default "
+             "because transformer residual streams carry outlier channels that "
+             "dominate the norm of any PQ subspace they land in. Note it is "
+             "standardization, not whitening: it equalises per-channel variance "
+             "but does not decorrelate, so it cannot fix correlation inside a "
+             "contiguous subspace. Measured negative on the 11-task run. "
+             "--remind_no_whiten is accepted as the old spelling. Ablation flag."
+    )
+    p3_parser.add_argument(
+        "--remind_no_pq", action="store_true",
+        help="Store fp16 tokens verbatim instead of PQ codes. 302 kB an exemplar "
+             "against 6.3 kB, so not a deployable setting: it is the oracle that "
+             "separates 'quantization error is what costs accuracy' from "
+             "'mid-network replay is what costs accuracy'. If this matches the "
+             "quantized arm, no amount of codebook work will help."
+    )
+    p3_parser.add_argument(
+        "--remind_no_freeze", action="store_true",
+        help="Do not freeze the blocks below the tap. REMIND freezes because it "
+             "trains with SGD at high lr for a million steps and has no other "
+             "anchor; this trainer runs at 5e-6 with an L2 anchor and weight "
+             "averaging, so lower-block drift may be small enough that the freeze "
+             "buys nothing and only costs plasticity. Untested until this arm runs."
     )
     p3_parser.add_argument(
         "--rd_source", choices=["replay", "current"], default=None,
@@ -192,7 +213,9 @@ def parse_phase3_arguments():
     args.remind_layer = p3_ns.remind_layer
     args.remind_pq_m = p3_ns.remind_pq_m
     args.remind_shared_codebook = p3_ns.remind_shared_codebook
-    args.remind_no_whiten = p3_ns.remind_no_whiten
+    args.remind_no_standardize = p3_ns.remind_no_standardize
+    args.remind_no_pq = p3_ns.remind_no_pq
+    args.remind_no_freeze = p3_ns.remind_no_freeze
 
     if p3_ns.rd_source is not None:
         args.rd_source = p3_ns.rd_source

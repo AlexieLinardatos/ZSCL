@@ -4,8 +4,15 @@ Product quantization, as REMIND uses it to compress stored activations.
 A D-dimensional vector is split into m contiguous subvectors; each subspace gets
 its own codebook of 256 centroids learned by k-means, and the vector is stored as
 m bytes — one centroid index per subspace. For CLIP ViT-B/16's 768-d tokens at
-m=32 that is 768 floats (3072 bytes fp32) down to 32 bytes, a 96x reduction, at a
-reconstruction error small enough that the top of the network barely notices.
+m=32 that is 768 floats (3072 bytes fp32) down to 32 bytes, a 96x reduction.
+
+Be aware what that ratio costs here. 32 bytes over 768 dimensions is 1/3 of a bit
+per dimension, and the distortion-rate bound for a unit-variance source at that
+rate is a relative L2 error of 2^(-1/3) = 0.79. Measured error on CLIP ViT-B/16
+tokens sits at that bound, so the codebook is already near-optimal and no amount
+of fitting effort will lower it. Lowering it requires more bits per informative
+dimension (fewer tokens, or fewer dimensions after a projection), not a better
+quantizer. See remind_buffer for the storage modes that trade these off.
 
 The point is not compression for its own sake. REMIND's insight is that storing
 *mid-network* activations keeps the replayed sample on a real gradient path
@@ -54,9 +61,14 @@ class ProductQuantizer:
         """
         Learn one codebook per subspace from `x`, shape (N, D).
 
-        Fit once, on the first task's activations, and keep it fixed: a codebook
-        that moved between tasks would silently change the meaning of every code
-        already stored.
+        A codebook is only meaningful for the codes written against it. Sharing
+        one across tasks means it must never be refitted; giving each task its
+        own (the default in RemindReplayBuffer) removes that constraint, since
+        every task decodes with the book it was encoded by.
+
+        Callers should pass an already-subsampled CPU slice rather than the full
+        token population: `max_samples` will subsample here too, but only after
+        whatever was handed in has been materialised on this device.
         """
         n, d = x.shape
         if d % self.m:
@@ -105,6 +117,18 @@ class ProductQuantizer:
             nonempty = counts > 0
             centroids[nonempty] = new[nonempty] / counts[nonempty].unsqueeze(1)
 
+            # A cluster that empties would otherwise stay empty for the rest of
+            # the fit, wasting a codeword permanently. Faiss re-seeds it by
+            # splitting the largest cluster; do the same, with a small jitter so
+            # the two copies separate on the next iteration.
+            if (~nonempty).any():
+                donor = int(counts.argmax())
+                scale = centroids[donor].abs().mean().clamp_min(1e-8) * 1e-3
+                for dead in (~nonempty).nonzero(as_tuple=True)[0].tolist():
+                    centroids[dead] = centroids[donor] + torch.randn(
+                        centroids.shape[1], generator=g, device="cpu"
+                    ).to(centroids.device) * scale
+
         return centroids
 
     # ------------------------------------------------------------------
@@ -144,10 +168,16 @@ class ProductQuantizer:
         return self.m
 
     def codebook_nbytes(self) -> int:
-        """Size of the fitted codebooks themselves, stored fp16."""
+        """
+        Size of the fitted codebooks, counted at their real dtype.
+
+        fit() stacks the k-means output, which is fp32, so this is 4 bytes an
+        entry and not 2. An earlier version assumed fp16 and under-reported every
+        per-task codebook by half.
+        """
         if self.codebooks is None:
             return 0
-        return self.codebooks.numel() * 2
+        return self.codebooks.numel() * self.codebooks.element_size()
 
     def state_dict(self):
         return {"m": self.m, "n_centroids": self.n_centroids,

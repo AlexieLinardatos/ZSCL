@@ -269,7 +269,8 @@ def finetune_multi_task_phase3(args):
             layer=getattr(args, "remind_layer", 6),
             m=getattr(args, "remind_pq_m", 32),
             per_task_codebook=not getattr(args, "remind_shared_codebook", False),
-            whiten=not getattr(args, "remind_no_whiten", False),
+            standardize=not getattr(args, "remind_no_standardize", False),
+            quantize=not getattr(args, "remind_no_pq", False),
         )
     else:
         replay_buffer = ReplayBuffer(total_budget=args.replay_budget)
@@ -500,9 +501,11 @@ def finetune_multi_task_phase3(args):
             del encoder
             torch.cuda.empty_cache()
         elif replay_storage == "remind":
-            # Encode to the split layer and store PQ codes. The codebook is
-            # fitted on task 0 only; every later task reuses it, because
-            # refitting would change the meaning of codes already stored.
+            # Encode to the split layer and store PQ codes. By default each
+            # task fits its own codebook, kept beside its codes, so a later fit
+            # cannot change the meaning of an earlier code. Pass
+            # --remind_shared_codebook for REMIND's fit-once policy, which is
+            # sound on a single-domain stream and not on eleven.
             encoder = _load_encoder(args, os.path.join(args.save, f"{task_name}.pth"))
 
             # Under REMIND this measures how far the *full* encoder moved, not

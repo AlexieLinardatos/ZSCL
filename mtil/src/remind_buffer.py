@@ -154,7 +154,8 @@ class RemindReplayBuffer:
     """
 
     def __init__(self, total_budget: int, layer: int = 6, m: int = 32,
-                 per_task_codebook: bool = True, whiten: bool = True):
+                 per_task_codebook: bool = True, standardize: bool = True,
+                 quantize: bool = True):
         """
         Args:
             per_task_codebook: fit a fresh codebook per task instead of sharing
@@ -163,25 +164,40 @@ class RemindReplayBuffer:
                 fitted on Aircraft is being asked to quantize MNIST. Each task
                 decodes with the codebook it was encoded by, so nothing a later
                 fit does can change the meaning of an earlier code.
-            whiten: standardise each channel over the task's token population
-                before quantizing, and undo it on decode. Transformer residual
-                streams carry a few outlier channels an order of magnitude
-                larger than the rest; contiguous PQ splitting assumes variance
-                is spread evenly, so those channels swamp the handful of
-                subspaces they land in and leave the others starved. Note this
-                is per-CHANNEL over the population, not per-token LayerNorm —
-                LN rescales each token but leaves the relative scale between
-                channels exactly as it was, which is the part that hurts.
+            standardize: centre and scale each channel over the task's token
+                population before quantizing, and undo it on decode. Transformer
+                residual streams carry a few outlier channels an order of
+                magnitude larger than the rest, and those channels dominate the
+                norm of any subspace they land in.
+
+                This is per-CHANNEL over the population, not per-token
+                LayerNorm: LN rescales each token but leaves the relative scale
+                between channels exactly as it was. It is also NOT whitening,
+                which is what an earlier version of this docstring claimed.
+                Standardisation equalises per-channel variance but leaves the
+                covariance structure intact, so it stops one channel dominating
+                a norm but cannot fix correlation between channels inside a
+                contiguous subspace. Decorrelation needs PCA or OPQ. Measured
+                effect on the 11-task run was negative (Last 84.62 -> 83.66),
+                consistent with it making the tokens more isotropic and so
+                harder to quantize.
+            quantize: run product quantization at all. False stores fp16 tokens
+                verbatim, 302 kB an exemplar against 6.3 kB. That is not a
+                deployable configuration; it is the oracle that separates "the
+                compression is the problem" from "mid-network replay is the
+                problem". Standardisation is skipped in that mode, having
+                nothing to serve.
         """
         self.total_budget = total_budget
         self.layer = layer
         self.m = m
         self.per_task_codebook = per_task_codebook
-        self.whiten = whiten
+        self.standardize = standardize and quantize
+        self.quantize = quantize
         # Shared codebook, used only when per_task_codebook is False.
         self.pq = ProductQuantizer(m=m)
         self.pqs: Dict[int, ProductQuantizer] = {}
-        # task_id -> (mu, sd), each (D,) fp16. Empty when whiten is False.
+        # task_id -> (mu, sd), each (D,) fp16. Empty when standardize is False.
         self.norm: Dict[int, Tuple[torch.Tensor, torch.Tensor]] = {}
         self.memory: Dict[int, Dict[str, torch.Tensor]] = {}
         self.task_info: Dict[int, Dict] = {}
@@ -247,21 +263,37 @@ class RemindReplayBuffer:
         labels = torch.cat(label_batches, dim=0)
         n_stored, n_tokens, dim = tokens.shape
 
-        flat = tokens.reshape(-1, dim)                    # (N*L, D), original space
+        flat = tokens.reshape(-1, dim)                    # (N*L, D), CPU fp32
+
+        # Oracle mode: keep the tokens verbatim, no codebook, no statistics.
+        # 302 kB an exemplar. Only for answering whether compression is what
+        # costs the accuracy; never a configuration to report as a method.
+        if not self.quantize:
+            self.norm.pop(task_id, None)
+            self.pqs.pop(task_id, None)
+            self.memory[task_id] = {"codes": tokens.half(), "labels": labels}
+            print(f"[REMIND] task {task_id}: stored {n_stored} exemplars as fp16 "
+                  f"tokens, no quantization ({tokens.numel() * 2 / 1e6:.1f} MB)")
+            self.task_info[task_id] = {"classnames": classnames, "template": template}
+            return
 
         # Channel standardisation. Statistics come from this task's own tokens,
-        # so each task is whitened against the distribution it actually has --
-        # the point of the exercise on a benchmark whose domains do not share one.
-        if self.whiten:
-            # Round to the precision they are stored at before using them, so
-            # the forward transform is the exact inverse of what decode applies.
+        # so each task is scaled against the distribution it actually has, which
+        # matters on a benchmark whose domains do not share one. Rounded to the
+        # precision they are stored at before use, so the forward transform is
+        # the exact inverse of what decode applies.
+        if self.standardize:
             mu = flat.mean(dim=0).half().cpu()
             sd = flat.std(dim=0).clamp_min(1e-6).half().cpu()
             self.norm[task_id] = (mu, sd)
-            flat_q = (flat - mu.float()) / sd.float()
+            mu_f, sd_f = mu.float(), sd.float()
         else:
             self.norm.pop(task_id, None)
-            flat_q = flat
+            mu_f = sd_f = None
+
+        def _standardise(chunk: torch.Tensor) -> torch.Tensor:
+            """Applied per chunk so the standardised copy is never materialised whole."""
+            return chunk if mu_f is None else (chunk - mu_f) / sd_f
 
         if self.per_task_codebook:
             pq = ProductQuantizer(m=self.m)
@@ -270,33 +302,58 @@ class RemindReplayBuffer:
             pq = self.pq
             should_fit = fit_pq if fit_pq is not None else (pq.codebooks is None)
 
+        # Draw the fit and probe rows on the CPU and disjointly. Moving the whole
+        # (N*L, D) tensor to the GPU would be ~6.6 GB at an 11k budget, most of
+        # which fit() then discards; and a probe taken from the fit rows measures
+        # the codebook in sample, which flatters it.
+        n_rows = flat.shape[0]
+        g = torch.Generator().manual_seed(0)
+        perm = torch.randperm(n_rows, generator=g)
+        n_fit = min(200_000, n_rows)
+        fit_idx = perm[:n_fit]
+        probe_idx = perm[n_fit:n_fit + 20_000]
+        if probe_idx.numel() == 0:                     # tiny task: nothing held out
+            probe_idx = fit_idx[:min(20_000, n_fit)]
+
         if should_fit:
             scope = f"task {task_id}" if self.per_task_codebook else "shared"
-            print(f"[REMIND] Fitting PQ ({scope}) on {flat_q.shape[0]} token "
-                  f"vectors (dim={dim}, m={self.m}, whiten={self.whiten})")
-            pq.fit(flat_q.cuda())
+            print(f"[REMIND] Fitting PQ ({scope}) on {n_fit} token vectors "
+                  f"(dim={dim}, m={self.m}, standardize={self.standardize})")
+            pq.fit(_standardise(flat[fit_idx]).cuda(), max_samples=n_fit)
 
             # Two errors, because they answer different questions. The quantised
-            # one is how well the codebook covers what it was fitted on. The
-            # original-space one is what the network actually receives back, and
-            # is the number comparable to runs made before whitening existed.
-            probe = flat_q[:20000].cuda()
-            err_q = pq.reconstruction_error(probe)
-            if self.whiten:
-                recon = (pq.decode(pq.encode(probe))
-                         * sd.float().cuda() + mu.float().cuda())
-                ref = flat[:20000].cuda()
+            # one is how well the codebook covers the space it was fitted in. The
+            # original-space one is what the network receives back; it reads lower
+            # because the outlier channels dominate the norm and are easy to fit,
+            # so it understates the error on the informative directions.
+            probe_raw = flat[probe_idx]
+            probe_std = _standardise(probe_raw).cuda()
+            err_q = pq.reconstruction_error(probe_std)
+            if self.standardize:
+                recon = pq.decode(pq.encode(probe_std)) * sd_f.cuda() + mu_f.cuda()
+                ref = probe_raw.cuda()
                 err_o = ((recon - ref).norm(dim=-1)
                          / ref.norm(dim=-1).clamp_min(1e-8)).mean().item()
             else:
                 err_o = err_q
-            print(f"[REMIND] {pq}  mean relative reconstruction error: "
+            held_out = "held-out" if probe_idx is not fit_idx else "in-sample"
+            print(f"[REMIND] {pq}  mean relative reconstruction error "
+                  f"({held_out}, {probe_idx.numel()} rows): "
                   f"{err_o:.4f} (original space), {err_q:.4f} (quantised space)")
+            del probe_std
 
         if self.per_task_codebook:
             self.pqs[task_id] = pq
 
-        codes = pq.encode(flat_q.cuda()).cpu()
+        # Encode in chunks for the same reason the fit subsample is drawn on CPU.
+        code_chunks = []
+        for i in range(0, n_rows, 262_144):
+            code_chunks.append(
+                pq.encode(_standardise(flat[i:i + 262_144]).cuda()).cpu()
+            )
+        codes = torch.cat(code_chunks)
+        torch.cuda.empty_cache()
+
         self.memory[task_id] = {
             "codes": codes.reshape(n_stored, n_tokens, self.m),
             "labels": labels,
@@ -361,6 +418,8 @@ class RemindReplayBuffer:
         written with; callers already loop per task to build that task's text
         embeddings, so it is on hand.
         """
+        if not self.quantize:
+            return codes.float()          # already tokens, stored fp16
         b, l, m = codes.shape
         flat = self._pq_for(task_id).decode(codes.reshape(-1, m))
         if task_id in self.norm:
@@ -374,7 +433,8 @@ class RemindReplayBuffer:
             "layer": self.layer,
             "m": self.m,
             "per_task_codebook": self.per_task_codebook,
-            "whiten": self.whiten,
+            "standardize": self.standardize,
+            "quantize": self.quantize,
             "pq": self.pq.state_dict(),
             "pqs": {t: p.state_dict() for t, p in self.pqs.items()},
             "norm": self.norm,
@@ -385,9 +445,11 @@ class RemindReplayBuffer:
         self.layer = state.get("layer", self.layer)
         self.m = state.get("m", self.m)
         # Buffers written before per-task codebooks existed carry only "pq",
-        # and were necessarily unwhitened with one shared codebook.
+        # and were necessarily unstandardised with one shared codebook.
         self.per_task_codebook = state.get("per_task_codebook", False)
-        self.whiten = state.get("whiten", False)
+        # "whiten" is the old key for what is really per-channel standardisation.
+        self.standardize = state.get("standardize", state.get("whiten", False))
+        self.quantize = state.get("quantize", True)
         self.pq.load_state_dict(state["pq"])
         self.pqs = {}
         for t, s in state.get("pqs", {}).items():
@@ -401,6 +463,9 @@ class RemindReplayBuffer:
 
     def nbytes(self) -> int:
         """Codes plus the codebooks and statistics needed to decode them."""
+        if not self.quantize:
+            return sum(v["codes"].numel() * v["codes"].element_size()
+                       for v in self.memory.values())
         code_bytes = sum(v["codes"].numel() for v in self.memory.values())
         if self.per_task_codebook:
             book_bytes = sum(p.codebook_nbytes() for p in self.pqs.values())
@@ -413,8 +478,10 @@ class RemindReplayBuffer:
     def __repr__(self) -> str:
         lines = [
             f"RemindReplayBuffer(budget={self.total_budget}, layer={self.layer}, "
-            f"m={self.m}, codebook={'per-task' if self.per_task_codebook else 'shared'}, "
-            f"whiten={self.whiten}, tasks={len(self.memory)}, total_stored={len(self)}, "
+            f"m={self.m if self.quantize else 'off'}, "
+            f"codebook={'per-task' if self.per_task_codebook else 'shared'}, "
+            f"standardize={self.standardize}, tasks={len(self.memory)}, "
+            f"total_stored={len(self)}, "
             f"size={self.nbytes() / 1e6:.1f} MB)"
         ]
         for tid, entry in sorted(self.memory.items()):

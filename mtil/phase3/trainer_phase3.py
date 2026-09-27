@@ -215,9 +215,14 @@ def custom_finetune_phase3(args, replay_buffer=None):
     # the frozen tensors. Task 0 trains unfrozen (no buffer yet, nothing stored).
     if replay_storage == "remind" and replay_buffer is not None:
         remind_layer = getattr(args, "remind_layer", 6)
-        n_frozen = freeze_below_layer(model, remind_layer)
-        print(f"[REMIND] Froze {n_frozen} parameter tensors below visual block "
-              f"{remind_layer} — stored activations cannot go stale.")
+        if getattr(args, "remind_no_freeze", False):
+            print(f"[REMIND] NOT freezing below block {remind_layer}. Stored "
+                  f"activations can now go stale; this arm exists to measure "
+                  f"whether they actually do, given the L2 anchor and lr.")
+        else:
+            n_frozen = freeze_below_layer(model, remind_layer)
+            print(f"[REMIND] Froze {n_frozen} parameter tensors below visual block "
+                  f"{remind_layer}, so stored activations cannot go stale.")
 
     model_fix = setup_wise_model(args, model)
     we_model, we_n = setup_averaging_model(args, model)
@@ -235,6 +240,18 @@ def custom_finetune_phase3(args, replay_buffer=None):
     loss_interval = args.loss_interval
 
     params = get_trainable_params(args, model)
+    # get_trainable_params selects by train_mode and does not consult
+    # requires_grad, so anything frozen above would still be handed to AdamW.
+    # Harmless only for as long as those grads stay None: weight decay is applied
+    # in the update step, so a change that materialises zero grads (a hook, or
+    # zero_grad(set_to_none=False)) would silently decay the frozen blocks and
+    # invalidate every stored code. Filter here rather than inside
+    # get_trainable_params, which other call sites share.
+    n_before = len(params)
+    params = [p for p in params if p.requires_grad]
+    if len(params) != n_before:
+        print(f"[Optimizer] {n_before - len(params)} frozen tensors withheld "
+              f"from the optimizer ({len(params)} trainable).")
     optimizer, scheduler = setup_optimizer(args, params, total_iterations)
 
     model = model.cuda()
