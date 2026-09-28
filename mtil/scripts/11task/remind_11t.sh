@@ -85,12 +85,38 @@ mkdir -p logs
 LAYER="${LAYER:-6}"
 PQ_M="${PQ_M:-32}"
 
-SAVE_PATH="ckpt/11task/remind_l${LAYER}_m${PQ_M}"
+# REMIND_EXTRA passes ablation flags through to the trainer. The tag derived
+# from it goes into the save path, so arms never write into each other's
+# task_summary.csv (which is appended to, not overwritten, and would silently
+# produce wrong metrics if two runs shared a directory).
+#
+#   LAYER=2 REMIND_EXTRA="--remind_no_freeze"                sbatch remind_11t.sh
+#   REMIND_EXTRA="--remind_no_pq --remind_no_freeze"         sbatch remind_11t.sh
+#   REMIND_EXTRA="--remind_shared_codebook"                  sbatch remind_11t.sh
+#   REMIND_EXTRA="--remind_no_standardize"                   sbatch remind_11t.sh
+REMIND_EXTRA="${REMIND_EXTRA:-}"
+
+TAG=""
+case "${REMIND_EXTRA}" in *no_pq*)             TAG="${TAG}_nopq" ;; esac
+case "${REMIND_EXTRA}" in *no_freeze*)         TAG="${TAG}_nofreeze" ;; esac
+case "${REMIND_EXTRA}" in *shared_codebook*)   TAG="${TAG}_sharedbook" ;; esac
+case "${REMIND_EXTRA}" in *no_standardize*|*no_whiten*) TAG="${TAG}_nostd" ;; esac
+
+SAVE_PATH="ckpt/11task/remind_l${LAYER}_m${PQ_M}${TAG}"
 mkdir -p "${SAVE_PATH}"
 
 EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397,ImageNet"
 
 echo "[`date`] Starting REMIND — split at block ${LAYER}, PQ m=${PQ_M}"
+echo "[`date`] Extra flags: '${REMIND_EXTRA:-none}'  ->  ${SAVE_PATH}"
+
+if [ -s "${SAVE_PATH}/task_summary.csv" ]; then
+  echo "WARNING: ${SAVE_PATH}/task_summary.csv already exists."
+  echo "         _save_task_summary APPENDS, so this run would mix two sets of"
+  echo "         rows and compute_metrics.py would report wrong numbers without"
+  echo "         erroring. Move or delete it first."
+  exit 1
+fi
 
 # ---------------------------------------------------------------------------
 # FLAG LEGEND — ExRD HEADLINE BASELINE (all extensions compare against this).
@@ -127,6 +153,7 @@ srun python -m phase3.train_phase3 \
   --replay_storage remind \
   --remind_layer "${LAYER}" \
   --remind_pq_m "${PQ_M}" \
+  ${REMIND_EXTRA} \
   --replay_budget 11000 \
   --replay_batch_size 8 \
   --replay_loss_weight 1.0 \
