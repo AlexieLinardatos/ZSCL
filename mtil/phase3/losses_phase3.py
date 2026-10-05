@@ -41,10 +41,6 @@ def compute_replay_teacher_distill_loss(
     Returns:
         Scalar loss tensor.
     """
-    T = getattr(args, "T", 2.0)
-    weight = 0.5 if getattr(args, "weight_adjust", False) else 1.0
-    use_text_loss = getattr(args, "text_loss", False)
-
     with torch.no_grad():
         # Reference text embeddings (reuse cached if provided)
         if ref_embeddings is None:
@@ -58,6 +54,22 @@ def compute_replay_teacher_distill_loss(
     # Student image embeddings on replay batch (grad enabled)
     student_img = model(replay_images, None)
     student_img = student_img / student_img.norm(dim=-1, keepdim=True)
+
+    return _distill_on_ref_texts(
+        teacher_img, student_img, ref_embeddings, logit_scale, args
+    )
+
+
+def _distill_on_ref_texts(teacher_img, student_img, ref_embeddings, logit_scale, args):
+    """
+    The L_RD objective given normalised teacher and student image embeddings.
+
+    Shared by every replay distillation variant so they differ only in where
+    the two embeddings come from, never in the loss applied to them.
+    """
+    T = getattr(args, "T", 2.0)
+    weight = 0.5 if getattr(args, "weight_adjust", False) else 1.0
+    use_text_loss = getattr(args, "text_loss", False)
 
     # Similarity logits: (B, num_ref_classes)
     logits_teacher = logit_scale.exp() * teacher_img @ ref_embeddings.t()
@@ -73,6 +85,82 @@ def compute_replay_teacher_distill_loss(
         )
 
     return total_loss
+
+
+def compute_remind_distill_loss(model, ref_model, replay_batch, replay_buffer,
+                                logit_scale, args, target, ref_embeddings):
+    """
+    L_RD on stored mid-network tokens instead of images.
+
+    The student always runs the decoded tokens through its trainable upper
+    blocks. The two variants differ only in the teacher's embedding:
+
+      'tmd'  Token-Matched Distillation. The frozen teacher runs its own upper
+             blocks on the same decoded tokens, live, every step. Inputs match
+             exactly, so PQ error appears on both sides. Caveat: the tokens were
+             produced by the student's lower blocks, which trained during task 0
+             before being frozen, so the teacher's upper half is fed activations
+             from a lower half that is not its own.
+
+      'iad'  Image-Anchored Distillation. The teacher's embedding of the real
+             image, computed once when the exemplar was stored. The teacher is
+             frozen, so that target is exact and never goes stale. The student
+             sees PQ-reconstructed tokens and must match a clean target, so this
+             term also asks the upper blocks to undo the quantisation error.
+
+    Args:
+        replay_batch:   (codes, labels, task_ids, teacher_embs) from
+                        FlatRemindDataset.
+        target:         'tmd' or 'iad'.
+        ref_embeddings: cached, normalised teacher text embeddings of ref_texts.
+    """
+    from src.remind_buffer import encode_from_layer
+
+    codes, _, task_ids, teacher_embs = replay_batch
+    codes = codes.cuda()
+    task_ids = task_ids.cuda()
+
+    # Decode per task, since each task has its own codebook, back into the
+    # batch's original row order so teacher targets stay aligned.
+    tokens = None
+    for tid in task_ids.unique().tolist():
+        mask = task_ids == tid
+        dec = replay_buffer.decode_tokens(codes[mask], int(tid))
+        if tokens is None:
+            tokens = dec.new_empty(codes.shape[0], *dec.shape[1:])
+        tokens[mask] = dec
+
+    visual = model.module.visual if hasattr(model, "module") else model.visual
+    use_ckpt = getattr(visual.transformer, "use_checkpoint", False)
+    student_img = encode_from_layer(
+        visual, tokens.to(visual.conv1.weight.dtype), replay_buffer.layer,
+        use_checkpoint=use_ckpt,
+    ).float()
+    student_img = student_img / student_img.norm(dim=-1, keepdim=True)
+
+    with torch.no_grad():
+        if target == "tmd":
+            t_visual = (ref_model.module.visual if hasattr(ref_model, "module")
+                        else ref_model.visual)
+            teacher_img = encode_from_layer(
+                t_visual, tokens.to(t_visual.conv1.weight.dtype),
+                replay_buffer.layer,
+            ).float()
+        elif target == "iad":
+            if teacher_embs.shape[-1] == 0:
+                raise RuntimeError(
+                    "--rd_source iad needs teacher targets stored with each "
+                    "exemplar, but this buffer has none (saved before they "
+                    "existed?). Start the run fresh."
+                )
+            teacher_img = teacher_embs.cuda().float()
+        else:
+            raise ValueError(f"unknown remind distillation target '{target}'")
+        teacher_img = teacher_img / teacher_img.norm(dim=-1, keepdim=True)
+
+    return _distill_on_ref_texts(
+        teacher_img, student_img, ref_embeddings.float(), logit_scale, args
+    )
 
 
 def compute_remind_replay_loss(model, replay_batch, logit_scale, replay_buffer, args,
@@ -95,7 +183,7 @@ def compute_remind_replay_loss(model, replay_batch, logit_scale, replay_buffer, 
     """
     from src.remind_buffer import encode_from_layer
 
-    replay_codes, replay_labels, task_ids = replay_batch
+    replay_codes, replay_labels, task_ids = replay_batch[:3]
     replay_codes = replay_codes.cuda()
     replay_labels = replay_labels.cuda()
     task_ids = task_ids.cuda()

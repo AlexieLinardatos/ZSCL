@@ -102,13 +102,27 @@ case "${REMIND_EXTRA}" in *no_freeze*)         TAG="${TAG}_nofreeze" ;; esac
 case "${REMIND_EXTRA}" in *shared_codebook*)   TAG="${TAG}_sharedbook" ;; esac
 case "${REMIND_EXTRA}" in *no_standardize*|*no_whiten*) TAG="${TAG}_nostd" ;; esac
 
+# RD_SOURCE picks what the replay-distillation term distils on. Unset keeps the
+# trainer default ('current' under remind), so existing runs and their save
+# paths reproduce exactly.
+#   RD_SOURCE=none  no replay distillation (control)
+#   RD_SOURCE=tmd   Token-Matched: teacher upper half on the same stored tokens
+#   RD_SOURCE=iad   Image-Anchored: teacher embedding of the real image, cached
+#   LAYER=2 PQ_M=128 RD_SOURCE=iad sbatch remind_11t.sh
+RD_SOURCE="${RD_SOURCE:-}"
+RD_FLAG=""
+if [ -n "${RD_SOURCE}" ]; then
+  RD_FLAG="--rd_source ${RD_SOURCE}"
+  TAG="${TAG}_rd${RD_SOURCE}"
+fi
+
 SAVE_PATH="ckpt/11task/remind_l${LAYER}_m${PQ_M}${TAG}"
 mkdir -p "${SAVE_PATH}"
 
 EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397,ImageNet"
 
 echo "[`date`] Starting REMIND — split at block ${LAYER}, PQ m=${PQ_M}"
-echo "[`date`] Extra flags: '${REMIND_EXTRA:-none}'  ->  ${SAVE_PATH}"
+echo "[`date`] Extra flags: '${REMIND_EXTRA:-none}' '${RD_FLAG:-}'  ->  ${SAVE_PATH}"
 
 if [ -s "${SAVE_PATH}/task_summary.csv" ]; then
   echo "WARNING: ${SAVE_PATH}/task_summary.csv already exists."
@@ -154,6 +168,7 @@ srun python -m phase3.train_phase3 \
   --remind_layer "${LAYER}" \
   --remind_pq_m "${PQ_M}" \
   ${REMIND_EXTRA} \
+  ${RD_FLAG} \
   --replay_budget 11000 \
   --replay_batch_size 8 \
   --replay_loss_weight 1.0 \

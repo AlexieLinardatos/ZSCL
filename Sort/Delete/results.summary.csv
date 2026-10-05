@@ -1,0 +1,45 @@
+group,run,Last,Avg,Transfer [ImageNet],Transfer [upper-tri],Diag,rows,tasks,status,path
+Baselines,ckpt/11task/ablation_zscl_only,83.7865,75.8764,68.6852,69.3938,87.1167,11,11,ok,results_sync/ckpt/11task/ablation_zscl_only/task_summary.csv
+Main: pixel replay + ExRD,ckpt/11task/ablation_full_v3,85.3241,77.0665,68.1771,69.2732,86.9779,11,11,ok,results_sync/ckpt/11task/ablation_full_v3/task_summary.csv
+Main: pixel replay + ExRD,ckpt/11task/phase3_no_lora,84.2695,75.7626,67.2131,69.473,87.8333,10,11,PARTIAL,results_sync/ckpt/11task/phase3_no_lora/task_summary.csv
+Main: pixel replay + ExRD,ckpt/11task/phase3_no_lora_v2,81.1224,73.996,67.64,67.1312,87.1915,8,11,PARTIAL,results_sync/ckpt/11task/phase3_no_lora_v2/task_summary.csv
+Main: pixel replay + ExRD,ckpt/11task/phase3_no_lora_v3,85.9369,77.0636,68.1262,69.15,87.158,11,11,ok,results_sync/ckpt/11task/phase3_no_lora_v3/task_summary.csv
+Main: pixel replay + ExRD,ckpt/11task/phase3_no_lora_v4,86.1698,77.1713,68.3673,69.1801,87.1503,11,11,ok,results_sync/ckpt/11task/phase3_no_lora_v4/task_summary.csv
+Main: pixel replay + ExRD,ckpt/11task/phase3_no_lora_v5,86.133,77.2325,68.1112,68.9693,87.1661,11,11,ok,results_sync/ckpt/11task/phase3_no_lora_v5/task_summary.csv
+Main: pixel replay + ExRD,ckpt/11task/phase3_no_lora_v6,86.1355,77.073,68.2426,68.9284,87.1484,11,11,ok,results_sync/ckpt/11task/phase3_no_lora_v6/task_summary.csv
+Seeds / task order,ckpt/11task/phase3_no_lora_seed1,86.3353,77.1754,68.0826,68.9117,87.2409,11,11,ok,results_sync/ckpt/11task/phase3_no_lora_seed1/task_summary.csv
+Seeds / task order,ckpt/11task/phase3_no_lora_seed2,86.3424,77.1755,68.093,68.8624,87.2617,11,11,ok,results_sync/ckpt/11task/phase3_no_lora_seed2/task_summary.csv
+Seeds / task order,ckpt/11task/phase3_no_lora_v4_orderII,85.7416,75.274,68.5558,60.2439,87.2199,11,11,ok,results_sync/ckpt/11task/phase3_no_lora_v4_orderII/task_summary.csv
+Ablations,ckpt/11task/ablation_no_zscl_no_rd,86.6176,76.2722,64.3766,66.787,86.8644,11,11,ok,results_sync/ckpt/11task/ablation_no_zscl_no_rd/task_summary.csv
+Ablations,ckpt/11task/ablation_no_zscl_with_rd,86.2418,77.0577,66.7205,68.9382,87.0483,11,11,ok,results_sync/ckpt/11task/ablation_no_zscl_with_rd/task_summary.csv
+Ablations,ckpt/11task/ablation_prop_replay,86.4446,77.5691,68.0047,69.2107,86.9492,11,11,ok,results_sync/ckpt/11task/ablation_prop_replay/task_summary.csv
+Ablations,ckpt/11task/ablation_uniform_replay,86.4367,77.6502,67.9875,69.2071,86.9544,11,11,ok,results_sync/ckpt/11task/ablation_uniform_replay/task_summary.csv
+Feature replay,ckpt/11task/featrep_lp_both,84.8938,76.226,67.9455,68.9884,86.8034,11,11,ok,results_sync/ckpt/11task/featrep_lp_both/task_summary.csv
+Feature replay,ckpt/11task/featrep_lp_text,84.7288,76.0585,68.0504,68.7761,86.7834,11,11,ok,results_sync/ckpt/11task/featrep_lp_text/task_summary.csv
+Feature replay,ckpt/11task/featrep_sdc_image,84.6475,76.2045,67.8992,68.8789,86.7056,11,11,ok,results_sync/ckpt/11task/featrep_sdc_image/task_summary.csv
+Feature replay,ckpt/11task/featrep_v0,84.7922,76.0802,68.1153,68.8144,86.7249,11,11,ok,results_sync/ckpt/11task/featrep_v0/task_summary.csv
+REMIND (VQ),ckpt/11task/remind_l2_m32,84.2862,75.9864,68.4919,69.0366,86.6349,11,11,ok,results_sync/ckpt/11task/remind_l2_m32/task_summary.csv
+REMIND (VQ),ckpt/11task/remind_l6_m128,85.8774,76.8304,68.6068,69.0979,86.3838,11,11,ok,results_sync/ckpt/11task/remind_l6_m128/task_summary.csv
+REMIND (VQ),ckpt/11task/remind_l6_m32,83.6599,75.6525,68.6613,68.9559,86.3575,11,11,ok,results_sync/ckpt/11task/remind_l6_m32/task_summary.csv
+REMIND (VQ),ckpt/11task/remind_l6_m32_OLD_sharedbook,84.6211,75.9995,68.546,68.8833,86.2719,11,11,ok,results_sync/ckpt/11task/remind_l6_m32_OLD_sharedbook/task_summary.csv
+REMIND (VQ),ckpt/11task/remind_l6_m64,84.7163,76.1454,68.7621,69.0965,86.2714,11,11,ok,results_sync/ckpt/11task/remind_l6_m64/task_summary.csv
+Buffer sweep,ckpt/11task/robustness/buf_1k_exrd,81.1841,74.9352,67.1694,68.4382,87.2333,11,11,ok,results_sync/ckpt/11task/robustness/buf_1k_exrd/task_summary.csv
+Buffer sweep,ckpt/11task/robustness/buf_1k_nord,82.7268,75.926,67.2177,68.9797,87.1462,11,11,ok,results_sync/ckpt/11task/robustness/buf_1k_nord/task_summary.csv
+Buffer sweep,ckpt/11task/robustness/buf_3k_exrd,84.23,76.3802,67.7881,69.0107,87.0862,11,11,ok,results_sync/ckpt/11task/robustness/buf_3k_exrd/task_summary.csv
+Buffer sweep,ckpt/11task/robustness/buf_3k_nord,85.4805,76.9829,67.7616,69.1158,86.9541,11,11,ok,results_sync/ckpt/11task/robustness/buf_3k_nord/task_summary.csv
+Buffer sweep,ckpt/11task/robustness/buf_5500_exrd,85.5561,76.8754,67.6281,68.9269,87.1317,11,11,ok,results_sync/ckpt/11task/robustness/buf_5500_exrd/task_summary.csv
+Buffer sweep,ckpt/11task/robustness/buf_5500_nord,86.23,77.3649,67.6265,69.0122,87.1878,11,11,ok,results_sync/ckpt/11task/robustness/buf_5500_nord/task_summary.csv
+Exemplar selection,ckpt/11task/phase3_exemplar_el2n,85.9728,76.8704,68.0104,68.7094,86.9575,11,11,ok,results_sync/ckpt/11task/phase3_exemplar_el2n/task_summary.csv
+Exemplar selection,ckpt/11task/phase3_exemplar_gcr,86.1674,76.8716,68.32,68.477,87.0634,11,11,ok,results_sync/ckpt/11task/phase3_exemplar_gcr/task_summary.csv
+Exemplar selection,ckpt/11task/phase3_exemplar_herding,86.1086,76.9317,68.199,68.6515,87.03,11,11,ok,results_sync/ckpt/11task/phase3_exemplar_herding/task_summary.csv
+Extensions 1-3,ckpt/11task/phase3_ext1_coverage,86.1207,77.0097,67.8478,68.9042,87.052,11,11,ok,results_sync/ckpt/11task/phase3_ext1_coverage/task_summary.csv
+Extensions 1-3,ckpt/11task/phase3_ext2_selftext,86.2239,77.1584,68.3034,69.0502,87.1201,11,11,ok,results_sync/ckpt/11task/phase3_ext2_selftext/task_summary.csv
+Extensions 1-3,ckpt/11task/phase3_ext3_recency,86.2021,77.2295,68.3439,69.244,87.1694,11,11,ok,results_sync/ckpt/11task/phase3_ext3_recency/task_summary.csv
+Multi-teacher merge,ckpt/11task/phase3_multi_teacher_merge_v1_a01,86.3092,77.1365,68.1044,68.7792,87.2921,11,11,ok,results_sync/ckpt/11task/phase3_multi_teacher_merge_v1_a01/task_summary.csv
+Multi-teacher merge,ckpt/11task/phase3_multi_teacher_merge_v3_a01,86.3276,77.1793,68.1294,68.8613,87.3252,11,11,ok,results_sync/ckpt/11task/phase3_multi_teacher_merge_v3_a01/task_summary.csv
+LLM anchor (superseded),ckpt/11task/phase3_llm_anchor_lam03,86.3569,77.0579,67.5969,68.6751,87.2339,11,11,ok,results_sync/ckpt/11task/phase3_llm_anchor_lam03/task_summary.csv
+LLM anchor (superseded),ckpt/11task/phase3_llm_anchor_no_zscl_text,86.6225,77.3047,67.6265,68.8393,87.4108,11,11,ok,results_sync/ckpt/11task/phase3_llm_anchor_no_zscl_text/task_summary.csv
+Smoke tests,ckpt/11task/featrep_smoke_lp,54.4576,53.9588,,55.1852,56.5816,3,2,ok,results_sync/ckpt/11task/featrep_smoke_lp/task_summary.csv
+Smoke tests,ckpt/11task/featrep_smoke_remind,51.3684,52.0517,,55.1852,53.8964,3,2,ok,results_sync/ckpt/11task/featrep_smoke_remind/task_summary.csv
+Smoke tests,ckpt/11task/featrep_smoke_v0,54.1659,53.5529,,55.1852,55.6556,3,2,ok,results_sync/ckpt/11task/featrep_smoke_v0/task_summary.csv
+Smoke tests,ckpt/11task/phase3_multi_teacher_merge_smoke,88.9985,76.9124,,62.2839,91.7826,4,4,ok,results_sync/ckpt/11task/phase3_multi_teacher_merge_smoke/task_summary.csv

@@ -529,6 +529,20 @@ def finetune_multi_task_phase3(args):
                     print(f"[Phase3] WARNING: drift measurement failed "
                           f"({type(exc).__name__}: {exc}). Training continues.")
 
+            # Frozen teacher's embedding of each exemplar, stored beside its
+            # codes as the image-anchored distillation target. Built by the
+            # same function the trainer uses, so it is the identical teacher.
+            # Stored for every REMIND run, not only iad, so all arms hold the
+            # same buffer contents. Building it runs CLIP's weight init, which
+            # draws from the global RNG; the state is restored so every later
+            # shuffle and crop matches runs made before this target existed.
+            from src.models.training import setup_zscl_reference_model
+            cpu_rng, cuda_rng = torch.get_rng_state(), torch.cuda.get_rng_state_all()
+            teacher, _ = setup_zscl_reference_model(
+                args, encoder, list(range(torch.cuda.device_count()))
+            )
+            torch.set_rng_state(cpu_rng)
+            torch.cuda.set_rng_state_all(cuda_rng)
             replay_buffer.add_task(
                 task_id=task_idx,
                 dataset=task_dataset_obj.train_dataset,
@@ -537,7 +551,10 @@ def finetune_multi_task_phase3(args):
                 template=task_template,
                 model=encoder,
                 batch_size=getattr(args, "replay_encode_batch_size", 32),
+                teacher=teacher,
             )
+            del teacher
+            torch.cuda.empty_cache()
 
             if drift_probe is not None:
                 try:

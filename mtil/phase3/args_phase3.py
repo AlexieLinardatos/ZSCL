@@ -105,11 +105,16 @@ def parse_phase3_arguments():
              "buys nothing and only costs plasticity. Untested until this arm runs."
     )
     p3_parser.add_argument(
-        "--rd_source", choices=["replay", "current"], default=None,
-        help="Images fed to the replay teacher distillation term. 'replay' uses "
+        "--rd_source", choices=["replay", "current", "none", "tmd", "iad"],
+        default=None,
+        help="What the replay teacher distillation term distils on. 'replay' uses "
              "buffer exemplars (requires --replay_storage pixel); 'current' uses "
-             "the current task's training batch. Defaults to 'replay' under pixel "
-             "storage and 'current' under feature storage, which has no pixels."
+             "the current task's training batch; 'none' drops the term. Under "
+             "--replay_storage remind, 'tmd' (token-matched) runs teacher and "
+             "student upper halves on the same stored tokens, and 'iad' "
+             "(image-anchored) matches the student on stored tokens to the "
+             "teacher's embedding of the real image, cached at storage time. "
+             "Defaults to 'replay' under pixel storage and 'current' otherwise."
     )
     p3_parser.add_argument(
         "--replay_encode_batch_size", type=int, default=64,
@@ -228,6 +233,13 @@ def parse_phase3_arguments():
             f"{args.replay_storage} keeps no images. Use --rd_source current, or "
             f"disable the term with --no_replay_teacher_distill."
         )
+    if args.rd_source in ("tmd", "iad") and args.replay_storage != "remind":
+        raise ValueError(
+            f"--rd_source {args.rd_source} distils on stored REMIND tokens and "
+            f"needs --replay_storage remind, not {args.replay_storage}."
+        )
+    if args.rd_source == "none":
+        args.enable_replay_teacher_distill = False
 
     if args.replay_storage == "remind" and 768 % args.remind_pq_m:
         raise ValueError(

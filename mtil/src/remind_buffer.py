@@ -128,26 +128,36 @@ def freeze_below_layer(model, layer: int) -> int:
 # ---------------------------------------------------------------------------
 
 class FlatRemindDataset(Dataset):
-    """Flat Dataset of (codes, label, task_id); codes are uint8 (tokens, m)."""
+    """
+    Flat Dataset of (codes, label, task_id, teacher_emb).
+
+    codes are uint8 (tokens, m). teacher_emb is the frozen teacher's normalised
+    embedding of the exemplar's real image, fp16 (D,), or (0,) for exemplars
+    stored before the teacher target existed.
+    """
 
     def __init__(self, codes: torch.Tensor, labels: torch.Tensor,
-                 task_ids: torch.Tensor):
+                 task_ids: torch.Tensor, teacher_embs: torch.Tensor):
         self.codes = codes
         self.labels = labels
         self.task_ids = task_ids
+        self.teacher_embs = teacher_embs
 
     def __len__(self) -> int:
         return self.codes.shape[0]
 
     def __getitem__(self, idx):
-        return self.codes[idx], int(self.labels[idx]), int(self.task_ids[idx])
+        return (self.codes[idx], int(self.labels[idx]), int(self.task_ids[idx]),
+                self.teacher_embs[idx])
 
 
 class RemindReplayBuffer:
     """
     Fixed-budget buffer of PQ-compressed mid-network token grids.
 
-    memory[task_id] = {"codes": uint8 (N, L, m), "labels": int64 (N,)}
+    memory[task_id] = {"codes": uint8 (N, L, m), "labels": int64 (N,),
+                       "teacher_emb": fp16 (N, D), present when a teacher was
+                       passed to add_task}
 
     Mirrors ReplayBuffer / FeatureReplayBuffer's public surface so the trainer
     can hold any of the three.
@@ -223,6 +233,7 @@ class RemindReplayBuffer:
         batch_size: int = 32,
         num_workers: int = 0,
         fit_pq: Optional[bool] = None,
+        teacher: Optional[torch.nn.Module] = None,
     ) -> None:
         """
         Encode this task's exemplars to layer-`self.layer` tokens and store them
@@ -233,6 +244,13 @@ class RemindReplayBuffer:
         shared-codebook setting it is fitted on the first task only, or when
         `fit_pq` forces it — refitting a *shared* codebook would silently change
         the meaning of every code already stored.
+
+        `teacher`, when given, is the frozen reference model. Its normalised
+        embedding of each exemplar is stored beside the codes as the target for
+        image-anchored distillation (--rd_source iad). It is computed on the
+        same augmented batch that produces the tokens, in the same loop: a
+        second pass over the dataset would re-run RandomResizedCrop and pair
+        each code with the teacher's view of a different crop.
         """
         n = len(dataset)
         num_samples = min(num_samples, n)
@@ -246,21 +264,27 @@ class RemindReplayBuffer:
         model.eval()
         visual = model.module.visual if hasattr(model, "module") else model.visual
 
-        token_batches, label_batches = [], []
+        token_batches, label_batches, teacher_batches = [], [], []
         for item in loader:
             if isinstance(item, (tuple, list)):
                 images, labels = item[0], item[1]
             else:
                 images, labels = item["images"], item["labels"]
-            tokens = encode_to_layer(visual, images.cuda(), self.layer)
+            images = images.cuda()
+            tokens = encode_to_layer(visual, images, self.layer)
             token_batches.append(tokens.float().cpu())
             label_batches.append(labels.cpu().long())
+            if teacher is not None:
+                t_emb = teacher(images, None).float()
+                t_emb = t_emb / t_emb.norm(dim=-1, keepdim=True)
+                teacher_batches.append(t_emb.half().cpu())
 
         if was_training:
             model.train()
 
         tokens = torch.cat(token_batches, dim=0)        # (N, L, D)
         labels = torch.cat(label_batches, dim=0)
+        teacher_emb = torch.cat(teacher_batches) if teacher_batches else None
         n_stored, n_tokens, dim = tokens.shape
 
         flat = tokens.reshape(-1, dim)                    # (N*L, D), CPU fp32
@@ -272,6 +296,8 @@ class RemindReplayBuffer:
             self.norm.pop(task_id, None)
             self.pqs.pop(task_id, None)
             self.memory[task_id] = {"codes": tokens.half(), "labels": labels}
+            if teacher_emb is not None:
+                self.memory[task_id]["teacher_emb"] = teacher_emb
             print(f"[REMIND] task {task_id}: stored {n_stored} exemplars as fp16 "
                   f"tokens, no quantization ({tokens.numel() * 2 / 1e6:.1f} MB)")
             self.task_info[task_id] = {"classnames": classnames, "template": template}
@@ -358,6 +384,8 @@ class RemindReplayBuffer:
             "codes": codes.reshape(n_stored, n_tokens, self.m),
             "labels": labels,
         }
+        if teacher_emb is not None:
+            self.memory[task_id]["teacher_emb"] = teacher_emb
         self.task_info[task_id] = {"classnames": classnames, "template": template}
 
     # ------------------------------------------------------------------
@@ -368,8 +396,7 @@ class RemindReplayBuffer:
         if n <= task_budget:
             return
         keep = torch.tensor(random.sample(range(n), task_budget))
-        self.memory[task_id] = {"codes": entry["codes"][keep],
-                                "labels": entry["labels"][keep]}
+        self.memory[task_id] = {k: v[keep] for k, v in entry.items()}
 
     def rebalance(self) -> None:
         if not self.memory:
@@ -391,20 +418,30 @@ class RemindReplayBuffer:
     # ------------------------------------------------------------------
 
     def get_combined_dataset(self) -> FlatRemindDataset:
-        codes, labels, tids = [], [], []
+        codes, labels, tids, tembs = [], [], [], []
         for task_id, entry in self.memory.items():
+            n = entry["codes"].shape[0]
             codes.append(entry["codes"])
             labels.append(entry["labels"])
-            tids.append(torch.full((entry["codes"].shape[0],), task_id,
-                                   dtype=torch.long))
+            tids.append(torch.full((n,), task_id, dtype=torch.long))
+            tembs.append(entry.get("teacher_emb"))
         if not codes:
             return FlatRemindDataset(
                 torch.empty(0, 0, 0, dtype=torch.uint8),
                 torch.empty(0, dtype=torch.long),
                 torch.empty(0, dtype=torch.long),
+                torch.empty(0, 0, dtype=torch.float16),
             )
+        # Teacher targets are all-or-nothing: if any task lacks them (a buffer
+        # saved before they existed), every row gets an empty (0,) placeholder
+        # and image-anchored distillation refuses the batch.
+        if any(t is None for t in tembs):
+            temb = torch.empty(sum(c.shape[0] for c in codes), 0,
+                               dtype=torch.float16)
+        else:
+            temb = torch.cat(tembs)
         return FlatRemindDataset(torch.cat(codes), torch.cat(labels),
-                                 torch.cat(tids))
+                                 torch.cat(tids), temb)
 
     def get_task_info(self, task_id: int) -> Dict:
         return self.task_info[task_id]
@@ -462,10 +499,12 @@ class RemindReplayBuffer:
         return sum(v["codes"].shape[0] for v in self.memory.values())
 
     def nbytes(self) -> int:
-        """Codes plus the codebooks and statistics needed to decode them."""
+        """Codes, the codebooks and statistics to decode them, and teacher targets."""
+        temb_bytes = sum(v["teacher_emb"].numel() * v["teacher_emb"].element_size()
+                         for v in self.memory.values() if "teacher_emb" in v)
         if not self.quantize:
-            return sum(v["codes"].numel() * v["codes"].element_size()
-                       for v in self.memory.values())
+            return temb_bytes + sum(v["codes"].numel() * v["codes"].element_size()
+                                    for v in self.memory.values())
         code_bytes = sum(v["codes"].numel() for v in self.memory.values())
         if self.per_task_codebook:
             book_bytes = sum(p.codebook_nbytes() for p in self.pqs.values())
@@ -473,7 +512,7 @@ class RemindReplayBuffer:
             book_bytes = self.pq.codebook_nbytes()
         norm_bytes = sum(mu.numel() * 2 + sd.numel() * 2
                          for mu, sd in self.norm.values())
-        return code_bytes + book_bytes + norm_bytes
+        return code_bytes + book_bytes + norm_bytes + temb_bytes
 
     def __repr__(self) -> str:
         lines = [

@@ -29,6 +29,53 @@ META_COLS = {"task_idx", "task_name", "avg"}
 HELD_OUT = "ImageNet"
 
 
+# ---------------------------------------------------------------- grouping ---
+# (regex, group label) matched top-to-bottom, first hit wins, against the run's
+# relative path. Smoke tests are matched first so they never pollute a family.
+# Edit freely: adding a rule is all it takes to re-organise the workbook.
+GROUP_RULES = [
+    (r"smoke",                      "Smoke tests"),
+    (r"robustness/buf_",            "Buffer sweep"),
+    (r"featrep_",                   "Feature replay"),
+    (r"remind_",                    "REMIND (VQ)"),
+    (r"phase3_exemplar_",           "Exemplar selection"),
+    (r"phase3_ext\d",               "Extensions 1-3"),
+    (r"phase3_multi_teacher",       "Multi-teacher merge"),
+    (r"phase3_llm_anchor",          "LLM anchor (superseded)"),
+    (r"rebuttal",                   "Rebuttal controls"),
+    (r"ablation_zscl_only",         "Baselines"),
+    (r"ablation_full",              "Main: pixel replay + ExRD"),
+    (r"ablation_",                  "Ablations"),
+    (r"phase3_no_lora_seed|orderII", "Seeds / task order"),
+    (r"phase3_no_lora",             "Main: pixel replay + ExRD"),
+]
+
+# Order the groups appear in the workbook.
+DISPLAY_ORDER = [
+    "Baselines",
+    "Main: pixel replay + ExRD",
+    "Seeds / task order",
+    "Ablations",
+    "Feature replay",
+    "REMIND (VQ)",
+    "Buffer sweep",
+    "Exemplar selection",
+    "Extensions 1-3",
+    "Multi-teacher merge",
+    "LLM anchor (superseded)",
+    "Rebuttal controls",
+    "Smoke tests",
+    "Other",
+]
+
+
+def group_of(name):
+    for pat, label in GROUP_RULES:
+        if re.search(pat, name):
+            return label
+    return "Other"
+
+
 # ---------------------------------------------------------------- metrics ---
 def read_run(path):
     with open(path, newline="") as f:
@@ -156,6 +203,14 @@ def write_xlsx(path, sheets):
 
 # -------------------------------------------------------------------- main ---
 METRICS = ["Last", "Avg", "Transfer [ImageNet]", "Transfer [upper-tri]", "Diag"]
+SUMMARY_HEADER = ["group", "run", *METRICS, "rows", "tasks", "status", "path"]
+
+
+def metric_row(name, group, d, path):
+    return [group, name,
+            *[round(d[m], 4) if d[m] is not None else "" for m in METRICS],
+            d["n_rows"], d["n_tasks"],
+            "ok" if d["complete"] else "PARTIAL", path]
 
 
 def main():
@@ -163,38 +218,101 @@ def main():
     ap.add_argument("roots", nargs="+", help="directories to scan for task_summary.csv")
     ap.add_argument("-o", "--out", default="results.xlsx")
     ap.add_argument("--csv", action="store_true",
-                    help="also write <out>.summary.csv with the Summary sheet")
+                    help="also write <out>.summary.csv (the flat Summary sheet)")
+    ap.add_argument("--per-run-sheets", action="store_true",
+                    help="one tab per run instead of one tab per group")
+    ap.add_argument("--no-matrices", action="store_true",
+                    help="group tabs hold only the metric table, no per-task matrices")
     args = ap.parse_args()
 
     runs = find_runs(args.roots)
     if not runs:
         sys.exit("No task_summary.csv found under: " + ", ".join(args.roots))
 
-    summary = [["run", *METRICS, "rows", "tasks", "complete", "path"]]
-    sheets, used = [], {"summary"}
+    # Read everything, bucket by group.
+    buckets = {}
     for path, name in runs.items():
         d = read_run(path)
         if d is None:
             print(f"  skip (empty): {path}")
             continue
-        summary.append([name, *[round(d[m], 4) if d[m] is not None else "" for m in METRICS],
-                        d["n_rows"], d["n_tasks"], "yes" if d["complete"] else "PARTIAL", path])
-        rows = [d["header"]]
-        for r in d["rows"]:
-            rows.append([_maybe_num(r.get(c, "")) for c in d["header"]])
-        sheets.append((safe_sheet_name(name, used), rows))
-        print(f"  {name:<40} Last={_f(d['Last'])} Avg={_f(d['Avg'])} "
-              f"Transfer={_f(d['Transfer [ImageNet]'])}"
-              f"{'' if d['complete'] else '  [PARTIAL]'}")
+        buckets.setdefault(group_of(name), []).append((name, path, d))
 
-    write_xlsx(args.out, [("Summary", summary)] + sheets)
-    print(f"\nWrote {args.out}  ({len(sheets)} run sheets + Summary)")
+    order = [g for g in DISPLAY_ORDER if g in buckets]
+    order += [g for g in sorted(buckets) if g not in DISPLAY_ORDER]
+
+    # ---- Summary: flat table, group-ordered (sort/filter/pivot friendly) ----
+    summary = [SUMMARY_HEADER]
+    for g in order:
+        rows = sorted(buckets[g], key=lambda t: t[0])
+        for name, path, d in rows:
+            summary.append(metric_row(name, g, d, path))
+
+    # ---- Groups: one row per family, aggregates over complete runs ----------
+    agg = [["group", "runs", "complete", *[f"mean {m}" for m in METRICS],
+            "best Last", "best run"]]
+    for g in order:
+        rows = buckets[g]
+        good = [(n, d) for n, _p, d in rows if d["complete"]]
+        means = []
+        for m in METRICS:
+            vals = [d[m] for _n, d in good if d[m] is not None]
+            means.append(round(mean(vals), 4) if vals else "")
+        best_n, best_v = "", ""
+        cand = [(n, d["Last"]) for n, d in good if d["Last"] is not None]
+        if cand:
+            best_n, best_v = max(cand, key=lambda t: t[1])
+            best_v = round(best_v, 4)
+        agg.append([g, len(rows), len(good), *means, best_v, best_n])
+
+    sheets, used = [("Summary", summary), ("Groups", agg)], {"summary", "groups"}
+
+    if args.per_run_sheets:
+        for g in order:
+            for name, _path, d in sorted(buckets[g], key=lambda t: t[0]):
+                sheets.append((safe_sheet_name(name, used), matrix_block(d)))
+    else:
+        for g in order:
+            rows = sorted(buckets[g], key=lambda t: t[0])
+            block = [[f"Group: {g}"], [],
+                     ["run", *METRICS, "rows", "status"]]
+            for name, _path, d in rows:
+                block.append([name,
+                              *[round(d[m], 4) if d[m] is not None else "" for m in METRICS],
+                              d["n_rows"], "ok" if d["complete"] else "PARTIAL"])
+            if not args.no_matrices:
+                block += [[], ["Per-run accuracy matrices"], []]
+                for name, _path, d in rows:
+                    block.append([name])
+                    block += matrix_block(d)
+                    block.append([])
+            sheets.append((safe_sheet_name(g, used), block))
+
+    write_xlsx(args.out, sheets)
+
+    # ---- console recap, grouped ----
+    for g in order:
+        print(f"\n{g}")
+        for name, _path, d in sorted(buckets[g], key=lambda t: t[0]):
+            print(f"  {name:<44} Last={_f(d['Last'])} Avg={_f(d['Avg'])} "
+                  f"Transfer={_f(d['Transfer [ImageNet]'])}"
+                  f"{'' if d['complete'] else '  [PARTIAL]'}")
+    total = sum(len(v) for v in buckets.values())
+    print(f"\nWrote {args.out}  ({total} runs, {len(order)} groups, "
+          f"{len(sheets)} sheets)")
 
     if args.csv:
         cpath = os.path.splitext(args.out)[0] + ".summary.csv"
         with open(cpath, "w", newline="") as f:
             csv.writer(f).writerows(summary)
         print(f"Wrote {cpath}")
+
+
+def matrix_block(d):
+    out = [d["header"]]
+    for r in d["rows"]:
+        out.append([_maybe_num(r.get(c, "")) for c in d["header"]])
+    return out
 
 
 def _maybe_num(v):

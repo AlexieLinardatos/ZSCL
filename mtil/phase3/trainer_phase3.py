@@ -67,6 +67,7 @@ from .losses_phase3 import (
     compute_replay_teacher_distill_loss,
     compute_feature_replay_loss,
     compute_remind_replay_loss,
+    compute_remind_distill_loss,
 )
 from src.remind_buffer import freeze_below_layer
 
@@ -193,6 +194,14 @@ def custom_finetune_phase3(args, replay_buffer=None):
             f"rd_source='replay' needs pixel exemplars, but replay_storage="
             f"'{replay_storage}' keeps no images. Use rd_source='current'."
         )
+    # 'tmd' / 'iad' distil on stored REMIND tokens; 'none' drops the term.
+    if rd_source in ("tmd", "iad") and replay_storage != "remind":
+        raise ValueError(
+            f"rd_source='{rd_source}' distils on stored REMIND tokens, but "
+            f"replay_storage='{replay_storage}'."
+        )
+    if rd_source == "none":
+        enable_replay_teacher = False
 
     print(
         f"\n[Phase3 config] "
@@ -511,7 +520,18 @@ def custom_finetune_phase3(args, replay_buffer=None):
                 loss_rsup_val = replay_ce.item()
 
             # (5) Replay teacher distillation (Phase 3 new term)
-            if enable_replay_teacher and ref_model is not None and ref_texts is not None:
+            if (enable_replay_teacher and ref_model is not None
+                    and ref_texts is not None and rd_source in ("tmd", "iad")):
+                # Distil on stored tokens: student upper half vs. the teacher's
+                # upper half on the same tokens (tmd) or its stored embedding of
+                # the real image (iad). Same replay batch as the CE above.
+                loss_rtd = compute_remind_distill_loss(
+                    model, ref_model, replay_batch, replay_buffer, logit_scale,
+                    args, target=rd_source, ref_embeddings=cached_ref_embeddings,
+                )
+                loss = loss + lambda_rtd * loss_rtd
+                loss_rteacher_val = loss_rtd.item()
+            elif enable_replay_teacher and ref_model is not None and ref_texts is not None:
                 if rd_source == "current":
                     # A feature buffer holds no pixels, so distil on the current
                     # task's batch instead — already fetched and on device.
