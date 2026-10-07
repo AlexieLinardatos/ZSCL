@@ -1,0 +1,56 @@
+% Requires: \usepackage{booktabs} \usepackage[table]{xcolor} \usepackage{amsmath}
+% Suggested placement: Chapter 4 (Experiments), replacing the current "Metrics." paragraph.
+
+\subsection{Evaluation Metrics}
+\label{sec:metrics}
+
+All metrics are computed from a single accuracy matrix $R \in \mathbb{R}^{T \times (T+1)}$, where $R_{i,j}$ is the top-1 accuracy on the test set of task $j$ measured immediately after training on task $i$. Rows index training stages and columns index evaluation datasets. The first $T$ columns are the trained tasks in training order; the final column is ImageNet, which is never trained on and serves as a held-out probe of zero-shot capability. Entries above the diagonal ($j > i$) are accuracies on tasks the model has not yet seen, and are therefore zero-shot predictions; entries on and below the diagonal ($j \le i$) are accuracies on tasks already trained.
+
+\Cref{tab:toy_metrics} illustrates each metric on a toy sequence of $T=3$ tasks (A, B, C). The numbers are invented for exposition and do not correspond to any experiment.
+
+\begin{table}[h]
+\centering
+\caption{Toy accuracy matrix $R$ (\%) for a three-task sequence A $\to$ B $\to$ C. Row $i$ is the model after training task $i$. Shading marks the cells each metric uses: \colorbox{gray!15}{light} = not-yet-trained (zero-shot) cells, \colorbox{gray!40}{dark} = final row used by Last. The ImageNet column is used only by Transfer.}
+\label{tab:toy_metrics}
+\begin{tabular}{l ccc c}
+\toprule
+ & \multicolumn{3}{c}{Trained tasks} & Held-out \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-5}
+After training & A & B & C & ImageNet \\
+\midrule
+A ($i=1$) & 80 & \cellcolor{gray!15}50 & \cellcolor{gray!15}40 & 68 \\
+B ($i=2$) & 74 & 85 & \cellcolor{gray!15}42 & 66 \\
+C ($i=3$) & \cellcolor{gray!40}70 & \cellcolor{gray!40}81 & \cellcolor{gray!40}90 & 64 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Last.} Mean accuracy over all trained tasks after the final training stage,
+\begin{equation}
+\text{Last} = \frac{1}{T}\sum_{j=1}^{T} R_{T,j}.
+\end{equation}
+Last measures how much downstream knowledge survives the full sequence. In the toy example, $\text{Last} = (70 + 81 + 90)/3 = 80.33$. It does not reward a method for how well it performed on a task at any earlier point, only for what remains at the end.
+
+\paragraph{Avg.} Mean accuracy over every cell of the trained-task matrix,
+\begin{equation}
+\text{Avg} = \frac{1}{T^2}\sum_{i=1}^{T}\sum_{j=1}^{T} R_{i,j}.
+\end{equation}
+Following \citet{zheng2023zscl}, this includes the not-yet-trained cells above the diagonal, so Avg rewards a model that is accurate on each task before it is trained (zero-shot), immediately after it is trained (plasticity), and long after (stability). In the toy example the nine cells sum to $612$, giving $\text{Avg} = 68.00$. Avg is lower than Last here because the three zero-shot cells (50, 40, 42) pull the mean down; a method that preserves zero-shot accuracy on upcoming tasks raises Avg even if its Last is unchanged.
+
+\paragraph{Transfer.} Mean ImageNet accuracy across all training stages,
+\begin{equation}
+\text{Transfer} = \frac{1}{T}\sum_{i=1}^{T} R_{i,\text{ImageNet}}.
+\end{equation}
+Because ImageNet is never trained on, any decline in this column reflects erosion of the pre-trained zero-shot capability rather than ordinary task forgetting. In the toy example, $\text{Transfer} = (68 + 66 + 64)/3 = 66.00$; the model loses two points of zero-shot accuracy per task, and averaging over stages penalises a method for how early that erosion begins, not only for where it ends.
+
+% TODO: decide whether to keep this note. The ZSCL paper defines Transfer as the
+% upper-triangle mean instead; reviewers comparing to ZSCL/BCL/DIKI tables will notice.
+\noindent\textit{Note on convention.} \citet{zheng2023zscl} alternatively compute Transfer as the mean of the upper triangle $\{R_{i,j} : j > i\}$, i.e.\ zero-shot accuracy on trained tasks before they are reached. In the toy example this gives $(50 + 40 + 42)/3 = 44.00$. We report the ImageNet-column definition throughout, since ImageNet is held out for the entire sequence and so isolates pre-trained knowledge from task-specific learning.
+
+\paragraph{Backward transfer (BWT).} For each task except the last, the change in accuracy between the end of the sequence and the moment the task was learned,
+\begin{equation}
+\text{BWT} = \frac{1}{T-1}\sum_{j=1}^{T-1} \left(R_{T,j} - R_{j,j}\right).
+\end{equation}
+Negative BWT indicates forgetting. The final task is excluded because $R_{T,T} - R_{T,T} = 0$ by construction. In the toy example, task A drops from 80 to 70 ($-10$) and task B from 85 to 81 ($-4$), giving $\text{BWT} = -7.00$. BWT isolates forgetting from plasticity: two methods can share the same Last while one learned each task better and forgot more.
+
+\paragraph{How the metrics relate.} The three headline metrics map onto the three pressures introduced in \Cref{chap:introduction}: Last on stability, Transfer on zero-shot preservation, and Avg on the balance of all three including plasticity. They can disagree. In our experiments, replay chiefly raises Last and BWT, whereas Replay Distillation chiefly raises Transfer (\Cref{sec:ablation}).

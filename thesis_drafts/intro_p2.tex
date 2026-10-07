@@ -1,0 +1,8 @@
+% Intro paragraph 2 (revised)
+Prior work addresses these pressures in isolation. Zero-shot continual learning (ZSCL)~\cite{zheng2023zscl} anchors training against a frozen zero-shot CLIP teacher using external image-caption pairs, protecting general representations but not past-task discriminative features. Parameter-efficient methods~\cite{yu2024moe, gao2024zaf, liu2025cclip} restrict weight updates to limit forgetting, but a single shared adapter must compress a growing task sequence and degrades as that sequence lengthens. Synthetic replay methods~\cite{loraloop2025, gift2025} pair per-task adapters with diffusion-generated rehearsal data for strong results, at the cost of keeping a generative model (${\approx}900$M parameters) at training time. Classic exemplar replay~\cite{rebuffi2017icarl, buzzega2020dark} rehearses past tasks directly but ignores zero-shot transfer, and storing raw past-task images carries its own storage and privacy costs. Feature replay~\cite{hayes2020remind, iscen2020memory} sidesteps these by storing embeddings instead of images, but must then either freeze the encoder or learn a correction for its drift. ZSCL's original paper argues that its reference data makes replay unnecessary, a claim not previously tested with real exemplar replay in the same training framework.
+
+% Preamble macros for the method name (rename in one place later)
+% \usepackage{xspace}
+% \newcommand{\method}{XXX\xspace}
+% \newcommand{\methodfull}{Placeholder Full Name\xspace}
+% \newcommand{\methodF}{\method-F\xspace}

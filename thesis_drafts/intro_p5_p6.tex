@@ -1,0 +1,18 @@
+% Fix for end of paragraph 2 (words were dropped):
+% ... a claim not previously tested with real exemplar replay in the same training framework.
+
+% Paragraph 3 reorder: introduce RD before naming the system, since the system includes RD.
+% "... combine cleanly. We then introduce \emph{Replay Distillation} (RD), ... [RD sentences] ...
+%  We call the resulting system \projectfull{} (\project{})."
+
+% NEW paragraph 5 -- insert after the RD / Pareto paragraph
+Analysing where each term of the objective sends gradient reveals an asymmetry. ZSCL and RD both compute the teacher's text embeddings without gradient, so they constrain only the image encoder; the supervised replay loss is the only term that updates the text encoder on previous-task classes. Replay's image-side gradient is therefore largely redundant with two distillation terms, while its text-side gradient is unique. This motivates \emph{feature replay}: storing each exemplar's 512-dimensional CLIP image embedding (fp16, 1\,KB) rather than the image, so that replay trains the class-name text embeddings against fixed image features. At our 11{,}000-exemplar budget this reduces replay storage from ${\approx}1.6$\,GB to ${\approx}11$\,MB and removes raw images from the buffer entirely. RD, which requires pixels, moves to current-task images at no measurable Transfer cost ($66.66$ vs.\ $66.72$).
+
+% NEW paragraph 6
+Stored embeddings go stale as the encoder trains. Existing remedies freeze the encoder~\cite{pellegrini2020latent, hayes2020remind} or estimate drift from current-task images~\cite{yu2020sdc, iscen2020memory}. CLIP offers a cheaper signal: an old class's text embedding can be recomputed exactly at any time, giving an observed drift measurement co-located with that class's stored features. We use these text anchors to adapt stale features at each task boundary.
+
+% Last paragraph: "our full method" is ambiguous once there are two variants. Name both:
+% "... our full method (\project{}) achieves 86.28 Last ... The feature-replay variant (\projectF{}) reaches \todo{} Last while storing no images ..."
+
+% Figure 1.1 caption: add one sentence --
+% "In the feature-replay variant (\projectF{}), stored embeddings replace the replay images in the supervised replay loss, and RD is applied to current-task images instead."
