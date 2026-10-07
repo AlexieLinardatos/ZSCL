@@ -72,8 +72,37 @@ cd "$REPO_ROOT/mtil"
 export PYTHONPATH="$REPO_ROOT/mtil/scripts/4task/phase3:${PYTHONPATH:-}"
 mkdir -p logs
 
-SAVE_PATH="ckpt/11task/featrep_v0"
+TAG=""
+# RD_SOURCE as in remind_11t.sh: unset keeps the default ('current').
+RD_FLAG=""
+if [ -n "${RD_SOURCE:-}" ]; then
+  RD_FLAG="--rd_source ${RD_SOURCE}"
+  TAG="${TAG}_rd${RD_SOURCE}"
+fi
+
+# Saturation sweep. BUDGET is the total exemplar count (default 11000);
+# setting it also encodes only each task's share, since encoding the whole
+# budget at 100k+ exhausts host memory. RBS is the replay batch size (default
+# 8): every run sees the same ~170k replay samples, so at large budgets each
+# exemplar is replayed about once, and RBS=32 tests whether a plateau is a data
+# limit or a replay-compute limit. A huge BUDGET (e.g. 2000000) keeps every
+# training image. Unset, both reproduce the original run and save path.
+#   LAYER=2 PQ_M=128 RD_SOURCE=none BUDGET=44000 sbatch remind_11t.sh
+#   RD_SOURCE=none BUDGET=2000000 RBS=32 sbatch featrep_v0_11t.sh
+BUDGET_FLAGS="--replay_budget ${BUDGET:-11000} --replay_batch_size ${RBS:-8}"
+if [ -n "${BUDGET:-}" ]; then
+  BUDGET_FLAGS="${BUDGET_FLAGS} --replay_encode_share"
+  TAG="${TAG}_b${BUDGET}"
+fi
+[ -n "${RBS:-}" ] && TAG="${TAG}_rbs${RBS}"
+
+SAVE_PATH="ckpt/11task/featrep_v0${TAG}"
 mkdir -p "${SAVE_PATH}"
+
+if [ -s "${SAVE_PATH}/task_summary.csv" ]; then
+  echo "ERROR: ${SAVE_PATH}/task_summary.csv exists and would be appended to."
+  exit 1
+fi
 
 EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397,ImageNet"
 
@@ -112,8 +141,8 @@ srun python -m phase3.train_phase3 \
   --eval-interval 500 \
   --use_replay \
   --replay_storage feature \
-  --replay_budget 11000 \
-  --replay_batch_size 8 \
+  ${BUDGET_FLAGS} \
+  ${RD_FLAG} \
   --drift_probe_size 64 \
   --replay_loss_weight 1.0 \
   --batch-size-eval 16 \

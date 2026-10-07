@@ -264,27 +264,37 @@ class RemindReplayBuffer:
         model.eval()
         visual = model.module.visual if hasattr(model, "module") else model.visual
 
-        token_batches, label_batches, teacher_batches = [], [], []
+        # Filled in place rather than concatenated from a list: at large
+        # budgets a task's fp32 token grid is tens of GB (600 kB an exemplar),
+        # and torch.cat would hold it twice.
+        tokens = labels = teacher_emb = None
+        offset = 0
         for item in loader:
             if isinstance(item, (tuple, list)):
-                images, labels = item[0], item[1]
+                images, batch_labels = item[0], item[1]
             else:
-                images, labels = item["images"], item["labels"]
+                images, batch_labels = item["images"], item["labels"]
             images = images.cuda()
-            tokens = encode_to_layer(visual, images, self.layer)
-            token_batches.append(tokens.float().cpu())
-            label_batches.append(labels.cpu().long())
+            batch_tokens = encode_to_layer(visual, images, self.layer)
+            b = batch_tokens.shape[0]
+            if tokens is None:
+                tokens = torch.empty(num_samples, *batch_tokens.shape[1:])
+                labels = torch.empty(num_samples, dtype=torch.long)
+            tokens[offset:offset + b] = batch_tokens.float().cpu()
+            labels[offset:offset + b] = batch_labels.cpu().long()
             if teacher is not None:
                 t_emb = teacher(images, None).float()
                 t_emb = t_emb / t_emb.norm(dim=-1, keepdim=True)
-                teacher_batches.append(t_emb.half().cpu())
+                if teacher_emb is None:
+                    teacher_emb = torch.empty(num_samples, t_emb.shape[-1],
+                                              dtype=torch.float16)
+                teacher_emb[offset:offset + b] = t_emb.half().cpu()
+            offset += b
 
         if was_training:
             model.train()
-
-        tokens = torch.cat(token_batches, dim=0)        # (N, L, D)
-        labels = torch.cat(label_batches, dim=0)
-        teacher_emb = torch.cat(teacher_batches) if teacher_batches else None
+        assert offset == num_samples, (offset, num_samples)
+        # (N, L, D) tokens, (N,) labels
         n_stored, n_tokens, dim = tokens.shape
 
         flat = tokens.reshape(-1, dim)                    # (N*L, D), CPU fp32

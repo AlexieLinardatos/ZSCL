@@ -16,6 +16,7 @@ and Phase 3 results separate.
 import copy
 import csv
 import glob
+import math
 import os
 
 import torch
@@ -396,6 +397,28 @@ def finetune_multi_task_phase3(args):
             else task_dataset_obj.template
         )
 
+        # How many of this task's images to encode. By default the whole budget
+        # (clamped to the dataset), most of which rebalancing then throws away.
+        # Under --replay_encode_share, only the task's share: a task's share is
+        # largest the moment it is added, since later tasks only shrink it, so
+        # encoding exactly that many loses nothing. Needed for large budgets,
+        # where encoding the full budget would hold tens of GB of fp32 tokens.
+        encode_n = args.replay_budget
+        prior = [t for t in replay_buffer.memory if t != task_idx]
+        if (getattr(args, "replay_encode_share", False)
+                and all(t in replay_buffer.task_info for t in prior)):
+            if getattr(args, "no_proportional_replay", False):
+                encode_n = args.replay_budget // (len(prior) + 1)
+            else:
+                n_cls = len(task_dataset_obj.classnames)
+                seen = n_cls + sum(
+                    len(replay_buffer.task_info[t]["classnames"]) for t in prior
+                )
+                encode_n = math.ceil(args.replay_budget * n_cls / seen)
+            encode_n = max(1, encode_n)
+            print(f"[Phase3] Encoding this task's share only: {encode_n} "
+                  f"of budget {args.replay_budget}")
+
         if replay_storage == "feature":
             # Encode this task's exemplars with the checkpoint that just
             # finished training on it.  They are never re-encoded afterwards,
@@ -475,7 +498,7 @@ def finetune_multi_task_phase3(args):
             replay_buffer.add_task(
                 task_id=task_idx,
                 dataset=task_dataset_obj.train_dataset,
-                num_samples=args.replay_budget,
+                num_samples=encode_n,
                 classnames=task_dataset_obj.classnames,
                 template=task_template,
                 model=encoder,
@@ -546,7 +569,7 @@ def finetune_multi_task_phase3(args):
             replay_buffer.add_task(
                 task_id=task_idx,
                 dataset=task_dataset_obj.train_dataset,
-                num_samples=args.replay_budget,
+                num_samples=encode_n,
                 classnames=task_dataset_obj.classnames,
                 template=task_template,
                 model=encoder,
@@ -576,7 +599,7 @@ def finetune_multi_task_phase3(args):
             replay_buffer.add_task(
                 task_id=task_idx,
                 dataset=task_dataset_obj.train_dataset,
-                num_samples=args.replay_budget,
+                num_samples=encode_n,
                 classnames=task_dataset_obj.classnames,
                 template=task_template,
             )

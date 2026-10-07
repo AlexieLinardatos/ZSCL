@@ -117,6 +117,13 @@ def parse_phase3_arguments():
              "Defaults to 'replay' under pixel storage and 'current' otherwise."
     )
     p3_parser.add_argument(
+        "--replay_encode_share", action="store_true",
+        help="At each task boundary encode only the task's share of the budget "
+             "instead of the whole budget. Lossless (a share only shrinks after "
+             "it is added) and required for budgets far above 11k, where "
+             "encoding the full budget runs out of host memory."
+    )
+    p3_parser.add_argument(
         "--replay_encode_batch_size", type=int, default=64,
         help="Batch size for the one-time encoding pass that fills the feature "
              "buffer at each task boundary."
@@ -215,6 +222,7 @@ def parse_phase3_arguments():
     # ------------------------------------------------------------------ #
     args.replay_storage = p3_ns.replay_storage
     args.replay_encode_batch_size = p3_ns.replay_encode_batch_size
+    args.replay_encode_share = p3_ns.replay_encode_share
     args.remind_layer = p3_ns.remind_layer
     args.remind_pq_m = p3_ns.remind_pq_m
     args.remind_shared_codebook = p3_ns.remind_shared_codebook
