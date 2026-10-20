@@ -132,6 +132,19 @@ if [ -n "${BUDGET:-}" ]; then
 fi
 [ -n "${RBS:-}" ] && TAG="${TAG}_rbs${RBS}"
 
+# Previous-task teacher (multi-teacher distillation). PREV is the weight of an
+# extra distil term on replay exemplars whose teacher is the previous task's
+# checkpoint, scored against the exemplars' own class names. PREV_MIX < 1
+# averages that teacher with frozen CLIP after the softmax (0.5 = plain
+# average). Unset, the run and its save path are unchanged.
+#   PREV=0.3 sbatch remind_11t.sh                 # previous model alone
+#   PREV=0.3 PREV_MIX=0.5 sbatch remind_11t.sh    # average with frozen CLIP
+PREV_FLAGS=""
+if [ -n "${PREV:-}" ]; then
+  PREV_FLAGS="--lambda_prev_distill ${PREV} --prev_distill_mix ${PREV_MIX:-1.0}"
+  TAG="${TAG}_prev${PREV}_mix${PREV_MIX:-1.0}"
+fi
+
 SAVE_PATH="ckpt/11task/remind_l${LAYER}_m${PQ_M}${TAG}"
 mkdir -p "${SAVE_PATH}"
 
@@ -185,6 +198,7 @@ srun python -m phase3.train_phase3 \
   --remind_pq_m "${PQ_M}" \
   ${REMIND_EXTRA} \
   ${RD_FLAG} \
+  ${PREV_FLAGS} \
   ${BUDGET_FLAGS} \
   --replay_loss_weight 1.0 \
   --batch-size-eval 16 \

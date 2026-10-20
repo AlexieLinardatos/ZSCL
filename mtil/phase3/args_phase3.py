@@ -123,6 +123,22 @@ def parse_phase3_arguments():
              "it is added) and required for budgets far above 11k, where "
              "encoding the full budget runs out of host memory."
     )
+    # --- previous-task teacher (all storage modes) -------------------------
+    p3_parser.add_argument(
+        "--lambda_prev_distill", type=float, default=0.0,
+        help="Weight of an extra distillation term on replay exemplars whose "
+             "teacher is the previous task's checkpoint, scored against each "
+             "exemplar's OWN class names (not the CC captions L_RD uses). Adds "
+             "to L_ZSCL and L_RD, which keep frozen CLIP as their teacher. 0 "
+             "disables it and leaves training byte-identical."
+    )
+    p3_parser.add_argument(
+        "--prev_distill_mix", type=float, default=1.0,
+        help="Weight of the previous model in the teacher distribution: "
+             "p = mix * p_prev + (1 - mix) * p_clip, averaged after softmax. "
+             "1.0 is the previous model alone; 0.5 is the plain average of "
+             "previous model and frozen CLIP."
+    )
     p3_parser.add_argument(
         "--replay_encode_batch_size", type=int, default=64,
         help="Batch size for the one-time encoding pass that fills the feature "
@@ -254,6 +270,12 @@ def parse_phase3_arguments():
             f"--remind_pq_m {args.remind_pq_m} does not divide the ViT-B/16 "
             f"token width of 768. Use 16, 24, 32, 48, 64, 96 or 128."
         )
+
+    args.lambda_prev_distill = p3_ns.lambda_prev_distill
+    args.prev_distill_mix = p3_ns.prev_distill_mix
+    if not 0.0 <= args.prev_distill_mix <= 1.0:
+        raise ValueError(f"--prev_distill_mix must be in [0, 1], got "
+                         f"{args.prev_distill_mix}.")
 
     # ------------------------------------------------------------------ #
     # Step 6: stale-feature adaptation                                    #

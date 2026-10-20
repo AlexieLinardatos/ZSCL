@@ -64,8 +64,27 @@ cd "$REPO_ROOT/mtil"
 export PYTHONPATH="$REPO_ROOT/mtil/scripts/4task/phase3:${PYTHONPATH:-}"
 mkdir -p logs
 
-SAVE_PATH="ckpt/11task/phase3_no_lora_v4"
+TAG=""
+# Previous-task teacher (multi-teacher distillation). PREV is the weight of an
+# extra distil term on replay exemplars whose teacher is the previous task's
+# checkpoint, scored against the exemplars' own class names. PREV_MIX < 1
+# averages that teacher with frozen CLIP after the softmax (0.5 = plain
+# average). Unset, the run and its save path are unchanged.
+#   PREV=0.3 sbatch phase3_no_lora_11t_v4.sh                 # previous model alone
+#   PREV=0.3 PREV_MIX=0.5 sbatch phase3_no_lora_11t_v4.sh    # average with frozen CLIP
+PREV_FLAGS=""
+if [ -n "${PREV:-}" ]; then
+  PREV_FLAGS="--lambda_prev_distill ${PREV} --prev_distill_mix ${PREV_MIX:-1.0}"
+  TAG="${TAG}_prev${PREV}_mix${PREV_MIX:-1.0}"
+fi
+
+SAVE_PATH="ckpt/11task/phase3_no_lora_v4${TAG}"
 mkdir -p "${SAVE_PATH}"
+
+if [ -n "${TAG}" ] && [ -s "${SAVE_PATH}/task_summary.csv" ]; then
+  echo "ERROR: ${SAVE_PATH}/task_summary.csv exists and would be appended to."
+  exit 1
+fi
 
 EVAL_DATASETS="Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397,ImageNet"
 
@@ -105,6 +124,7 @@ srun python -m phase3.train_phase3 \
   --use_replay \
   --replay_budget 11000 \
   --replay_batch_size 8 \
+  ${PREV_FLAGS} \
   --replay_loss_weight 1.0 \
   --batch-size-eval 16 \
   --dataset_order Aircraft,Caltech101,CIFAR100,DTD,EuroSAT,Flowers,Food,MNIST,OxfordPet,StanfordCars,SUN397 \

@@ -298,3 +298,121 @@ def compute_feature_replay_loss(model, replay_batch, logit_scale, replay_buffer,
     if total_samples > 0:
         return total_loss / total_samples
     return total_loss
+
+
+def compute_prev_teacher_distill_loss(model, prev_model, ref_model, replay_batch,
+                                      replay_buffer, logit_scale, args, storage,
+                                      text_cache):
+    """
+    Distil the student toward the previous task's model on replay exemplars,
+    scored against each exemplar's own class names.
+
+    L_ZSCL and L_RD keep frozen CLIP as their teacher and score against CC
+    captions, which protects zero-shot transfer but carries little of what was
+    learned on earlier tasks. The previous checkpoint has seen tasks 0..t-1, so
+    its soft labels over an old task's classes hold that task's learned
+    inter-class structure. With --prev_distill_mix < 1 the teacher is instead
+    the post-softmax average of the previous model and frozen CLIP.
+
+    Each side scores its own image embedding against its own text embedding of
+    the old class names, so the student's text tower gets gradient too. Teacher
+    text embeddings are frozen and cached per task in `text_cache`.
+
+    How the image side is formed depends on what the buffer stores:
+      pixel    every model encodes the stored image
+      remind   every model runs its upper blocks on the same decoded tokens.
+               Below the split the student and the previous model share frozen
+               blocks, so the previous-model teacher sees exactly its own
+               activations. Frozen CLIP's lower half differs, as with 'tmd'.
+      feature  the stored embedding is shared by all three, so only the text
+               side differs and only the text tower receives gradient.
+
+    Args:
+        replay_batch: the same replay minibatch the replay CE used.
+        storage:      args.replay_storage.
+        text_cache:   dict, filled on first use; frozen teachers make it exact.
+    """
+    from src.remind_buffer import encode_from_layer
+
+    T = getattr(args, "T", 2.0)
+    mix = getattr(args, "prev_distill_mix", 1.0)
+    use_clip = mix < 1.0
+    teachers = [("prev", prev_model)] + ([("clip", ref_model)] if use_clip else [])
+
+    x, task_ids = replay_batch[0].cuda(), replay_batch[2].cuda()
+
+    def _visual(m):
+        return m.module.visual if hasattr(m, "module") else m.visual
+
+    total_loss = torch.tensor(0.0, device="cuda")
+    total_samples = 0
+
+    for tid in task_ids.unique().tolist():
+        tid = int(tid)
+        mask = task_ids == tid
+
+        task_info = replay_buffer.get_task_info(tid)
+        texts = clip.tokenize(
+            [task_info["template"](c) for c in task_info["classnames"]]
+        ).cuda()
+
+        text_emb = model(None, texts)
+        text_emb = text_emb / text_emb.norm(dim=-1, keepdim=True)
+
+        with torch.no_grad():
+            t_texts = {}
+            for name, teacher in teachers:
+                if (name, tid) not in text_cache:
+                    emb = teacher(None, texts).float()
+                    text_cache[(name, tid)] = emb / emb.norm(dim=-1, keepdim=True)
+                t_texts[name] = text_cache[(name, tid)]
+
+        # Image embeddings: student with grad, teachers without.
+        if storage == "feature":
+            feat = x[mask].float()
+            student_img = feat.to(text_emb.dtype)
+            t_imgs = {name: feat for name, _ in teachers}
+        elif storage == "remind":
+            tokens = replay_buffer.decode_tokens(x[mask], tid)
+            visual = _visual(model)
+            student_img = encode_from_layer(
+                visual, tokens.to(visual.conv1.weight.dtype), replay_buffer.layer,
+                use_checkpoint=getattr(visual.transformer, "use_checkpoint", False),
+            )
+            with torch.no_grad():
+                t_imgs = {}
+                for name, teacher in teachers:
+                    tv = _visual(teacher)
+                    t_imgs[name] = encode_from_layer(
+                        tv, tokens.to(tv.conv1.weight.dtype), replay_buffer.layer,
+                    ).float()
+        else:
+            images = x[mask]
+            student_img = model(images, None)
+            with torch.no_grad():
+                t_imgs = {name: teacher(images, None).float()
+                          for name, teacher in teachers}
+
+        student_img = student_img / student_img.norm(dim=-1, keepdim=True)
+        s_logits = (logit_scale.exp() * student_img @ text_emb.t()).float()
+
+        with torch.no_grad():
+            probs = {}
+            for name, _ in teachers:
+                img = t_imgs[name] / t_imgs[name].norm(dim=-1, keepdim=True)
+                logits = logit_scale.exp().float() * img @ t_texts[name].t()
+                probs[name] = F.softmax(logits / T, dim=1)
+            p_teacher = (mix * probs["prev"] + (1 - mix) * probs["clip"]
+                         if use_clip else probs["prev"])
+
+        # Same objective as helpers.distillation, with the target given as
+        # probabilities so two teachers can be averaged after their softmax.
+        task_loss = F.cross_entropy(s_logits / T, p_teacher) * (T ** 2)
+
+        n = mask.sum()
+        total_loss = total_loss + task_loss * n.float()
+        total_samples += n.item()
+
+    if total_samples > 0:
+        return total_loss / total_samples
+    return total_loss

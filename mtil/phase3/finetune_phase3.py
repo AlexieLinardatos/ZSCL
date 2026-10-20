@@ -347,6 +347,13 @@ def finetune_multi_task_phase3(args):
             args_task.iterations = task_iters[task_name]
             print(f"[Phase3] Per-task iterations for '{task_name}': {args_task.iterations}")
 
+        # Teacher for --lambda_prev_distill. Set independently of args_task.load,
+        # which points at this task's own partial checkpoint on a resume.
+        args_task.prev_teacher_ckpt = (
+            os.path.join(args.save, f"{task_names[task_idx - 1]}.pth")
+            if task_idx > 0 else None
+        )
+
         task_ckpt = os.path.join(args.save, f"{task_name}.pth")
         if os.path.exists(task_ckpt):
             saved_iter = torch.load(task_ckpt, weights_only=False)["iteration"]

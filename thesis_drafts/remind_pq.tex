@@ -1,0 +1,53 @@
+% Requires: \usepackage{amsmath} \usepackage{booktabs}
+% Placement: Methods, after feature replay (mid-network replay variant).
+% Numbers below are for CLIP ViT-B/16 (224x224 input, 16x16 patches, width 768).
+
+\subsection{Mid-Network Replay with Product Quantization}
+\label{sec:remind}
+
+Feature replay stores the final embedding, so the replayed sample never passes back through the image encoder and gives it no gradient. Following REMIND~\cite{hayes2020remind}, we instead store activations from the middle of the image encoder and replay them through the layers above. The catch is size. At the output of transformer block $\ell$, CLIP ViT-B/16 represents an image as a grid of $N = 14 \times 14 + 1 = 197$ tokens (196 patches plus the class token), each of width $D = 768$. Stored raw in fp16, that is $197 \times 768 \times 2 \approx 296$\,KB per exemplar, roughly twice the size of the $224 \times 224 \times 3$ image it came from. Mid-network replay only saves memory if the tokens are compressed, and we do this with product quantization (PQ)~\cite{jegou2011pq}.
+
+\paragraph{Product quantization.} Each token $\mathbf{z} \in \mathbb{R}^{D}$ is treated as its own vector; the 197 tokens of an image are quantized independently. We split $\mathbf{z}$ into $m$ contiguous subvectors of length $D/m$,
+\begin{equation}
+\mathbf{z} = \big[\, \mathbf{z}^{(1)}, \mathbf{z}^{(2)}, \dots, \mathbf{z}^{(m)} \,\big], \qquad \mathbf{z}^{(k)} \in \mathbb{R}^{D/m}.
+\end{equation}
+For each subspace $k$ we run $k$-means on the subvectors $\mathbf{z}^{(k)}$ collected from the task's training tokens, giving a codebook $C^{(k)} = \{\mathbf{c}^{(k)}_1, \dots, \mathbf{c}^{(k)}_{256}\}$ of 256 centroids. Every subvector is then replaced by the index of its nearest centroid,
+\begin{equation}
+q_k(\mathbf{z}) = \arg\min_{r \in \{1,\dots,256\}} \big\| \mathbf{z}^{(k)} - \mathbf{c}^{(k)}_r \big\|_2^2 ,
+\end{equation}
+so a token is stored as $m$ one-byte indices $\big(q_1(\mathbf{z}), \dots, q_m(\mathbf{z})\big)$ rather than $D$ floats. The centroids themselves are not stored per exemplar; they live once in the codebook and are shared by every token encoded against it. At replay time we decode by looking up each index and concatenating the centroids,
+\begin{equation}
+\hat{\mathbf{z}} = \big[\, \mathbf{c}^{(1)}_{q_1(\mathbf{z})}, \dots, \mathbf{c}^{(m)}_{q_m(\mathbf{z})} \,\big],
+\end{equation}
+and pass the reconstructed grid through blocks $\ell+1, \dots, 12$ of the image encoder. Tokens are standardized per dimension before quantization and the statistics are inverted after decoding. Each task fits its own codebook, so every exemplar is always decoded with the codebook it was encoded with.
+
+\paragraph{The role of $m$.} The number of subvectors $m$ sets the trade-off between storage and fidelity. Each subvector costs one byte, so an exemplar costs $197\,m$ bytes, and each of the 768 dimensions gets $8m/768$ bits. A larger $m$ means shorter subvectors, which $k$-means can fit more closely with the same 256 centroids, so reconstruction improves at the cost of more bytes. Because the centroids in a codebook cover all $D$ dimensions between them, a codebook always holds $256 \times 768$ floats regardless of $m$; only the per-exemplar codes grow. \Cref{tab:pq_m} lists the settings we evaluate.
+
+\begin{table}[h]
+\centering
+\caption{Storage per exemplar for product-quantized mid-network replay on CLIP ViT-B/16 (197 tokens of width 768). Each codebook adds a fixed $256 \times 768$ fp32 floats (768\,KB) per task.}
+\label{tab:pq_m}
+\begin{tabular}{lcccc}
+\toprule
+Storage & Subvector length & Bits / dim & Bytes / exemplar & vs.\ image \\
+\midrule
+Image (uint8)         & --  & --   & 150{,}528 & $1\times$ \\
+Raw tokens (fp16)     & --  & 16   & 302{,}592 & $0.5\times$ \\
+PQ, $m=32$            & 24  & 0.33 & 6{,}304   & $24\times$ \\
+PQ, $m=64$            & 12  & 0.67 & 12{,}608  & $12\times$ \\
+PQ, $m=128$           & 6   & 1.33 & 25{,}216  & $6\times$ \\
+Final embedding (fp16)& --  & --   & 1{,}024   & $147\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Freezing below the tap.} Stored tokens only stay valid if the layers that produced them do not change. As in REMIND, we freeze blocks $1, \dots, \ell$ after the first task, so the stored activations cannot drift and need no correction. This is the opposite choice to feature replay, which lets the whole encoder train and adapts stale features after the fact (\Cref{sec:feature_adaptation}). The price is plasticity: the frozen lower blocks can no longer adapt to new tasks, which may matter on MTIL, where tasks range from MNIST digits to SUN397 scenes. We tap at block $\ell \in \{2, 6\}$ to measure this trade-off.
+
+% TODO: add to .bib
+% @article{jegou2011pq,
+%   title={Product Quantization for Nearest Neighbor Search},
+%   author={J{\'e}gou, Herv{\'e} and Douze, Matthijs and Schmid, Cordelia},
+%   journal={IEEE Transactions on Pattern Analysis and Machine Intelligence},
+%   volume={33}, number={1}, pages={117--128}, year={2011}
+% }
+% TODO: \label{sec:feature_adaptation} must exist on your feature-adaptation section.

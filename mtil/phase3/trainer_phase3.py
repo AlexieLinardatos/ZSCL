@@ -68,6 +68,7 @@ from .losses_phase3 import (
     compute_feature_replay_loss,
     compute_remind_replay_loss,
     compute_remind_distill_loss,
+    compute_prev_teacher_distill_loss,
 )
 from src.remind_buffer import freeze_below_layer
 
@@ -298,6 +299,33 @@ def custom_finetune_phase3(args, replay_buffer=None):
             f"{'replay teacher distill' if enable_replay_teacher else ''})"
         )
 
+    # Previous-task teacher: the checkpoint this task started from, loaded as
+    # a second frozen model. Only meaningful once there is a buffer to replay.
+    prev_model = None
+    prev_text_cache = {}
+    lambda_prev = getattr(args, "lambda_prev_distill", 0.0)
+    prev_ckpt = getattr(args, "prev_teacher_ckpt", None)
+    if lambda_prev > 0 and replay_buffer is not None and len(replay_buffer) > 0:
+        if prev_ckpt is None or not os.path.exists(prev_ckpt):
+            raise FileNotFoundError(
+                f"--lambda_prev_distill needs the previous task's checkpoint, "
+                f"but '{prev_ckpt}' does not exist."
+            )
+        if getattr(args, "prev_distill_mix", 1.0) < 1.0 and ref_model is None:
+            raise ValueError("--prev_distill_mix < 1 averages with frozen CLIP, "
+                             "but no CLIP teacher was set up.")
+        from src.models.training import load_base_model
+        args_prev = copy.copy(args)
+        args_prev.load = prev_ckpt
+        args_prev.start_iteration = None
+        prev_model, _, _, _ = load_base_model(args_prev)
+        for p in prev_model.parameters():
+            p.requires_grad_(False)
+        prev_model = torch.nn.DataParallel(prev_model.cuda(), device_ids=devices)
+        prev_model.eval()
+        print(f"[Phase3] Previous-task teacher loaded from {prev_ckpt} "
+              f"(λ={lambda_prev}, mix={args.prev_distill_mix})")
+
     embeddings = None
     if args.train_mode == "text":
         embeddings = zeroshot_classifier(dataset.classnames, dataset.templates, model)
@@ -501,6 +529,7 @@ def custom_finetune_phase3(args, replay_buffer=None):
         # ---- (4) Replay supervised CE loss  +  (5) Replay teacher distill ----
         loss_rsup_val = 0.0
         loss_rteacher_val = 0.0
+        loss_prev_val = 0.0
 
         if replay_iter_inf is not None:
             # Fetch one replay minibatch
@@ -555,6 +584,15 @@ def custom_finetune_phase3(args, replay_buffer=None):
                 loss = loss + lambda_rtd * loss_rtd
                 loss_rteacher_val = loss_rtd.item()
 
+            # (6) Previous-task teacher distillation, same replay batch
+            if prev_model is not None:
+                loss_prev = compute_prev_teacher_distill_loss(
+                    model, prev_model, ref_model, replay_batch, replay_buffer,
+                    logit_scale, args, replay_storage, prev_text_cache,
+                )
+                loss = loss + lambda_prev * loss_prev
+                loss_prev_val = loss_prev.item()
+
         # ---- Backward pass ----
         optimizer.zero_grad()
         loss.backward()
@@ -580,6 +618,7 @@ def custom_finetune_phase3(args, replay_buffer=None):
                 f"zscl={loss_zscl_val:.4f}  "
                 f"replay_sup={loss_rsup_val:.4f}  "
                 f"replay_teacher={loss_rteacher_val:.4f}  "
+                f"{f'prev_teacher={loss_prev_val:.4f}  ' if prev_model is not None else ''}"
                 f"buf={buf_size}"
             )
             _loss_csv_writer.writerow([
@@ -596,6 +635,7 @@ def custom_finetune_phase3(args, replay_buffer=None):
                 "loss/zscl": loss_zscl_val,
                 "loss/replay_sup": loss_rsup_val,
                 "loss/replay_teacher": loss_rteacher_val,
+                "loss/prev_teacher": loss_prev_val,
                 "replay_buffer_size": buf_size,
             }, step=iteration)
             prev_ce = loss_ce_val
