@@ -314,7 +314,6 @@ def custom_finetune_phase3(args, replay_buffer=None):
         if getattr(args, "prev_distill_mix", 1.0) < 1.0 and ref_model is None:
             raise ValueError("--prev_distill_mix < 1 averages with frozen CLIP, "
                              "but no CLIP teacher was set up.")
-        from src.models.training import load_base_model
         args_prev = copy.copy(args)
         args_prev.load = prev_ckpt
         args_prev.start_iteration = None
