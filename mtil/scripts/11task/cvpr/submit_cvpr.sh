@@ -13,13 +13,22 @@ if want P1; then
   sbatch $D/robustness/buf_11k_nord.sh                 # Replay + ZSCL, no RD
   sbatch $D/cvpr/zscl_only_v4.sh                       # distillation only
   sbatch $D/cvpr/no_anchor_no_replay_v4.sh             # fine-tune row
-  sbatch $D/rebuttal_zeroshot_eval.sh                  # zero-shot row
+  # Zero-shot row. Skip if /scratch/alexie/ckpt/rebuttal/zeroshot/evaluate_all_results.csv
+  # already exists from the rebuttal; results go there, not to ckpt/.
+  sbatch $D/rebuttal_zeroshot_eval.sh
+  # Control: v4 re-run on this branch (random selection == v4 flags exactly).
+  # Every pixel row is compared against the old v4 run; this checks the code
+  # since then reproduces it, and doubles as the 11k random row of Tab. q2b.
+  SEL=random BUDGET=11000 sbatch $D/cvpr/exemplar_sel.sh
 fi
 
 # P2: RQ5 same-MB + RQ7 precision (Tab. 4, Tab. 7)
 if want P2; then
   BUDGET=2000000 sbatch $D/featrep_v0_11t.sh            # every image as fp16 embedding
   LAYER=2 PQ_M=128 BUDGET=65000 sbatch $D/remind_11t.sh            # tokens filling ~1.66 GB
+  # Control: fp16 + random == original featrep_v0, re-run on this branch under
+  # its own tag. Baseline for every precision and 11k feature-selection row.
+  PREC=fp16 sbatch $D/featrep_v0_11t.sh
   PREC=fp32 sbatch $D/featrep_v0_11t.sh
   PREC=int8 sbatch $D/featrep_v0_11t.sh
   PREC=int4 sbatch $D/featrep_v0_11t.sh
