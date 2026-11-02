@@ -22,7 +22,7 @@ import os
 import torch
 import clip.clip as clip
 
-from src import datasets, templates
+from src import datasets, templates, utils
 from src.drift_probe import DriftProbe
 from src.feature_replay_buffer import FeatureReplayBuffer
 from src.remind_buffer import RemindReplayBuffer
@@ -607,13 +607,31 @@ def finetune_multi_task_phase3(args):
             del encoder
             torch.cuda.empty_cache()
         else:
+            # Exemplar selection (ported from replaybuffer-extensions): non-random
+            # strategies score candidates with the checkpoint just trained here.
+            strategy = getattr(args, "exemplar_strategy", "random")
+            selection_model = None
+            if strategy != "random":
+                trained_ckpt = os.path.join(args.save, f"{task_name}.pth")
+                selection_model, _, _ = clip.load(args.model, jit=False)
+                utils.torch_load(selection_model, trained_ckpt)
+                selection_model = selection_model.cuda().eval()
+                print(f"[Phase3 outer loop] Loaded trained model for exemplar "
+                      f"selection (strategy={strategy})")
+
             replay_buffer.add_task(
                 task_id=task_idx,
                 dataset=task_dataset_obj.train_dataset,
                 num_samples=encode_n,
                 classnames=task_dataset_obj.classnames,
                 template=task_template,
+                strategy=strategy,
+                model=selection_model,
             )
+
+            if selection_model is not None:
+                del selection_model
+                torch.cuda.empty_cache()
         class_counts = {
             tid: len(replay_buffer.task_info[tid]["classnames"])
             for tid in replay_buffer.memory

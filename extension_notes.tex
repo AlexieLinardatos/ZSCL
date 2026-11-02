@@ -1,0 +1,185 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{xcolor}
+\usepackage{mdframed}
+
+\newcommand{\teach}{\mathrm{T}}
+\newcommand{\stud}{\mathrm{S}}
+\newcommand{\softmax}{\operatorname{softmax}}
+\newcommand{\clamp}{\operatorname{clamp}}
+\newcommand{\warn}[1]{\begin{mdframed}[backgroundcolor=red!6,linecolor=red!40]\textbf{Heads-up.} #1\end{mdframed}}
+
+\title{Continual-Learning Extensions: Concepts and Math}
+\author{Alexie Linardatos}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{0. Base method (ExRD)}
+
+CLIP has an image encoder $f_I$ and a text encoder $f_T$. We use normalized embeddings
+\[
+u = \frac{f_I(x)}{\lVert f_I(x)\rVert}, \qquad
+v = \frac{f_T(\text{text})}{\lVert f_T(\text{text})\rVert}.
+\]
+Classification logits are cosine similarities scaled by CLIP's learned temperature
+$\tau = \exp(\texttt{logit\_scale}) \approx 100$:
+\[
+\ell(x,\text{text}) = \tau \, \big(u \cdot v\big).
+\]
+
+The soft-distillation operator (temperature-$T$ KL, written as cross-entropy with soft targets) is
+\[
+\mathcal{D}\big(z^{\teach}, z^{\stud}\big)
+= T^2 \cdot \mathrm{CE}\!\left(\frac{z^{\stud}}{T},\ \softmax\!\Big(\frac{z^{\teach}}{T}\Big)\right).
+\]
+
+\paragraph{ExRD optimizes five losses per step.}
+With student parameters $\theta$, frozen original CLIP $\theta_{\text{orig}}$ (the teacher, superscript $\teach$):
+\begin{align}
+\mathcal{L}_{\text{ExRD}}
+&= \underbrace{\mathcal{L}_{\text{CE}}}_{\text{(1) current task}}
++ \underbrace{\lambda_{L2}\,\lVert \theta - \theta_{\text{orig}} \rVert^2}_{\text{(2) weight anchor},\ \lambda_{L2}=1}
++ \underbrace{\mathcal{L}_{\text{ZSCL}}}_{\text{(3) reference distill}} \notag\\[2pt]
+&\quad
++ \underbrace{\mathcal{L}_{\text{replay-CE}}}_{\text{(4) buffer CE}}
++ \underbrace{\lambda_{\text{RTD}}\,\mathcal{L}_{\text{RTD}}}_{\text{(5) replay-teacher distill},\ \lambda_{\text{RTD}}=0.3}.
+\end{align}
+
+\paragraph{(3) ZSCL distillation on a reference set (Conceptual Captions).}
+Build the reference image--text similarity matrices from the frozen teacher and the student
+over a batch of reference images $\{x_i\}$ and reference texts $\{\text{text}_j\}$:
+\[
+L^{\teach}_{ij} = \tau\, u^{\teach}_i \cdot v^{\teach}_j,
+\qquad
+L^{\stud}_{ij} = \tau\, u^{\stud}_i \cdot v^{\teach}_j .
+\]
+\[
+\mathcal{L}_{\text{ZSCL}}
+= \underbrace{\mathcal{D}\big(L^{\teach},\, L^{\stud}\big)}_{\text{image term, row-wise}}
++ \underbrace{\mathcal{D}\big(L^{\teach\top},\, L^{\stud\top}\big)}_{\text{text term, column-wise}} .
+\]
+
+\warn{In this codebase the text embeddings $v^{\teach}$ come from the \emph{frozen teacher} in
+\emph{both} terms, so gradients flow only through the student image features $u^{\stud}$.
+The ``text term'' is the transposed image-distillation (column-wise softmax), \emph{not} a
+direct text-encoder anchor.}
+
+\section*{1. LLM-anchored text encoder}
+
+\textbf{Idea.} Nothing in ExRD directly anchors the \emph{text} encoder against drift. Anchor the
+student's text features to a frozen, stronger language model.
+
+\paragraph{Precompute (once).}
+For each reference caption $j$, encode with a frozen LLM (\texttt{e5-large-v2}), mean-pool, L2-normalize:
+\[
+g_j = \frac{\text{LLM}(\text{caption}_j)}{\lVert \text{LLM}(\text{caption}_j)\rVert} \in \mathbb{R}^{1024}.
+\]
+Cache $\{g_j\}$ to disk and free the LLM (zero per-step cost).
+
+\paragraph{Projection head.} A 2-layer MLP maps CLIP text space ($512$) into LLM space ($1024$):
+\[
+P(h) = W_2 \,\mathrm{GELU}(W_1 h + b_1) + b_2.
+\]
+
+\paragraph{Cosine drift loss.} For a sampled batch of captions with student text features $t_j$:
+\[
+\mathcal{L}_{\text{anchor}}
+= \frac{1}{B}\sum_{j=1}^{B}\Big(1 - \cos\big(P(t_j),\, g_j\big)\Big),
+\qquad
+\cos(a,b) = \frac{a\cdot b}{\lVert a\rVert\,\lVert b\rVert}.
+\]
+
+\paragraph{Two variants.}
+\begin{align}
+\text{Added (6 losses):}\quad & \mathcal{L} = \mathcal{L}_{\text{ExRD}} + \lambda_{\text{anchor}}\,\mathcal{L}_{\text{anchor}}, \\
+\text{Dropped (headline, 5 losses):}\quad & \mathcal{L} = \big(\mathcal{L}_{\text{ExRD}} - \mathcal{D}(L^{\teach\top}, L^{\stud\top})\big) + \lambda_{\text{anchor}}\,\mathcal{L}_{\text{anchor}},
+\end{align}
+with $\lambda_{\text{anchor}} = 0.3$. The dropped variant removes the ZSCL text term and gives the best Last ($86.62$).
+
+\section*{2. Multi-teacher model merging (NS3)}
+
+\textbf{Idea.} Replace the single frozen teacher with a merge of one teacher \emph{per past task},
+weighting similar tasks more.
+
+\paragraph{After task $t$, save:}
+\begin{align}
+\text{task vector:}\quad & \delta_t = \theta_t - \theta_{t-1} \quad (\text{fp16; } \texttt{logit\_scale} \text{ and buffers skipped}),\\
+\text{signature:}\quad & s_t = \frac{\bar{u}_t}{\lVert \bar{u}_t\rVert}, \quad
+\bar{u}_t = \frac{1}{N}\sum_{n=1}^{N} u^{\teach}(x_n) \ \ (\text{mean over } \sim 10 \text{ batches}).
+\end{align}
+
+\paragraph{Before task $t{+}1$, build the merged teacher} and load it into the ZSCL teacher slot:
+\[
+\hat{\theta}_t = \theta_0 + \sum_{i<t} w_i \, \delta_i .
+\]
+
+\paragraph{Weighting strategies.}
+\begin{align}
+\text{v1 (equal, ablation):}\quad & w_i = \alpha, \\
+\text{v3 (data-driven, headline):}\quad & w_i = \alpha\cdot\softmax_i\!\left(\frac{\cos(s_t, s_i)}{T}\right)
+= \alpha \cdot \frac{\exp\!\big(\cos(s_t,s_i)/T\big)}{\sum_{k<t}\exp\!\big(\cos(s_t,s_k)/T\big)} .
+\end{align}
+Config: $\alpha = 0.1$, $T = 1.0$. As all $w_i \to 0$, behavior reduces exactly to ExRD.
+\emph{Result:} v3 barely beat v1 ($86.33$ vs $86.31$).
+
+\section*{3. Exemplar selection / replay sampling}
+
+\textbf{Idea.} Fixed buffer budget; allocate $k = \lfloor \text{budget}/\#\text{classes}\rfloor$ slots per class,
+then choose \emph{which} images to keep. Let $\phi(x)$ be the normalized CLIP feature, $p_i$ the softmax
+probabilities, $y_i$ the one-hot label.
+
+\paragraph{Herding (iCaRL).} Greedily grow the selected set $\mathcal{S}$ so its running mean tracks the
+class mean $\mu_c = \frac{1}{n}\sum_i \phi(x_i)$:
+\[
+\text{pick}\quad \arg\min_{i \notin \mathcal{S}}
+\left\lVert \mu_c - \frac{1}{|\mathcal{S}|+1}\Big(\sum_{x\in\mathcal{S}}\phi(x) + \phi(x_i)\Big) \right\rVert .
+\]
+
+\paragraph{EL2N.} Keep the hardest examples by error norm; take the top-$k$ scores:
+\[
+\text{score}_i = \lVert p_i - y_i \rVert_2 .
+\]
+
+\paragraph{GCR (gradient coreset).} The last-layer CE gradient on a frozen-feature classifier is the outer product
+\[
+g_i = (p_i - y_i) \otimes \phi(x_i).
+\]
+Greedily pick a subset whose mean gradient matches the full set:
+\[
+\text{pick}\quad \arg\min_{i \notin \mathcal{S}}
+\left\lVert \overline{g}_{\text{all}} - \frac{1}{|\mathcal{S}|+1}\Big(\sum_{j\in\mathcal{S}} g_j + g_i\Big) \right\rVert,
+\qquad \overline{g}_{\text{all}} = \frac{1}{n}\sum_i g_i .
+\]
+
+\emph{Result:} all three land at or below random/proportional replay. The win in this group is the
+\emph{allocation} rule (proportional / uniform slots per class), not the per-sample score.
+
+\section*{4. Dynamic hyperparameter scheduling (Adaptive ZSCL, NS4)}
+
+\textbf{Idea.} Vary hyperparameters across the task sequence instead of fixing them. All schedules
+return $1.0$ at the no-op setting (recovering v4).
+
+\paragraph{Position schedules.} For task index $\mathrm{idx}\in\{0,\dots,n-1\}$, let $\rho = \dfrac{\mathrm{idx}}{n-1}$:
+\begin{align}
+\text{ramp\_up:}\quad & m = \mathrm{lo} + (\mathrm{hi}-\mathrm{lo})\,\rho, \\
+\text{ramp\_down:}\quad & m = \mathrm{hi} - (\mathrm{hi}-\mathrm{lo})\,\rho, \\
+\text{warmup\_cooldown (tent):}\quad & m = \mathrm{lo} + (\mathrm{hi}-\mathrm{lo})\big(1 - |2\rho - 1|\big).
+\end{align}
+
+\paragraph{LR-by-class.} Scale the per-task learning rate by class count:
+\[
+m = \clamp\!\left(\Big(\frac{\#\text{classes}}{\text{ref}}\Big)^{p},\ \mathrm{lo},\ \mathrm{hi}\right).
+\]
+
+\paragraph{Running configuration.}
+\begin{align}
+\text{ZSCL weight:}\quad & \text{ramp\_up},\ 1.0 \to 1.5, \\
+\lambda_{\text{RTD}}:\quad & \text{warmup\_cooldown},\ 0.5 \leftrightarrow 1.5 \ (\text{base } 0.3), \\
+\text{learning rate:}\quad & \text{scaled by } \sqrt{\#\text{classes}/100}.
+\end{align}
+Numbers pending.
+
+\end{document}

@@ -1,0 +1,255 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage[table]{xcolor}   % cell/row coloring (loads colortbl)
+\usepackage{hyperref}
+\hypersetup{colorlinks=true, linkcolor=blue!50!black, citecolor=blue!50!black, urlcolor=blue!50!black}
+
+% math shorthands
+\newcommand{\teach}{\mathrm{T}}
+\newcommand{\stud}{\mathrm{S}}
+\newcommand{\softmax}{\operatorname{softmax}}
+
+% table cell highlights
+\newcommand{\up}[1]{\cellcolor{green!16}#1}              % beats ExRD baseline
+\newcommand{\dn}[1]{\cellcolor{red!10}#1}                % below baseline
+\newcommand{\best}[1]{\textbf{#1}}                       % best among our runs
+\newcommand{\extbest}[1]{\cellcolor{blue!15}\textbf{#1}} % external method beats our best
+
+\title{Continual Learning of Vision-Language Models:\\ Extension Directions and Refinement Plan}
+\author{Alexie Linardatos \\ \small Supervised by Faisal Qureshi}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This document summarizes four extensions explored on top of our continual-learning method (ExRD)
+for CLIP~\cite{clip} on the Multi-Task Incremental Learning (MTIL) benchmark, reports preliminary
+results, and lays out concrete refinement directions for each. All current results are single-seed
+and preliminary. The lead direction is the LLM-anchored text encoder.
+\end{abstract}
+
+\paragraph{Citation note.} Titles, authors, and venues are believed correct; arXiv identifiers should
+be checked before submission. Entries marked \texttt{[verify]} are from recollection, and the GIFT and
+LoRA-Loop citations are placeholders pending the exact sources.
+
+\section{Setup and Baseline}
+
+\paragraph{Benchmark.} MTIL trains CLIP sequentially on 11 classification tasks (Aircraft,
+Caltech101, CIFAR100, DTD, EuroSAT, Flowers, Food, MNIST, OxfordPet, StanfordCars, SUN397). We use
+CLIP ViT-B/16 (image encoder: 12 layers, 12 heads, width 768; text encoder: 12 layers, 8 heads,
+width 512; shared embedding dim 512).
+
+\paragraph{Metrics.} After training on each task we evaluate the model on all 11 tasks, producing an
+$11\times11$ accuracy matrix (row = training stage, column = evaluation task). \emph{Last} is the
+final model's accuracy: the last row of the matrix, averaged over the 11 tasks, after every task has
+been learned. \emph{Avg} is the mean over the whole matrix, i.e.\ accuracy averaged across every
+stage of the sequence; it includes the lower accuracies from earlier stages and the zero-shot
+accuracies on not-yet-trained tasks, so it sits well below Last. \emph{Transfer} is the held-out
+ImageNet zero-shot accuracy averaged across the 11 stages; ImageNet is never trained, so it probes
+zero-shot retention. Avg and Last exclude ImageNet.
+
+\paragraph{Baseline (ExRD).} The per-step objective sums five terms: (1) current-task cross-entropy;
+(2) an L2 weight anchor toward original CLIP; (3) ZSCL feature distillation~\cite{zscl} on a
+reference set (Conceptual Captions), matching teacher and student image-text similarity distributions
+via temperature-$T$ KL; (4) supervised cross-entropy on replay-buffer samples; (5) replay-teacher
+distillation. Distillation uses soft targets,
+$\mathcal{D}(z^{\teach},z^{\stud}) = T^2\,\mathrm{CE}(z^{\stud}/T,\ \mathrm{softmax}(z^{\teach}/T))$.
+
+\begin{table}[h]
+  \centering
+  \caption{Extensions vs.\ ExRD baseline. Transfer = ImageNet held-out retention; Avg and Last over
+  the 11 trained tasks. Green beats ExRD; \textbf{bold} is best among our runs; blue is where an
+  external method beats our best. Single-seed.}
+  \label{tab:extensions}
+  \begin{tabular}{lccc}
+  \toprule
+  Run & Transfer & Avg & Last \\
+  \midrule
+  ExRD (baseline) & \best{68.37} & 77.17 & 86.17 \\
+  \midrule
+  \multicolumn{4}{l}{\emph{LLM-anchored text encoder}}\\
+  LLM anchor, added             & 67.60 & 77.06 & \up{86.36} \\
+  LLM anchor, ZSCL-text dropped & 67.63 & \up{77.30} & \up{\best{86.62}} \\
+  \midrule
+  \multicolumn{4}{l}{\emph{Multi-teacher merge}}\\
+  Merge v1 & 68.10 & 77.14 & \up{86.31} \\
+  Merge v3 & 68.13 & \up{77.18} & \up{86.33} \\
+  \midrule
+  \multicolumn{4}{l}{\emph{Replay sampling: exemplar selection}}\\
+  EL2N    & 68.01 & 76.87 & 85.97 \\
+  GCR     & 68.32 & 76.87 & 86.17 \\
+  Herding & 68.20 & 76.93 & 86.11 \\
+  \multicolumn{4}{l}{\emph{Replay sampling: allocation}}\\
+  Proportional & 68.00 & \up{77.57} & \up{86.44} \\
+  Uniform      & 67.99 & \up{\best{77.65}} & \up{86.44} \\
+  \midrule
+  GIFT      & \extbest{69.3} & 77.3 & 86.0 \\
+  LoRA-Loop & \extbest{69.8} & 77.6 & 86.0 \\
+  \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{Reading of the results.} Our extensions consistently improve \emph{Last} (retention) but
+trade away a little \emph{Transfer}, while prior work~\cite{gift,loraloop} occupies the opposite
+corner (higher Transfer, lower Last). We are not Pareto-dominated, but to claim a win we must either
+recover Transfer at our higher Last, or show a dominating frontier (Sec.~\ref{sec:cross}).
+
+\section{Extension 1: LLM-Anchored Text Encoder (lead)}
+
+\paragraph{Method.} A frozen sentence-embedding model (e5-large-v2~\cite{e5}; encoder, 24 layers,
+16 heads, width 1024) encodes the reference captions once into L2-normalized 1024-d targets $g_j$
+(cached, after which the LLM is freed). A 2-layer MLP $P:\mathbb{R}^{512}\to\mathbb{R}^{1024}$,
+$P(h)=W_2\,\mathrm{GELU}(W_1 h + b_1)+b_2$, maps CLIP text features into LLM space. The drift loss
+pulls direction toward the anchor,
+$\mathcal{L}_{\text{anchor}} = \frac{1}{B}\sum_j \big(1-\cos(P(t_j),g_j)\big)$, added with
+$\lambda=0.3$. The headline variant additionally drops the ZSCL text term, replacing it rather than
+stacking (5 losses total). Pooling auto-switches to last-token for decoder LLMs, so the framework is
+anchor-agnostic. This is a text-side analogue of feature distillation~\cite{fitnets} and of the
+robust-anchoring idea in WiSE-FT~\cite{wiseft}.
+
+\paragraph{Preliminary result.} Best Last (86.62), but Transfer dips ($67.6$ vs $68.4$). Anchoring
+the text encoder to a text-only space appears to perturb the CLIP image-text alignment that
+zero-shot classification relies on.
+
+\paragraph{Refinement directions.}
+\begin{enumerate}
+  \item \textbf{$\lambda$ sweep} $\in\{0.05,0.1,0.3\}$ to characterize the Transfer and Last
+        trade-off; a gentler anchor should preserve alignment.
+  \item \textbf{Relational distillation}~\cite{rkd}: anchor the pairwise geometry between captions
+        (for example $\mathrm{KL}$ between $\softmax(t t^\top/\tau)$ and $\softmax(g g^\top/\tau)$)
+        instead of absolute direction. This preserves alignment far better and is already scoped as
+        ``Novelty B.''
+  \item \textbf{Anchor schedule}: decay $\lambda$ over the sequence, or apply the anchor only early,
+        to limit late-stage alignment drift.
+  \item \textbf{Cross-family anchors}: e5 (encoder) vs Qwen2-0.5B (decoder, 896-d, last-token) vs
+        instruction-tuned embedders (e5-mistral, gte-Qwen2~\cite{gteqwen}). This establishes that the
+        result holds across anchor families. It is a robustness claim, not a Transfer fix.
+  \item \textbf{Projection capacity and freezing}: ablate hidden width and depth; freeze $P$ after the
+        first task to stop it co-adapting to drift.
+  \item \textbf{Recover Transfer post-hoc} via WiSE-FT interpolation (Sec.~\ref{sec:cross}).
+\end{enumerate}
+
+\section{Extension 2: Multi-Teacher Model Merging}
+
+\paragraph{Method.} After task $t$ we store a task vector $\delta_t=\theta_t-\theta_{t-1}$
+(fp16)~\cite{taskarith} and a 512-d signature $s_t$ (normalized mean image embedding over about 10
+batches). Before task $t{+}1$ we build a merged teacher $\hat\theta_t=\theta_0+\sum_{i<t}w_i\delta_i$
+and load it into the ZSCL teacher slot. Weights are either equal ($w_i=\alpha$, v1) or data-driven
+($w_i=\alpha\,\softmax_i(\cos(s_t,s_i)/T)$, v3), with $\alpha=0.1$, $T=1.0$.
+
+\paragraph{Preliminary result.} v3 barely beats v1 ($86.33$ vs $86.31$). Naive linear merging gains
+little from similarity routing and likely suffers task-vector interference.
+
+\paragraph{Refinement directions.}
+\begin{enumerate}
+  \item \textbf{Interference-aware merging}: replace the linear sum with TIES-Merging (sign election
+        and trimming)~\cite{ties}, DARE (stochastic drop-and-rescale)~\cite{dare}, or Fisher-weighted
+        merging~\cite{fisher} / RegMean~\cite{regmean}. The current method ignores sign conflicts
+        between task vectors.
+  \item \textbf{Weight normalization}: the total teacher weight currently grows with the number of
+        teachers ($\sum w_i=\alpha t$); normalize it so the merged teacher stays at a controlled
+        distance from $\theta_0$ (track $\lVert\hat\theta-\theta_0\rVert/\lVert\theta_0\rVert$).
+  \item \textbf{$(\alpha,T)$ sweep}: the temperature controls routing sharpness, and the current
+        $T{=}1$ may be too soft to differentiate teachers.
+  \item \textbf{Better signatures}: use class-prototype or text-side signatures, or task-Fisher
+        information, rather than a single mean image embedding.
+  \item \textbf{Per-layer weighting}: merge later layers more aggressively than early generic ones.
+  \item \textbf{Reuse the merge as student init} (model-soup style~\cite{soups}), not only as teacher.
+\end{enumerate}
+
+\section{Extension 3: Replay Sampling (Selection and Allocation)}
+
+\paragraph{Method.} Fixed budget (11k), allocated per class. Three selection rules vs random:
+Herding~\cite{icarl,herding} (greedy class-mean matching), EL2N~\cite{el2n} (top error-norm
+$\lVert p_i-y_i\rVert_2$), and GCR~\cite{gcr} (gradient-coreset; last-layer gradient
+$g_i=(p_i-y_i)\otimes\phi(x_i)$, greedy mean-gradient matching, cf.\ CRAIG~\cite{craig}).
+
+\paragraph{Preliminary result.} All selection rules land at or below random and proportional replay.
+The gains come from \emph{allocation} (proportional or uniform per-class slots, Last 86.44), not
+selection.
+
+\paragraph{Refinement directions.}
+\begin{enumerate}
+  \item \textbf{Budget sweep}: selection rules typically matter only at small budgets, and at 11k the
+        buffer may be large enough that any reasonable subset suffices. Repeat at $\{1\text{k},
+        2\text{k}, 5\text{k}\}$ to find where selection starts to help.
+  \item \textbf{Formalize allocation as the contribution}: compare proportional, uniform, and
+        difficulty- or forgetting-weighted allocation~\cite{forgetting} head-to-head.
+  \item \textbf{Alternative scores}: GraNd~\cite{el2n}, forgetting events~\cite{forgetting},
+        moderate-coreset, or herding in the joint image-text space rather than image-only.
+  \item \textbf{Selection and allocation interaction}: the best score under the best allocation.
+  \item \textbf{Compare to logit-replay baselines} (DER++~\cite{derpp}) to contextualize.
+\end{enumerate}
+
+\section{Extension 4: Dynamic Hyperparameter Scheduling}
+
+\paragraph{Method.} Per-task schedules (no new parameters). Position schedules map task index to a
+multiplier (\texttt{ramp\_up}, \texttt{ramp\_down}, \texttt{warmup\_cooldown} tent); an LR-by-class
+rule scales per-task LR by $(\#\text{classes}/\text{ref})^{p}$. Running config: ZSCL weight ramps
+$1.0$ to $1.5$; $\lambda_{\text{RTD}}$ follows a tent between $0.5$ and $1.5$; LR is scaled by
+$\sqrt{\#\text{classes}/100}$.
+
+\paragraph{Status.} Running; no numbers yet. This is the lowest standalone novelty and is best framed
+as an ``Adaptive ZSCL'' ablation.
+
+\paragraph{Refinement directions.}
+\begin{enumerate}
+  \item \textbf{Loss-balanced auto-tuning}: GradNorm~\cite{gradnorm} or uncertainty
+        weighting~\cite{uncertainty} to set the replay and ZSCL weights so gradient magnitudes stay
+        matched, rather than hand-designed schedules.
+  \item \textbf{Schedule-shape ablation}: isolate each of the three dials to attribute the effect.
+  \item \textbf{Gradient-based per-task LR} (for example from the early-step gradient norm) instead of
+        a class-count heuristic.
+  \item \textbf{Compose with Extensions 1 and 2} once those are tuned.
+\end{enumerate}
+
+\section{Cross-Cutting Directions}
+\label{sec:cross}
+
+\paragraph{WiSE-FT Pareto frontier~\cite{wiseft}.} Interpolating the fine-tuned model with zero-shot
+CLIP, $\theta_\alpha=\alpha\theta_{\text{ft}}+(1-\alpha)\theta_{0}$, trades Last for Transfer at test
+time with no retraining. On our v4, $\alpha{=}0.70$ already reached Transfer $70.44$ (above LoRA-Loop)
+at Last $85.10$. Sweeping $\alpha$ on the best-Last model (LLM-anchor-dropped, Last 86.62) should
+trace a frontier that may dominate prior work; the launchers are prepared.
+
+\paragraph{Relational distillation as a unifier.} The geometry-preserving loss (Ext.~1, item~2) is
+the most principled route to fixing the Transfer regression, and could also regularize the merged
+teacher (Ext.~2).
+
+\paragraph{Robustness and significance.} All results are single-seed; the headline candidates need
+multi-seed runs (we have seed1 and seed2 for the ExRD base) before any significance claim.
+
+\begin{thebibliography}{99}
+\small
+\bibitem{clip} A.\ Radford et al. ``Learning Transferable Visual Models From Natural Language Supervision.'' ICML 2021. \href{https://arxiv.org/abs/2103.00020}{arXiv:2103.00020}.
+\bibitem{zscl} Z.\ Zheng et al. ``Preventing Zero-Shot Transfer Degradation in Continual Learning of Vision-Language Models.'' ICCV 2023. \href{https://arxiv.org/abs/2303.06628}{arXiv:2303.06628}.
+\bibitem{wiseft} M.\ Wortsman et al. ``Robust fine-tuning of zero-shot models'' (WiSE-FT). CVPR 2022. \href{https://arxiv.org/abs/2109.01903}{arXiv:2109.01903}.
+\bibitem{soups} M.\ Wortsman et al. ``Model soups.'' ICML 2022. \href{https://arxiv.org/abs/2203.05482}{arXiv:2203.05482}.
+\bibitem{taskarith} G.\ Ilharco et al. ``Editing Models with Task Arithmetic.'' ICLR 2023. \href{https://arxiv.org/abs/2212.04089}{arXiv:2212.04089}.
+\bibitem{ties} P.\ Yadav et al. ``TIES-Merging: Resolving Interference When Merging Models.'' NeurIPS 2023. \href{https://arxiv.org/abs/2306.01708}{arXiv:2306.01708}.
+\bibitem{dare} L.\ Yu et al. ``Language Models are Super Mario: Absorbing Abilities from Homologous Models as a Free Lunch'' (DARE). 2023. \href{https://arxiv.org/abs/2311.03099}{arXiv:2311.03099}.
+\bibitem{fisher} M.\ Matena, C.\ Raffel. ``Merging Models with Fisher-Weighted Averaging.'' NeurIPS 2022. \href{https://arxiv.org/abs/2111.09832}{arXiv:2111.09832} [verify].
+\bibitem{regmean} X.\ Jin et al. ``Dataless Knowledge Fusion by Merging Weights of Language Models'' (RegMean). ICLR 2023. \href{https://arxiv.org/abs/2212.09849}{arXiv:2212.09849} [verify].
+\bibitem{icarl} S.-A.\ Rebuffi et al. ``iCaRL: Incremental Classifier and Representation Learning.'' CVPR 2017. \href{https://arxiv.org/abs/1611.07725}{arXiv:1611.07725}.
+\bibitem{herding} M.\ Welling. ``Herding Dynamical Weights to Learn.'' ICML 2009.
+\bibitem{el2n} M.\ Paul, S.\ Ganguli, G.\ Dziugaite. ``Deep Learning on a Data Diet: Finding Important Examples Early in Training'' (EL2N and GraNd). NeurIPS 2021. \href{https://arxiv.org/abs/2107.07075}{arXiv:2107.07075}.
+\bibitem{gcr} R.\ Tiwari et al. ``GCR: Gradient Coreset Based Replay Buffer Selection for Continual Learning.'' CVPR 2022. \href{https://arxiv.org/abs/2111.11210}{arXiv:2111.11210} [verify].
+\bibitem{craig} B.\ Mirzasoleiman, J.\ Bilmes, J.\ Leskovec. ``Coresets for Data-efficient Training of Machine Learning Models'' (CRAIG). ICML 2020. \href{https://arxiv.org/abs/1906.01827}{arXiv:1906.01827} [verify].
+\bibitem{forgetting} M.\ Toneva et al. ``An Empirical Study of Example Forgetting during Deep Neural Network Learning.'' ICLR 2019. \href{https://arxiv.org/abs/1812.05159}{arXiv:1812.05159}.
+\bibitem{derpp} P.\ Buzzega et al. ``Dark Experience for General Continual Learning'' (DER++). NeurIPS 2020. \href{https://arxiv.org/abs/2004.07211}{arXiv:2004.07211} [verify].
+\bibitem{gradnorm} Z.\ Chen et al. ``GradNorm: Gradient Normalization for Adaptive Loss Balancing.'' ICML 2018. \href{https://arxiv.org/abs/1711.02257}{arXiv:1711.02257} [verify].
+\bibitem{uncertainty} A.\ Kendall, Y.\ Gal, R.\ Cipolla. ``Multi-Task Learning Using Uncertainty to Weigh Losses.'' CVPR 2018. \href{https://arxiv.org/abs/1705.07115}{arXiv:1705.07115} [verify].
+\bibitem{rkd} W.\ Park et al. ``Relational Knowledge Distillation.'' CVPR 2019. \href{https://arxiv.org/abs/1904.05068}{arXiv:1904.05068} [verify].
+\bibitem{fitnets} A.\ Romero et al. ``FitNets: Hints for Thin Deep Nets.'' ICLR 2015. \href{https://arxiv.org/abs/1412.6550}{arXiv:1412.6550} [verify].
+\bibitem{e5} L.\ Wang et al. ``Text Embeddings by Weakly-Supervised Contrastive Pre-training'' (E5). 2022. \href{https://arxiv.org/abs/2212.03533}{arXiv:2212.03533} [verify].
+\bibitem{gteqwen} Z.\ Li et al. ``Towards General Text Embeddings with Multi-stage Contrastive Learning'' (GTE and gte-Qwen). 2023. \href{https://arxiv.org/abs/2308.03281}{arXiv:2308.03281} [verify].
+\bibitem{moe} J.\ Yu et al. ``Boosting Continual Learning of Vision-Language Models via Mixture-of-Experts Adapters.'' CVPR 2024. \href{https://arxiv.org/abs/2403.11549}{arXiv:2403.11549} [verify].
+\bibitem{gift} GIFT. [citation to be confirmed: recent VLM continual-learning method from our results table].
+\bibitem{loraloop} LoRA-Loop. [citation to be confirmed: recent VLM continual-learning method from our results table].
+\end{thebibliography}
+
+\end{document}

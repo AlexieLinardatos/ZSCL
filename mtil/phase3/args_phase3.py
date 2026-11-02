@@ -50,6 +50,14 @@ def parse_phase3_arguments():
         help="Weight replay CE per task by (N-i)/N where i=task position, N=total tasks"
     )
     p3_parser.add_argument(
+        "--exemplar_strategy",
+        choices=["random", "herding", "el2n", "gcr", "coverage"],
+        default="random",
+        help="Which images the pixel buffer keeps (default: random). Scored "
+             "with the checkpoint just trained on the task. Feature storage has "
+             "its own --feature_selection."
+    )
+    p3_parser.add_argument(
         "--replay_storage", choices=["pixel", "feature", "remind"], default="pixel",
         help="What the replay buffer stores. 'pixel' keeps preprocessed image "
              "tensors (602 KB each, gradient reaches both towers). 'feature' "
@@ -247,6 +255,7 @@ def parse_phase3_arguments():
 
     args.no_proportional_replay = p3_ns.no_proportional_replay
     args.replay_positional_weighting = p3_ns.replay_positional_weighting
+    args.exemplar_strategy = p3_ns.exemplar_strategy
 
     # ------------------------------------------------------------------ #
     # Step 5: replay storage mode and its knock-on effect on L_RD         #
@@ -324,6 +333,11 @@ def parse_phase3_arguments():
             f"--feature_adapt {args.feature_adapt} only applies to stored "
             f"features, but --replay_storage is '{args.replay_storage}'. Pixel "
             f"exemplars are re-encoded every step, so they never go stale."
+        )
+    if args.exemplar_strategy != "random" and args.replay_storage != "pixel":
+        raise ValueError(
+            "--exemplar_strategy selects images for the pixel buffer; use "
+            "--feature_selection with --replay_storage feature."
         )
     if args.replay_storage != "feature" and (
         args.feature_precision != "fp16" or args.feature_selection != "random"
