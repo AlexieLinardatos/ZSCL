@@ -109,6 +109,21 @@ if [ -n "${PREV:-}" ]; then
   TAG="${TAG}_prev${PREV}_mix${PREV_MIX:-1.0}"
 fi
 
+# Storage format and selection of the stored embeddings (RQ7 / RQ6). PREC is
+# fp32|fp16|int8|int4 (default fp16), SEL is random|herding|coverage|el2n
+# (default random). Unset, the run and its save path are unchanged.
+#   PREC=int8 sbatch featrep_v0_11t.sh
+#   SEL=herding BUDGET=1000 sbatch featrep_v0_11t.sh
+FEAT_FLAGS=""
+if [ -n "${PREC:-}" ]; then
+  FEAT_FLAGS="${FEAT_FLAGS} --feature_precision ${PREC}"
+  TAG="${TAG}_${PREC}"
+fi
+if [ -n "${SEL:-}" ]; then
+  FEAT_FLAGS="${FEAT_FLAGS} --feature_selection ${SEL}"
+  TAG="${TAG}_sel${SEL}"
+fi
+
 SAVE_PATH="ckpt/11task/featrep_v0${TAG}"
 mkdir -p "${SAVE_PATH}"
 
@@ -155,6 +170,7 @@ srun python -m phase3.train_phase3 \
   --use_replay \
   --replay_storage feature \
   ${BUDGET_FLAGS} \
+  ${FEAT_FLAGS} \
   ${RD_FLAG} \
   ${PREV_FLAGS} \
   --drift_probe_size 64 \

@@ -21,11 +21,111 @@ loop can hold either one, with the exception of add_task, which additionally
 needs the encoder to run.
 """
 
+import math
 import random
 from typing import Callable, Dict, List, Optional, Tuple
 
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
+
+# Bits per stored element.  Integer formats also carry one fp16 scale per vector.
+PRECISION_BITS = {"fp32": 32, "fp16": 16, "int8": 8, "int4": 4}
+SELECTION_METHODS = ("random", "herding", "coverage", "el2n")
+
+
+def quantize_dequantize(x: torch.Tensor, precision: str) -> torch.Tensor:
+    """
+    Round-trip `x` (N, D) through the storage format and return what a reader
+    of the buffer would decode.  Integer formats use symmetric per-vector
+    absmax scaling.  The result is held in fp32 (fp32 storage) or fp16
+    (everything else); nbytes() reports the nominal packed size, so int4 is
+    accounted at 4 bits even though it is not bit-packed in host memory.
+    """
+    if precision == "fp32":
+        return x.float()
+    if precision == "fp16":
+        return x.half()
+    qmax = 2 ** (PRECISION_BITS[precision] - 1) - 1
+    x = x.float()
+    scale = x.abs().amax(dim=1, keepdim=True).clamp_min(1e-8) / qmax
+    q = torch.round(x / scale).clamp(-qmax, qmax)
+    return (q * scale.half().float()).half()
+
+
+def _rank_within_classes(
+    feats: torch.Tensor,
+    labels: torch.Tensor,
+    method: str,
+    num_keep: int,
+    text_emb: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    """
+    Rank every candidate within its class, best first, and return a global
+    order whose every prefix is close to class-frequency proportional — the
+    same expected class mix as random sampling, so only *which* samples are
+    kept changes.  Downsampling at rebalance keeps a prefix of this order.
+
+    herding:  iCaRL greedy mean matching on the stored embeddings.
+    coverage: farthest-point (k-center) traversal, seeded at the class mean.
+    el2n:     surprisal, ||softmax(100 f T^T) - onehot(y)||_2, highest first,
+              scored against the class-name embeddings of the encoding model.
+
+    The greedy methods only rank as far as each class's share of `num_keep`
+    (plus one); the rest of the class follows in arbitrary order and is never
+    kept, since budgets only shrink after a task is added.
+    """
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    feats = F.normalize(feats.float(), dim=-1).to(device)
+    labels = labels.to(device)
+    total = len(labels)
+    keys = torch.empty(total)
+    for c in labels.unique().tolist():
+        idx = (labels == c).nonzero(as_tuple=True)[0]
+        x = feats[idx]
+        n = len(idx)
+        k_rank = min(n, math.ceil(num_keep * n / total) + 1)
+        if method == "el2n":
+            p = (100.0 * x @ text_emb.to(device).T).softmax(dim=-1)
+            p[:, c] -= 1.0
+            order = p.norm(dim=-1).argsort(descending=True).cpu()
+        elif method == "herding":
+            mu = x.mean(dim=0)
+            running = torch.zeros_like(mu)
+            avail = torch.ones(n, dtype=torch.bool, device=device)
+            order = []
+            for k in range(1, k_rank + 1):
+                gap = ((mu * k - running).unsqueeze(0) - x).norm(dim=-1)
+                gap[~avail] = float("inf")
+                i = int(gap.argmin())
+                order.append(i)
+                avail[i] = False
+                running += x[i]
+            order = _complete(order, n)
+        elif method == "coverage":
+            mu = F.normalize(x.mean(dim=0), dim=0)
+            first = int((x @ mu).argmax())
+            dist = (1 - x @ x[first]).clamp_min(0)
+            dist[first] = -1
+            order = [first]
+            for _ in range(k_rank - 1):
+                i = int(dist.argmax())
+                order.append(i)
+                dist = torch.minimum(dist, (1 - x @ x[i]).clamp_min(0))
+                dist[order] = -1
+            order = _complete(order, n)
+        else:
+            raise ValueError(f"Unknown selection method '{method}'.")
+        # Rank r of n maps to key (r + 0.5) / n, so sorting all keys interleaves
+        # classes in proportion to their size.
+        keys[idx.cpu()[order]] = (torch.arange(n, dtype=torch.float) + 0.5) / n
+    return keys.argsort()
+
+
+def _complete(ranked: List[int], n: int) -> torch.Tensor:
+    """Append the unranked indices of 0..n-1 after a partial ranking."""
+    seen = set(ranked)
+    return torch.tensor(ranked + [i for i in range(n) if i not in seen])
 
 
 class FlatFeatureReplayDataset(Dataset):
@@ -57,8 +157,14 @@ class FeatureReplayBuffer:
       replay time, exactly as ReplayBuffer does.
     """
 
-    def __init__(self, total_budget: int):
+    def __init__(self, total_budget: int, precision: str = "fp16", selection: str = "random"):
+        if precision not in PRECISION_BITS:
+            raise ValueError(f"Unknown precision '{precision}'.")
+        if selection not in SELECTION_METHODS:
+            raise ValueError(f"Unknown selection '{selection}'.")
         self.total_budget = total_budget
+        self.precision = precision
+        self.selection = selection
         self.memory: Dict[int, Dict[str, torch.Tensor]] = {}
         self.task_info: Dict[int, Dict] = {}
 
@@ -97,7 +203,11 @@ class FeatureReplayBuffer:
         """
         n = len(dataset)
         num_samples = min(num_samples, n)
-        indices = random.sample(range(n), num_samples)
+        # Selection needs every candidate encoded; random only needs the keep set.
+        if self.selection == "random":
+            indices = random.sample(range(n), num_samples)
+        else:
+            indices = list(range(n))
 
         subset = torch.utils.data.Subset(dataset, indices)
         loader = DataLoader(
@@ -121,15 +231,31 @@ class FeatureReplayBuffer:
 
             emb = model(images.cuda(), None)
             emb = emb / emb.norm(dim=-1, keepdim=True)
-            feats.append(emb.half().cpu())
+            feats.append(emb.float().cpu())
             labels.append(batch_labels.cpu().long())
+
+        feats = torch.cat(feats, dim=0)
+        labels = torch.cat(labels, dim=0)
+
+        if self.selection != "random":
+            text_emb = None
+            if self.selection == "el2n":
+                import clip.clip as clip
+                tokens = clip.tokenize([template(c) for c in classnames]).cuda()
+                text_emb = F.normalize(model(None, tokens).float(), dim=-1).cpu()
+            # Rank on full-precision features; quantization only affects storage.
+            order = _rank_within_classes(
+                feats, labels, self.selection, num_samples, text_emb
+            )
+            keep = order[:num_samples]
+            feats, labels = feats[keep], labels[keep]
 
         if was_training:
             model.train()
 
         self.memory[task_id] = {
-            "features": torch.cat(feats, dim=0),
-            "labels": torch.cat(labels, dim=0),
+            "features": quantize_dequantize(feats, self.precision),
+            "labels": labels,
         }
         self.task_info[task_id] = {
             "classnames": classnames,
@@ -145,7 +271,12 @@ class FeatureReplayBuffer:
         n = entry["features"].shape[0]
         if n <= task_budget:
             return
-        keep = torch.tensor(random.sample(range(n), task_budget))
+        if self.selection == "random":
+            keep = torch.tensor(random.sample(range(n), task_budget))
+        else:
+            # Stored best-first in class-proportional order (_rank_within_classes),
+            # so the prefix is the selection at the smaller budget.
+            keep = torch.arange(task_budget)
         self.memory[task_id] = {
             "features": entry["features"][keep],
             "labels": entry["labels"][keep],
@@ -273,7 +404,7 @@ class FeatureReplayBuffer:
         adapted = apply_drift(stored, delta)
         stats = drift_report(stored, adapted, anchor_src, anchor_delta)
 
-        adapted = adapted.half().cpu()
+        adapted = quantize_dequantize(adapted.cpu(), self.precision)
         for tid in task_ids:
             lo, hi = slices[tid]
             self.memory[tid]["features"] = adapted[lo:hi]
@@ -320,11 +451,18 @@ class FeatureReplayBuffer:
         return sum(v["features"].shape[0] for v in self.memory.values())
 
     def nbytes(self) -> int:
-        """Total bytes of stored feature data (labels excluded, they are noise)."""
-        return sum(
-            v["features"].numel() * v["features"].element_size()
-            for v in self.memory.values()
-        )
+        """
+        Nominal bytes of stored feature data at self.precision (labels excluded,
+        they are noise).  Integer formats add one fp16 scale per vector.
+        """
+        bits = PRECISION_BITS[self.precision]
+        total = 0
+        for v in self.memory.values():
+            n, d = v["features"].shape
+            total += n * d * bits // 8
+            if self.precision.startswith("int"):
+                total += n * 2
+        return total
 
     def __repr__(self) -> str:
         dim = self.feature_dim()

@@ -263,7 +263,11 @@ def finetune_multi_task_phase3(args):
 
     replay_storage = getattr(args, "replay_storage", "pixel")
     if replay_storage == "feature":
-        replay_buffer = FeatureReplayBuffer(total_budget=args.replay_budget)
+        replay_buffer = FeatureReplayBuffer(
+            total_budget=args.replay_budget,
+            precision=getattr(args, "feature_precision", "fp16"),
+            selection=getattr(args, "feature_selection", "random"),
+        )
     elif replay_storage == "remind":
         replay_buffer = RemindReplayBuffer(
             total_budget=args.replay_budget,

@@ -175,6 +175,21 @@ def parse_phase3_arguments():
     p3_parser.add_argument("--feature_adapt_sigma", type=float, default=None,
                            help="Kernel width for --feature_adapt sdc. Default "
                                 "adapts to the k-th neighbour distance.")
+    p3_parser.add_argument(
+        "--feature_precision", choices=["fp32", "fp16", "int8", "int4"],
+        default="fp16",
+        help="Storage format of the final embeddings (feature storage only). "
+             "Integer formats use symmetric per-vector absmax scaling with one "
+             "fp16 scale per vector. fp16 reproduces the original buffer."
+    )
+    p3_parser.add_argument(
+        "--feature_selection", choices=["random", "herding", "coverage", "el2n"],
+        default="random",
+        help="Which exemplars the feature buffer keeps, chosen in embedding "
+             "space after encoding the whole task (feature storage only). "
+             "Prefixes stay class-proportional, so only which samples are kept "
+             "changes, not the class mix. random reproduces the original buffer."
+    )
     p3_parser.add_argument("--feature_adapt_steps", type=int, default=500,
                            help="Fitting steps for --feature_adapt linear/mlp.")
     p3_parser.add_argument(
@@ -287,6 +302,8 @@ def parse_phase3_arguments():
     args.feature_adapt_iters = p3_ns.feature_adapt_iters
     args.feature_adapt_sigma = p3_ns.feature_adapt_sigma
     args.feature_adapt_steps = p3_ns.feature_adapt_steps
+    args.feature_precision = p3_ns.feature_precision
+    args.feature_selection = p3_ns.feature_selection
     # Per-estimator neighbour default: SDC averages over a wider set because
     # each neighbour only contributes a kernel weight, while LP's graph gets
     # dense and over-smoothed at high k.
@@ -307,6 +324,13 @@ def parse_phase3_arguments():
             f"--feature_adapt {args.feature_adapt} only applies to stored "
             f"features, but --replay_storage is '{args.replay_storage}'. Pixel "
             f"exemplars are re-encoded every step, so they never go stale."
+        )
+    if args.replay_storage != "feature" and (
+        args.feature_precision != "fp16" or args.feature_selection != "random"
+    ):
+        raise ValueError(
+            "--feature_precision and --feature_selection only apply to "
+            f"--replay_storage feature, but it is '{args.replay_storage}'."
         )
 
     return args
