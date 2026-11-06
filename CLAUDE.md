@@ -145,10 +145,10 @@ The control reproduces v4 (86.17 Last). Zero-shot eval also completed: `/scratch
 These are enough for Sunday. If any is not finished in time, cut its row; never fill in a number.
 
 **After Sunday, not submitted yet:**
-- P3 and P4: `bash scripts/11task/cvpr/submit_cvpr.sh P3` (8 jobs), then `P4` (7 jobs). P3's 11k runs replace Tab. 5's 11k column, which may come from old 13k runs.
+- P3 and P4: `bash scripts/11task/cvpr/submit_cvpr.sh P3` (9 jobs), then `P4` (7 jobs). P3's 11k runs replace Tab. 5's 11k column, which may come from old 13k runs.
 - True fine-tune and Replay + ZSCL seeds 1, 2: generate with `sed` from `cvpr/no_anchor_no_replay_v4.sh` (delete `--we`, `--avg_freq 50`, `--l2 1`; rename job and save dir to `true_ft_v4`) and `robustness/buf_11k_nord.sh` (add `--seed N`; rename to `buf11k_nord_sN` and `buf_11k_nord_seedN`), piped to `sbatch`. First run with `--we` off in this trainer, so check it first if it fails early.
 - 2 more seeds for the best storage form, 1 Order II run without RD, and Replay only + Replay + RD on the v4 schedule.
-- **Fix before P3:** `cvpr/exemplar_sel.sh` lacks `--replay_encode_share`, so image selection picks up to the full budget per task (at 11k, every image of tasks under 11k) and `replay_buffer.py` then shrinks randomly. Selection is mostly a no-op; old herding/EL2N/GCR/coverage results and the "selection is null" conclusion are confounded. Feature buffers keep a ranked prefix, so P4 is not affected.
+- **P3 selection fix (2026-11-06, must be on Nibi before P3):** `ReplayBuffer(ranked=True)` stores non-random selections best first and shrinks by prefix; `exemplar_sel.sh` passes `--replay_encode_share`. Before this, later tasks shrank each selection randomly, so old herding/EL2N/GCR/coverage results and the "selection is null" conclusion are confounded. Feature buffers already kept a ranked prefix, so P4 is not affected.
 - Do not copy scripts from the Windows checkout to Nibi: they have CRLF line endings. Local `M` entries under `mtil/` are line endings only.
 
 **Paper plan.** Goal: answer Faisal's 7 questions. Drafts: `cvpr2027_tables.tex`, `figs/q2a_budget.pdf`, `figs/q3_memory.pdf` (`mtil/scripts/plot_budget_curve.py`, `plot_memory_curve.py`). `cvpr2027_main.tex` not edited yet. Cells marked `\running` include jobs not submitted (P3, P4); herding/EL2N/GCR old runs used 13k, so they are not in the 11k column.

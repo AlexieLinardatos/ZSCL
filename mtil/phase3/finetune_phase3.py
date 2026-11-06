@@ -278,7 +278,10 @@ def finetune_multi_task_phase3(args):
             quantize=not getattr(args, "remind_no_pq", False),
         )
     else:
-        replay_buffer = ReplayBuffer(total_budget=args.replay_budget)
+        replay_buffer = ReplayBuffer(
+            total_budget=args.replay_budget,
+            ranked=getattr(args, "exemplar_strategy", "random") != "random",
+        )
     print(f"[Phase3] Replay storage mode: {replay_storage}")
 
     # Diagnostic probe: a few images per task, kept only to measure how stale

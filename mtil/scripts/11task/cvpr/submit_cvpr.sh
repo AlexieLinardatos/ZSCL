@@ -38,7 +38,8 @@ fi
 # P3: RQ3 image selection (Tab. 3)
 if want P3; then
   for s in herding el2n gcr coverage; do SEL=$s BUDGET=1000 sbatch $D/cvpr/exemplar_sel.sh; done
-  for s in herding el2n gcr; do SEL=$s BUDGET=11000 sbatch $D/cvpr/exemplar_sel.sh; done  # old runs used 13k
+  # Old herding/EL2N/GCR runs used 13k; old coverage ran at 11k but with selection undone by random shrink.
+  for s in herding el2n gcr coverage; do SEL=$s BUDGET=11000 sbatch $D/cvpr/exemplar_sel.sh; done
   sbatch $D/cvpr/alloc_equal_task_v4.sh
 fi
 

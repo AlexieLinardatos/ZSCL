@@ -41,7 +41,11 @@ def select_exemplars(
     device: str = "cuda",
     batch_size: int = 128,
 ) -> List[int]:
-    """Return a list of dataset indices to keep as exemplars."""
+    """Return dataset indices to keep, best first.
+
+    Every prefix of the result is itself a valid selection at that smaller
+    budget, so the replay buffer can shrink a task by truncating the list.
+    """
     n = len(dataset)
     num_samples = min(num_samples, n)
 
@@ -60,15 +64,14 @@ def select_exemplars(
 
     budgets = _per_class_budgets(labels, num_samples)
 
-    selected: List[int] = []
+    ranked: Dict[int, List[int]] = {}
     for class_id, budget in budgets.items():
         if budget <= 0:
             continue
         class_indices = torch.nonzero(labels == class_id, as_tuple=True)[0].tolist()
-        if budget >= len(class_indices):
-            selected.extend(class_indices)
-            continue
 
+        # No shortcut when the budget covers the class: the order still matters,
+        # because the buffer later truncates to a smaller budget.
         class_feats = features[class_indices]
         class_probs = probs[class_indices]
 
@@ -81,9 +84,9 @@ def select_exemplars(
         else:
             raise ValueError(f"Unknown exemplar strategy: {strategy}")
 
-        selected.extend(class_indices[i] for i in picked)
+        ranked[class_id] = [class_indices[i] for i in picked]
 
-    return selected
+    return _interleave_by_rank(ranked)
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +139,18 @@ def _extract_features_logits(
 # ---------------------------------------------------------------------------
 # Per-class budget allocation
 # ---------------------------------------------------------------------------
+
+def _interleave_by_rank(ranked: Dict[int, List[int]]) -> List[int]:
+    """Merge per-class best-first lists: every class's best, then every class's
+    second best, and so on. Any prefix is then spread evenly over classes, as
+    _per_class_budgets would allocate it. Classes are shuffled so a prefix
+    shorter than the class count does not always drop the same class ids.
+    """
+    classes = list(ranked)
+    random.shuffle(classes)
+    depth = max((len(v) for v in ranked.values()), default=0)
+    return [ranked[c][r] for r in range(depth) for c in classes if r < len(ranked[c])]
+
 
 def _per_class_budgets(labels: torch.Tensor, num_samples: int) -> Dict[int, int]:
     """Allocate num_samples across classes; small classes take all and yield

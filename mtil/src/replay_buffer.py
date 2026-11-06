@@ -39,8 +39,12 @@ class ReplayBuffer:
     - Stores per-task classnames and template callable for loss computation at replay time.
     """
 
-    def __init__(self, total_budget: int):
+    def __init__(self, total_budget: int, ranked: bool = False):
+        # ranked: samples are stored best first (non-random selection), so
+        # downsampling keeps a prefix. Random downsampling would undo the
+        # selection, since a task's share only shrinks after it is added.
         self.total_budget = total_budget
+        self.ranked = ranked
         self.memory: Dict[int, List[Tuple[torch.Tensor, int]]] = {}
         self.task_info: Dict[int, Dict] = {}
 
@@ -101,6 +105,13 @@ class ReplayBuffer:
             "template": template,
         }
 
+    def _shrink(self, task_id: int, budget: int) -> None:
+        current = self.memory[task_id]
+        if len(current) > budget:
+            self.memory[task_id] = (
+                current[:budget] if self.ranked else random.sample(current, budget)
+            )
+
     def rebalance(self) -> None:
         """
         Downsample all tasks equally so total stored exemplars <= total_budget.
@@ -113,9 +124,7 @@ class ReplayBuffer:
         per_task_budget = max(1, self.total_budget // num_tasks)
 
         for task_id in self.memory:
-            current = self.memory[task_id]
-            if len(current) > per_task_budget:
-                self.memory[task_id] = random.sample(current, per_task_budget)
+            self._shrink(task_id, per_task_budget)
 
     def rebalance_proportional(self, class_counts: Dict[int, int]) -> None:
         """
@@ -135,9 +144,7 @@ class ReplayBuffer:
         for task_id in self.memory:
             n_classes = class_counts.get(task_id, 1)
             task_budget = max(1, round(self.total_budget * n_classes / total_classes))
-            current = self.memory[task_id]
-            if len(current) > task_budget:
-                self.memory[task_id] = random.sample(current, task_budget)
+            self._shrink(task_id, task_budget)
 
     def get_combined_dataset(self) -> FlatReplayDataset:
         """Return a flat Dataset of all stored (img, label, task_id) tuples."""
