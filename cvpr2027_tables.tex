@@ -1,0 +1,92 @@
+% Draft tables for cvpr2027_main.tex: \input{cvpr2027_tables} where they belong.
+% Replace each \running with its result; grep for it to see what is left.
+\providecommand{\running}{\textcolor{gray}{running}}
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{3pt}
+\caption{\textbf{\Q{1}: replay and distillation.} 11k buffer, $\lambda{=}0.3$,
+Order~I, single seed. Prior results are as reported.}
+\label{tab:replay}
+\begin{tabular}{@{}l ccc ccc@{}}
+\toprule
+Method & Replay & $\Lzscl$ & $\Lrd$ & Transfer & Avg. & Last \\
+\midrule
+\multicolumn{7}{@{}l}{\emph{Per-task iteration schedule}} \\
+Zero-shot CLIP      & \xmark & \xmark & \xmark & \running & \running & \running \\
+WE + L2 only        & \xmark & \xmark & \xmark & 67.05 & 74.35 & 83.39 \\
+Distillation only   & \xmark & \cmark & \xmark & 68.66 & 76.02 & 84.45 \\
+Replay + ZSCL       & \cmark & \cmark & \xmark & 68.93 & \best{77.51} & \best{86.87} \\
+Replay + ZSCL + RD  & \cmark & \cmark & \cmark & \best{69.02} & 77.19 & 86.16 \\
+\midrule
+\multicolumn{7}{@{}l}{\emph{1500 iterations per task}} \\
+Replay only         & \cmark & \xmark & \xmark & 66.52 & 76.27 & \best{86.62} \\
+Replay + RD         & \cmark & \xmark & \cmark & 68.48 & 77.06 & 86.24 \\
+Replay + ZSCL       & \cmark & \cmark & \xmark & \best{69.03} & \best{77.57} & 86.44 \\
+\midrule
+\multicolumn{7}{@{}l}{\emph{Prior work}} \\
+Seq.\ FT~\cite{gift2025}         & & & & 59.0 & 65.0 & 74.0 \\
+ZSCL~\cite{zheng2023zscl}        & & & & 68.1 & 75.4 & 83.6 \\
+MoE-Adapters~\cite{yu2024moe}    & & & & 68.9 & 76.7 & 85.0 \\
+GIFT~\cite{gift2025}             & & & & 69.3 & 77.3 & 86.0 \\
+LoRA-Loop~\cite{loraloop2025}    & & & & 69.8 & 77.6 & 86.0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table*}[t]
+\centering
+\small
+\caption{\textbf{\Q{2}, \Q{3}: selecting what to keep.} The same strategies on
+images and on fp16 embeddings, at a scarce and a saturated budget. Single seed.}
+\label{tab:selection}
+\begin{tabular}{@{}l cc cc cc cc@{}}
+\toprule
+& \multicolumn{4}{c}{Images} & \multicolumn{4}{c}{Embeddings} \\
+\cmidrule(lr){2-5}\cmidrule(lr){6-9}
+& \multicolumn{2}{c}{1k} & \multicolumn{2}{c}{11k}
+& \multicolumn{2}{c}{1k} & \multicolumn{2}{c}{11k} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}
+Strategy & Transfer & Last & Transfer & Last & Transfer & Last & Transfer & Last \\
+\midrule
+Random           & 68.32 & 81.18 & 68.96 & 86.17 & \running & \running & 68.60 & 84.79 \\
+Equal per task   & --    & --    & \running & \running & -- & -- & -- & -- \\
+Herding          & \running & \running & \running & \running & \running & \running & \running & \running \\
+Surprisal (EL2N) & \running & \running & \running & \running & \running & \running & \running & \running \\
+GCR              & \running & \running & \running & \running & -- & -- & -- & -- \\
+Coverage         & \running & \running & \running & \running & \running & \running & \running & \running \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{table*}[t]
+\centering
+\small
+\caption{\textbf{\Q{3}: what to store.} All rows use $\Lrd$ and the per-task
+schedule. Same $N$ keeps 11k samples; same MB spends the image buffer's memory.
+Tokens: product-quantized mid-network features, $m$ sub-quantizers. Single seed.}
+\label{tab:storage}
+\begin{tabular}{@{}ll rrr ccc@{}}
+\toprule
+Stored form & Setting & Bytes/sample & \# Samples & Memory (MB) & Transfer & Avg. & Last \\
+\midrule
+Images (uint8)    & reference & 150\,kB & 11k & 1656 & 68.96 & \best{77.17} & \best{86.17} \\
+\midrule
+Embedding fp32    & same $N$  & 2\,kB   & 11k & 22.5 & \running & \running & \running \\
+Embedding fp16    & same $N$  & 1\,kB   & 11k & 11.3 & 68.60 & 76.08 & 84.79 \\
+Embedding int8    & same $N$  & 514\,B  & 11k & 5.6  & \running & \running & \running \\
+Embedding int4    & same $N$  & 258\,B  & 11k & 2.8  & \running & \running & \running \\
+Embedding fp16    & all images & 1\,kB  & \running & \running & \running & \running & \running \\
+\midrule
+Tokens, tap 2, $m{=}128$ & same $N$ & 25.2\,kB & 11k & 277  & 68.95 & 76.86 & 86.04 \\
+Tokens, tap 2, $m{=}32$  & same $N$ & 6.3\,kB  & 11k & 69   & \best{68.97} & 75.99 & 84.29 \\
+Tokens, tap 2, $m{=}128$ & same MB  & 25.2\,kB & 65k & 1638 & \running & \running & \running \\
+\midrule
+Tokens, tap 6, no PQ     & same $N$ & 302.6\,kB & 11k & 3328 & \running & \running & \running \\
+Tokens, tap 6, $m{=}128$ & same $N$ & 25.2\,kB & 11k & 277  & 68.91 & 76.83 & 85.88 \\
+Tokens, tap 6, $m{=}64$  & same $N$ & 12.6\,kB & 11k & 139  & 68.83 & 76.15 & 84.72 \\
+Tokens, tap 6, $m{=}32$  & same $N$ & 6.3\,kB  & 11k & 69   & 68.73 & 75.65 & 83.66 \\
+\bottomrule
+\end{tabular}
+\end{table*}

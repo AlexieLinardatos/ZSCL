@@ -140,11 +140,37 @@ GIFT~\cite{gift2025} and LoRA-Loop~\cite{loraloop2025} represent the state of th
 \subsection{Replay + distillation (\Q{1})}
 \label{sec:method-rd}
 \TODO{Inspiration / rationale: ZSCL argued against replay; replay and distillation constrain different things (replay keeps old decision boundaries, distillation keeps zero-shot geometry). Gradient routing: $\Lzscl$ and $\Lrd$ compute teacher text embeddings without gradient, so they only constrain the image encoder; $\Lrep$ recomputes class-name embeddings with the live model and is the only term that updates the text encoder for previous classes.}
-\TODO{How: batch composition, which teacher, which reference data.}
+\paragraph{Replay distillation.}
+$\Lrd$ applies the ZSCL objective to replay images instead of reference images.
+For a replay batch $x_{\text{rep}}$ and the cached teacher text anchors
+$E_{\text{ref}}\in\mathbb{R}^{N\times d}$ ($N{=}10{,}599$ Conceptual Captions
+sentences), let $\mathbf{Z}_t = s\,\hat f_0(x_{\text{rep}})E_{\text{ref}}^\top$
+and $\mathbf{Z}_s = s\,\hat f(x_{\text{rep}})E_{\text{ref}}^\top$, where
+$\hat f_0$ and $\hat f$ are the normalized image embeddings of the frozen
+pre-trained model and the student. Then
+\begin{equation}
+  \Lrd = \mathcal{D}(\mathbf{Z}_t,\mathbf{Z}_s) + \mathcal{D}(\mathbf{Z}_t^\top,\mathbf{Z}_s^\top),
+  \quad
+  \mathcal{D}(\mathbf{Z}_t,\mathbf{Z}_s)=T^2\,\mathrm{CE}\big(\mathbf{Z}_s/T,\ \mathrm{softmax}(\mathbf{Z}_t/T)\big).
+  \label{eq:rd}
+\end{equation}
+Since $\Lrd$ differs from $\Lzscl$ only in its images, comparing the two
+isolates whether the anchor needs open-domain data. At each step $\Lrep$ and
+$\Lrd$ share one replay batch of 8, drawn alongside the current-task batch and
+the reference batch. $\Lrep$ recomputes the class-name embeddings of each
+sample's source task with the current text encoder; $\Lrd$ uses the cached
+teacher anchors.
 
 \subsection{Buffer construction pipeline (\Q{2}, \Q{3})}
 \label{sec:method-pipeline}
-\TODO{Data organization: when the buffer is filled (end of each task), how the budget is split across tasks and classes (equal per task vs.\ equal per class), and how samples are ranked within a class.}
+The buffer is filled at the end of each task, after training on it. By default
+the budget is split across the tasks seen so far in proportion to their number
+of classes, $b_t=\lfloor B\,C_t/\sum_{j\le t}C_j\rfloor$, so every class holds
+about the same number of exemplars (\emph{equal per class}); at $B{=}11{,}000$
+and 1{,}201 classes this is about 9.2 per class. The alternative is
+$b_t=B/t$ (\emph{equal per task}). When a new task arrives, earlier tasks are
+shrunk to their new $b_t$.
+\TODO{How samples are ranked within a class.}
 \TODO{Selection strategies, with one line each: random; herding; surprisal maximization (define surprisal, \eg EL2N score or $-\log p(y\mid x)$ under the current model); GCR; coverage ($k$-center). The same strategies are applied in feature space for \Q{3}.}
 
 \subsection{What is stored: images, embeddings, tokens (\Q{3})}
@@ -205,10 +231,26 @@ accuracy over all tasks after the final stage, $\frac{1}{T}\sum_j a_{T,j}$.
 \textbf{Avg.}\ is the mean of all $T\times T$ entries of the matrix. It covers
 every task at every stage, so it reflects transfer, plasticity, and retention
 together. ImageNet is never trained on and is excluded from all three
-metrics.
+metrics. We also report backward transfer,
+$\text{BWT}=\frac{1}{T-1}\sum_{j<T}(a_{T,j}-a_{j,j})$~\cite{lopezpaz2017gem},
+the average accuracy each task loses between the stage it is learned and the
+end of training.
 
 \paragraph{Implementation details.}
-\TODO{Optimizer, iterations per task, batch composition (current : replay ratio), seeds, compute.}
+We train with AdamW ($\beta_1{=}0.9$, $\beta_2{=}0.999$, no weight decay),
+learning rate $5{\times}10^{-6}$ with a cosine schedule and 100 warm-up
+iterations, label smoothing 0.1, and batch size 8. Following
+ZSCL~\cite{zheng2023zscl}, we add an L2 weight penalty (weight 1) and average
+weights every 50 iterations; the averaged model is evaluated and carried to the
+next task. Distillation uses temperature $T{=}2$, ImageNet reference images, and
+$N{=}10{,}599$ Conceptual Captions sentences. Iterations per task are Aircraft
+3000, Caltech-101 1000, CIFAR-100 1500, DTD 1500, EuroSAT 1000, Flowers 1500,
+Food 1500, MNIST 800, Pet 1500, Cars 3000, and SUN397 5000. Each step also
+draws a replay batch of 8, so every run replays about 170k samples regardless
+of buffer size. Unless stated otherwise, $\lambda_{\text{rep}}{=}1$,
+$\lambda_{\text{RD}}{=}0.3$, and the buffer holds 11k images. Each run uses one
+40\,GB H100 partition. Results are single-seed unless marked $\pm$, which is
+the standard deviation over seeds 42, 1, and 2.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Results}
@@ -216,27 +258,44 @@ metrics.
 
 \subsection{Main results: replay + distillation (\Q{1})}
 \label{sec:res-q1}
-\TODO{Comparison with prior work (\cref{tab:sota}) and the component table (\cref{tab:q1}). Keep interpretation for \cref{sec:disc-q1}.}
+On Order~I, image replay with distillation reaches $86.28\pm0.10$ Last over
+three seeds, above GIFT and LoRA-Loop (86.0), which keep a ${\approx}900$M-parameter
+diffusion model at training time; its 1.66\,GB buffer is half the generator's
+fp16 footprint. Transfer ($68.79$) is above ZSCL ($68.1$) but $0.5$--$1.0$ below
+the two generative methods. On the reverse Order~II, Last again leads
+($85.74$ vs.\ $85.3$ and $85.5$), but Transfer ($63.57$) falls below ZSCL
+($64.2$): starting with fine-grained tasks costs zero-shot transfer that replay
+does not recover. \TODO{Component table (\cref{tab:q1}) once the P1 runs finish. Keep interpretation for \cref{sec:disc-q1}.}
 
 \begin{table*}[t]
 \centering
 \small
 \caption{\textbf{Comparison on MTIL} (CLIP ViT-B/16, 11 tasks). Transfer is
 the upper-triangle mean (ZSCL convention). Extra memory is the replay
-buffer or generator kept at training time.}
+buffer or generator kept at training time (SD: Stable Diffusion, fp16). Prior
+results are as reported; ours on Order~I is mean $\pm$ std over three seeds,
+Order~II is single-seed.}
 \label{tab:sota}
 \begin{tabular}{@{}l l l r ccc@{}}
 \toprule
 Method & Venue & Replay & Extra memory & Transfer & Avg. & Last \\
 \midrule
-ZSCL~\cite{zheng2023zscl}       & ICCV'23  & reference data    & \tbd & \tbd & \tbd & \tbd \\
-MoE-Adapters~\cite{yu2024moe}   & CVPR'24  & --                & \tbd & \tbd & \tbd & \tbd \\
-GIFT~\cite{gift2025}            & CVPR'25  & synthetic (diff.) & \tbd & \tbd & \tbd & \tbd \\
-LoRA-Loop~\cite{loraloop2025}   & ICCVW'25 & synthetic (diff.) & \tbd & \tbd & \tbd & \tbd \\
+% Prior-work numbers as reported in their papers (upper-triangle Transfer);
+% Order II prior-work numbers from GIFT / LoRA-Loop. Ours recomputed from task_summary.csv.
+\multicolumn{7}{@{}l}{\emph{Order I}} \\
+ZSCL~\cite{zheng2023zscl}       & ICCV'23  & reference data    & --          & 68.1 & 75.4 & 83.6 \\
+MoE-Adapters~\cite{yu2024moe}   & CVPR'24  & --                & --          & 68.9 & 76.7 & 85.0 \\
+GIFT~\cite{gift2025}            & CVPR'25  & synthetic (diff.) & SD, 3.4\,GB & 69.3 & 77.3 & 86.0 \\
+LoRA-Loop~\cite{loraloop2025}   & ICCVW'25 & synthetic (diff.) & SD, 3.4\,GB & \best{69.8} & \best{77.6} & 86.0 \\
+Image replay + distillation     & --       & images            & 1.66\,GB    & 68.79\pmstd{0.16} & 77.18\pmstd{0.01} & \best{86.28}\pmstd{0.10} \\
+Best equal-memory               & --       & \tbd              & \tbd        & \tbd & \tbd & \tbd \\
 \midrule
-% verify all prior-work numbers against the papers (upper-triangle Transfer)
-Ours: image replay              & --       & images            & 1656\,MB & 68.79\pmstd{0.16} & 77.18\pmstd{0.01} & 86.28\pmstd{0.10} \\
-Ours: best equal-memory         & --       & \tbd              & \tbd & \tbd & \tbd & \tbd \\
+\multicolumn{7}{@{}l}{\emph{Order II}} \\
+ZSCL~\cite{zheng2023zscl}       & ICCV'23  & reference data    & --          & 64.2 & 74.5 & 83.4 \\
+MoE-Adapters~\cite{yu2024moe}   & CVPR'24  & --                & --          & 64.3 & 74.7 & 84.1 \\
+GIFT~\cite{gift2025}            & CVPR'25  & synthetic (diff.) & SD, 3.4\,GB & 65.9 & 75.7 & 85.3 \\
+LoRA-Loop~\cite{loraloop2025}   & ICCVW'25 & synthetic (diff.) & SD, 3.4\,GB & \best{66.3} & \best{75.9} & 85.5 \\
+Image replay + distillation     & --       & images            & 1.66\,GB    & 63.57 & 75.27 & \best{85.74} \\
 \bottomrule
 \end{tabular}
 \end{table*}
