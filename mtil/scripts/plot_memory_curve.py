@@ -9,7 +9,7 @@ named in the figure as running.
 
 import os
 
-from plot_budget_curve import ROOT, metrics
+from plot_budget_curve import PINNED, ROOT, metrics
 
 OUT = "figs/q3_memory"
 
@@ -23,9 +23,10 @@ SERIES = {
     ],
     "Embeddings": [
         (2.8, "featrep_v0_int4"),
-        (5.6, "featrep_v0_int8"),
-        (11.3, "featrep_v0"),
+        (5.7, "featrep_v0_int8"),
+        (11.3, "featrep_v0_fp16"),
         (22.5, "featrep_v0_fp32"),
+        (277.6, "featrep_v0_b2000000"),
     ],
     "Tokens (PQ, tap 2)": [
         (69, "remind_l2_m32"),
@@ -40,7 +41,7 @@ def load():
     for name, points in SERIES.items():
         data[name] = []
         for mb, run in points:
-            if os.path.exists(os.path.join(ROOT, run, "task_summary.csv")):
+            if run in PINNED or os.path.exists(os.path.join(ROOT, run, "task_summary.csv")):
                 data[name].append((mb, metrics(run)[1]))
             else:
                 running.append(run)
@@ -72,7 +73,7 @@ def main():
     ax.set_xticks(ticks, [str(t) for t in ticks])
     ax.minorticks_off()
     ax.set_xlim(2, 2400)
-    ax.set_ylim(80.5, 87)
+    ax.set_ylim(80.5, 87.2)
     ax.set_xlabel("Buffer memory (MB, log scale)", fontsize=8)
     ax.set_ylabel("Last accuracy (%)", fontsize=8)
     ax.grid(axis="y", color="#e4e3df", lw=0.5)

@@ -1,0 +1,163 @@
+% Sections 5-8 for the CVPR 2027 paper. Numbers come only from PDF version (11).
+% Paste over Sec. 5 onward. Keep the existing tables and figures.
+% \CHECK = conflicts with another part of the PDF, or needs confirming.
+% \TODO  = needs data that is not in the PDF. No number has been filled in.
+% Label names are guesses: tab:replay, tab:selection, tab:storage, fig:q2a, fig:q3.
+\providecommand{\CHECK}[1]{\textcolor{orange}{#1}}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Results}
+\label{sec:results}
+
+\subsection{Main results: replay + distillation (\Q{1})}
+\label{sec:res-q1}
+
+\paragraph{Baselines.}
+We compare against ZSCL~\cite{zheng2023zscl}, which distills on reference data
+without replay and is our direct predecessor; MoE-Adapters~\cite{yu2024moe},
+which routes inputs through task-specific experts and keeps no exemplars; and
+GIFT~\cite{gift2025} and LoRA-Loop~\cite{loraloop2025}, which replay images
+synthesized by a ${\approx}900$M-parameter diffusion model. ZAF~\cite{gao2024zaf},
+C-CLIP~\cite{liu2025cclip}, and SD-LoRA~\cite{wu2025sdlora} use different
+protocols and are not directly comparable on this benchmark.
+
+\paragraph{Comparison with prior work.}
+On Order~I, image replay with distillation reaches $86.16$ Last, 0.16 above
+GIFT and LoRA-Loop (86.0) and 2.56 above ZSCL (83.6). Its Avg.\
+($77.19$) is within 0.11 of GIFT and 0.41 of LoRA-Loop. These results need
+no generator: the 1.66\,GB buffer is about half the size of the diffusion model
+in fp16 (3.4\,GB). Transfer ($69.02$) is 0.92 above ZSCL but 0.28 and 0.78
+below GIFT and LoRA-Loop, so we claim higher retention at lower memory, not the
+best result on every metric.
+
+On Order~II, Last again leads ($85.74$ vs.\ $85.3$ and $85.5$), while Avg.\
+($75.27$) trails by 0.4--0.6. Transfer ($63.57$) is below ZSCL ($64.2$), GIFT
+($65.9$), and LoRA-Loop ($66.3$). The retention advantage therefore holds across
+both orders, but the Transfer gap grows on Order~II.
+
+\paragraph{Components.}
+\Cref{tab:replay} separates the components. Without replay, distillation improves
+on WE + L2 on all three metrics (+1.61 Transfer, +1.67 Avg., +1.06 Last). Adding
+replay raises Avg.\ by 1.49 and Last by 2.42, to 86.87. Without $\Lzscl$, replay
+alone reaches 86.62 Last but only 66.52 Transfer, and adding $\Lrd$ raises
+Transfer by 1.96 for a 0.38 drop in Last. We interpret these effects
+in~\cref{sec:disc-q1}.
+
+\subsection{Replay budget (\Q{2})}
+\label{sec:res-q2a}
+Our hypothesis that replay saturates at a small number of exemplars per class is
+false. Last rises with budget up to the largest buffer we test
+(\cref{fig:q2a}), from 81.18 at 1k images to 86.17 at 11k, a gain of
+4.99 from about 0.8 to 9.2 exemplars per class. \TODO{Give the slope of the
+last doubling from Fig.~1, and the Transfer trend.} Details are
+in~\cref{sec:abl-budget}.
+
+\subsection{Selection (\Q{2}, \Q{3})}
+\label{sec:res-select}
+\TODO{After P3 and P4. One sentence for images and one for embeddings: does any
+strategy beat random, and at which budget? Details in~\cref{sec:abl-select}.}
+
+\subsection{Quantization (\Q{3})}
+\label{sec:res-quant}
+\TODO{Needs the storage table, which is not in this version. State how far
+precision can drop before Last falls. Full sweep in~\cref{sec:abl-quant}.}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Ablations}
+\label{sec:ablations}
+
+\subsection{Budget and distillation (\Q{2})}
+\label{sec:abl-budget}
+We sweep the budget $\budget$ with and without $\Lrd$, keeping all other
+hyperparameters fixed. Last increases monotonically for both
+variants, so buffer size is the main driver of retention regardless of $\Lrd$.
+\TODO{Rewrite the rest from the sweep under the current metric: the Transfer
+difference and Last cost of $\Lrd$ at each budget, and whether distillation matters
+more when the buffer is small. The previous values ($+0.37$, $-1.55\rightarrow-0.27$,
+the $B{=}3{,}000$ crossover) do not match \cref{tab:replay}.}
+
+\subsection{Selection strategies (\Q{2}, \Q{3})}
+\label{sec:abl-select}
+\TODO{After P3 and P4: compare strategies at 1k and 11k, for images and
+embeddings (\cref{tab:selection}).}
+
+\paragraph{Allocation.}
+Splitting the budget equally per task or in proportion to class count gives the
+same Last (\CHECK{86.44}) and changes Avg.\ and Transfer by less than 0.10. We use
+proportional allocation for its even per-class coverage, but the headline results
+do not depend on it.
+
+\subsection{Quantization (\Q{3})}
+\label{sec:abl-quant}
+\TODO{Embedding precision sweep (fp32, fp16, int8, int4): memory, Transfer, Avg.,
+Last. Drop the PQ and reconstruction-error text if tokens stay cut.}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{What replay adds to distillation (\Q{1})}
+\label{sec:disc-q1}
+
+\paragraph{Replay drives retention.}
+Distillation alone reaches 84.45 Last, and real exemplars add 2.42 on top of it.
+Reference-data distillation therefore does not make replay redundant. This
+matches how the two terms act: $\Lzscl$ and $\Lrd$ use fixed teacher text
+embeddings and constrain only the image encoder, while $\Lrep$ is the only term
+that updates the text encoder for previous classes. The binding constraint is
+forgetting rather than plasticity, because replay raises Last by protecting
+earlier tasks. \TODO{Support with BWT or the diagonal under the current metric.
+The old BWT values should not be reused.}
+
+\paragraph{Distillation preserves transfer.}
+Replay alone has the lowest Transfer among the replay rows (66.52). Both anchors
+raise it, but they are not equally necessary for retention: replay alone already
+gives 86.62 Last, so their main role is protecting zero-shot ability.
+
+\paragraph{$\Lrd$ can stand in for reference images.}
+With no reference images, $\Lrd$ adds 1.96 Transfer to replay at a cost of 0.38
+Last. It still uses Conceptual Captions text anchors, so it removes the need for
+reference images but not for reference text. \CHECK{On top of $\Lzscl$, $\Lrd$
+raises Transfer by about 1.7 and leaves Last essentially unchanged.}
+% From the whole-number seed-42 values. Replace with exact values from the two runs.
+
+\subsection{Quantity vs.\ fidelity (\Q{3})}
+\label{sec:disc-fidelity}
+Storing the final embedding (\CHECK{fp16}, 1\,kB) instead of the image (150\,kB)
+reduces memory by $147\times$, from 1.66\,GB to 11\,MB at 11k samples, and costs
+1.42 Last (84.75 vs.\ 86.17). Stored embeddings go stale as the image
+encoder changes and send gradient only to the text encoder, so some loss is
+expected. Under tight memory, however, quantity wins: 11k embeddings (11\,MB) beat
+1k images (151\,MB) by 3.57 Last while using $13\times$ less memory. Fidelity
+matters most when memory is plentiful, and sample count matters most when it is
+scarce. \TODO{Add the equal-memory point and crossover from Fig.~2.}
+
+\subsection{Answers and recommendations}
+\label{sec:answers}
+\textbf{\Q{1}:} Replay and distillation are complementary. Replay provides
+retention and distillation preserves transfer, so both should be used.
+\textbf{\Q{2}:} Store as much as the budget allows, since Last had not saturated
+at 11k images. \TODO{Selection recommendation after P3 and P4.}
+\textbf{\Q{3}:} Store images when memory allows and embeddings when it does not.
+\TODO{Recommended precision and crossover point.}
+
+\paragraph{Limitations.}
+We study one benchmark and one backbone. Most runs use Order~I. Transfer also remains below the generative
+methods on both orders.
+
+\paragraph{Future directions.}
+The gap between embeddings and images suggests several follow-ups: feature-level
+augmentation, refreshing stored features as the encoder changes, a previous-task
+teacher for feature distillation, and testing other backbones.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Conclusion}
+\label{sec:conclusion}
+We studied the replay buffer in continual learning of CLIP, measuring memory in
+bytes. Real exemplars add retention that distillation alone does not provide, and
+with distillation they exceed the Last accuracy of generative replay without
+keeping a generator at training time. Retention kept improving up to the largest
+budget we tested. At tight memory budgets, embeddings are a better use of bytes
+than a few images, although images remain best when memory allows. Treating the
+buffer as a design choice, rather than a fixed hyperparameter, gives a simple and
+strong baseline for continual vision-language learning.

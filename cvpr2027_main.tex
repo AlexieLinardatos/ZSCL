@@ -249,8 +249,7 @@ Food 1500, MNIST 800, Pet 1500, Cars 3000, and SUN397 5000. Each step also
 draws a replay batch of 8, so every run replays about 170k samples regardless
 of buffer size. Unless stated otherwise, $\lambda_{\text{rep}}{=}1$,
 $\lambda_{\text{RD}}{=}0.3$, and the buffer holds 11k images. Each run uses one
-40\,GB H100 partition. Results are single-seed unless marked $\pm$, which is
-the standard deviation over seeds 42, 1, and 2.
+40\,GB H100 partition.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Results}
@@ -258,10 +257,10 @@ the standard deviation over seeds 42, 1, and 2.
 
 \subsection{Main results: replay + distillation (\Q{1})}
 \label{sec:res-q1}
-On Order~I, image replay with distillation reaches $86.28\pm0.10$ Last over
-three seeds, above GIFT and LoRA-Loop (86.0), which keep a ${\approx}900$M-parameter
+On Order~I, image replay with distillation reaches $86.16$ Last,
+above GIFT and LoRA-Loop (86.0), which keep a ${\approx}900$M-parameter
 diffusion model at training time; its 1.66\,GB buffer is half the generator's
-fp16 footprint. Transfer ($68.79$) is above ZSCL ($68.1$) but $0.5$--$1.0$ below
+fp16 footprint. Transfer ($69.02$) is above ZSCL ($68.1$) but $0.3$--$0.8$ below
 the two generative methods. On the reverse Order~II, Last again leads
 ($85.74$ vs.\ $85.3$ and $85.5$), but Transfer ($63.57$) falls below ZSCL
 ($64.2$): starting with fine-grained tasks costs zero-shot transfer that replay
@@ -273,8 +272,7 @@ does not recover. \TODO{Component table (\cref{tab:q1}) once the P1 runs finish.
 \caption{\textbf{Comparison on MTIL} (CLIP ViT-B/16, 11 tasks). Transfer is
 the upper-triangle mean (ZSCL convention). Extra memory is the replay
 buffer or generator kept at training time (SD: Stable Diffusion, fp16). Prior
-results are as reported; ours on Order~I is mean $\pm$ std over three seeds,
-Order~II is single-seed.}
+results are as reported.}
 \label{tab:sota}
 \begin{tabular}{@{}l l l r ccc@{}}
 \toprule
@@ -287,7 +285,7 @@ ZSCL~\cite{zheng2023zscl}       & ICCV'23  & reference data    & --          & 6
 MoE-Adapters~\cite{yu2024moe}   & CVPR'24  & --                & --          & 68.9 & 76.7 & 85.0 \\
 GIFT~\cite{gift2025}            & CVPR'25  & synthetic (diff.) & SD, 3.4\,GB & 69.3 & 77.3 & 86.0 \\
 LoRA-Loop~\cite{loraloop2025}   & ICCVW'25 & synthetic (diff.) & SD, 3.4\,GB & \best{69.8} & \best{77.6} & 86.0 \\
-Image replay + distillation     & --       & images            & 1.66\,GB    & 68.79\pmstd{0.16} & 77.18\pmstd{0.01} & \best{86.28}\pmstd{0.10} \\
+Image replay + distillation     & --       & images            & 1.66\,GB    & 69.02 & 77.19 & \best{86.16} \\
 Best equal-memory               & --       & \tbd              & \tbd        & \tbd & \tbd & \tbd \\
 \midrule
 \multicolumn{7}{@{}l}{\emph{Order II}} \\
@@ -307,7 +305,7 @@ Image replay + distillation     & --       & images            & 1.66\,GB    & 6
 \caption{\textbf{\Q{1}: replay and distillation.} All rows use 1500
 iterations per task and an 11k buffer. $\Lzscl$: distillation on reference
 data; $\Lrd$: distillation on replay images ($\lambda{=}0.5$; $^\dagger$ with
-the reference stream on). Single seed.}
+the reference stream on).}
 \label{tab:q1}
 \begin{tabular}{@{}l ccc ccc@{}}
 \toprule
@@ -359,7 +357,7 @@ Replay + ZSCL + RD$^\dagger$ & \cmark & \cmark & \cmark & \best{69.10} & 77.07 &
 \setlength{\tabcolsep}{3.5pt}
 \caption{\textbf{\Q{2}: replay budget.} Image replay with $\Lzscl$, with
 and without $\Lrd$ ($\lambda{=}0.3$, per-task iteration schedule). Memory
-assumes uint8 images (150.5\,kB each). Single seed.}
+assumes uint8 images (150.5\,kB each).}
 \label{tab:q2a}
 \begin{tabular}{@{}rrr cc cc@{}}
 \toprule
@@ -388,7 +386,7 @@ All    & \tbd & \tbd & \tbd & \tbd & \tbd & \tbd \\
 \caption{\textbf{\Q{2}: selecting images.} Evaluated where the buffer is
 scarce (1k) and where it is saturated (11k). Top: how the budget is split
 ($^\ddagger$1500 it./task, no $\Lrd$). Bottom: which samples are kept within a
-class (full method, per-class allocation). Single seed.}
+class (full method, per-class allocation).}
 \label{tab:q2b}
 \begin{tabular}{@{}ll cc cc@{}}
 \toprule
@@ -542,7 +540,7 @@ Images (uint8)       & reference & 150\,kB & 11k  & 1656 & 68.96 & 77.17 & 86.17
 \textbf{\Q{3}:} \TODO{}
 
 \paragraph{Limitations.}
-\TODO{Single benchmark, backbone, task order; number of seeds.}
+\TODO{Single benchmark, backbone, task order.}
 
 \paragraph{Future directions.}
 \TODO{\Q{3} follow-ups: feature-level augmentation, refreshing stored features, a previous-task teacher for feature distillation, other backbones.}

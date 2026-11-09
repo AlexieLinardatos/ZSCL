@@ -131,7 +131,9 @@ Fetch CSVs from local WSL with `bash mtil/scripts/fetch_results.sh`. Claude cann
 | Replay + ZSCL | `robustness/buf_11k_nord` | 68.93 | 77.51 | 86.87 | 87.11 |
 | Replay + ZSCL + RD (v4 control) | `cvpr/imgsel_random_b11000` | 69.02 | 77.19 | 86.16 | 87.11 |
 
-The control reproduces v4 (86.17 Last). Zero-shot eval also completed: `/scratch/alexie/ckpt/rebuttal/zeroshot/evaluate_all_results.csv` (numbers not read yet).
+The control reproduces v4 (86.17 Last).
+
+**Update 2026-11-08 (user's call, CSVs to be verified later):** `cvpr/no_anchor_no_replay_v4` now reads Transfer 67.67 (per-task), Last 68.43, Diag 87.08; Avg not yet computed. This replaces the 67.05/74.35/83.39 row above in Table 1. `cvpr/ZSCL_replay_No_RD.v4` (Replay + ZSCL, no RD) finished the week of 2026-11-02 with Avg 77.51, Transfer 68.93, Diag 87.11, same as `buf_11k_nord`; its printed "Last 68.43" was the no-anchor run's line, so Replay + ZSCL keeps 86.87. Zero-shot eval also completed: `/scratch/alexie/ckpt/rebuttal/zeroshot/evaluate_all_results.csv` (numbers not read yet).
 
 **Queued for Sunday (P2, all PENDING at last check).** Results land in `ckpt/11task/featrep_v0*` and `ckpt/11task/remind_l*`.
 
@@ -144,6 +146,8 @@ The control reproduces v4 (86.17 Last). Zero-shot eval also completed: `/scratch
 
 These are enough for Sunday. If any is not finished in time, cut its row; never fill in a number.
 
+**P2 results (2026-11-06), T/Avg/Last:** fp16 rerun 68.72/76.03/84.75, fp32 68.72/76.06/84.70, int8 68.74/76.03/84.64, int4 68.43/75.66/83.96, all images 271,057 embeddings at 278 MB 68.88/76.27/85.28, tokens tap 2 m=128 65k 68.83/77.01/86.68. `remind_l6_m128_nopq` FAILED at 10/11. Zero-shot 69.32/65.22/65.22. P3's 9 jobs include coverage 11k and have the selection fix; alloc job 26335519 lacked the RD fix and P4 was not submitted.
+
 **After Sunday, not submitted yet:**
 - P3 and P4: `bash scripts/11task/cvpr/submit_cvpr.sh P3` (9 jobs), then `P4` (7 jobs). P3's 11k runs replace Tab. 5's 11k column, which may come from old 13k runs.
 - True fine-tune and Replay + ZSCL seeds 1, 2: generate with `sed` from `cvpr/no_anchor_no_replay_v4.sh` (delete `--we`, `--avg_freq 50`, `--l2 1`; rename job and save dir to `true_ft_v4`) and `robustness/buf_11k_nord.sh` (add `--seed N`; rename to `buf11k_nord_sN` and `buf_11k_nord_seedN`), piped to `sbatch`. First run with `--we` off in this trainer, so check it first if it fails early.
@@ -153,6 +157,7 @@ These are enough for Sunday. If any is not finished in time, cut its row; never 
 
 **Paper plan.** Goal: answer Faisal's 7 questions. Drafts: `cvpr2027_tables.tex`, `figs/q2a_budget.pdf`, `figs/q3_memory.pdf` (`mtil/scripts/plot_budget_curve.py`, `plot_memory_curve.py`). `cvpr2027_main.tex` not edited yet. Cells marked `\running` include jobs not submitted (P3, P4); herding/EL2N/GCR old runs used 13k, so they are not in the 11k column.
 Table 1 replay + distillation with prior-work rows (Q1); Fig. 1 budget; Table 2 selection, images and embeddings; Table 3 storage form and precision; Fig. 2 Last vs. memory. RD framing: redundant with ZSCL, substitutes for it without reference images (still uses CC text anchors). Order II goes to the supplement.
+Tokens and PQ are being cut from the main paper (user's Sec. 3.4 now says images and embeddings); revisit when P2 token jobs finish. P3 submitted 2026-11-06 as 9 jobs (expected 8): verify fixes with `scontrol write batch_script`.
 Cut Tab. 3 (duplicate, old metric). Move Tabs. 5, 6, 8, 9, 10, 12, 13 and Appendices A-C to the supplement. Selection gets 1-2 sentences.
 Text fixes: Order II 68.6 Transfer claim contradicts Tab. 1 (63.57), delete it; replace ImageNet-column claims (68.37, 68.00, +0.37); remove duplicate Metrics paragraph, "ExRD", and "RD is our key addition". Claim Last and memory cost, not overall SOTA: Transfer trails GIFT (69.3) and LoRA-Loop (69.8). 86.87 is single-seed.
 

@@ -29,9 +29,17 @@ SERIES = {
     ],
 }
 
-# Read from the Nibi output on 2026-11-05; used only until fetch_results.sh has
+# Read from the Nibi output in Nov 2026; used only until fetch_results.sh has
 # copied this run into results_sync. (Transfer, Last)
-PINNED = {"robustness/buf_11k_nord": (68.93, 86.87)}
+PINNED = {
+    "robustness/buf_11k_nord": (68.93, 86.87),
+    "featrep_v0_fp16": (68.72, 84.75),
+    "featrep_v0_fp32": (68.72, 84.70),
+    "featrep_v0_int8": (68.74, 84.64),
+    "featrep_v0_int4": (68.43, 83.96),
+    "featrep_v0_b2000000": (68.88, 85.28),
+    "remind_l2_m128_b65000": (68.83, 86.68),
+}
 
 # Reported Order I numbers.
 GENERATIVE = {"Last": (86.0, "GIFT / LoRA-Loop"), "Transfer": (69.3, "GIFT")}
