@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=alloc_eqtask_v4
-#SBATCH --time=72:00:00
-#SBATCH --mem=128GB
+#SBATCH --time=20:00:00
+#SBATCH --mem=64GB
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:nvidia_h100_80gb_hbm3_3g.40gb:1
 #SBATCH --account=def-fqureshi_gpu
