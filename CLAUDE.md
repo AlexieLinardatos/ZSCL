@@ -148,6 +148,8 @@ These are enough for Sunday. If any is not finished in time, cut its row; never 
 
 **P2 results (2026-11-06), T/Avg/Last:** fp16 rerun 68.72/76.03/84.75, fp32 68.72/76.06/84.70, int8 68.74/76.03/84.64, int4 68.43/75.66/83.96, all images 271,057 embeddings at 278 MB 68.88/76.27/85.28, tokens tap 2 m=128 65k 68.83/77.01/86.68. `remind_l6_m128_nopq` FAILED at 10/11. Zero-shot 69.32/65.22/65.22. P3's 9 jobs include coverage 11k and have the selection fix; alloc job 26335519 lacked the RD fix and P4 was not submitted.
 
+**P3 results (2026-11-23, all 9 COMPLETED, ranked-buffer fix in; T/Avg/Last, paper Transfer).** 1k (baseline random = `robustness/buf_1k_exrd` 68.32/74.94/81.18): herding 68.82/75.94/83.79, GCR 68.77/75.96/83.61, coverage 68.43/75.44/83.21, EL2N 68.17/73.14/77.78. 11k (random 69.02/77.19/86.16): herding 68.41/77.10/86.47, GCR 68.47/77.14/86.43, coverage 68.60/77.01/86.10, EL2N 68.77/75.89/82.25 (MNIST/EuroSAT/Food collapse). Equal-per-task alloc, no RD: 68.61/77.44/86.87 (vs per-class `buf_11k_nord` 68.93/77.51/86.87). CSVs not yet in results_sync.
+
 **After Sunday, not submitted yet:**
 - P3 and P4: `bash scripts/11task/cvpr/submit_cvpr.sh P3` (9 jobs), then `P4` (7 jobs). P3's 11k runs replace Tab. 5's 11k column, which may come from old 13k runs.
 - True fine-tune and Replay + ZSCL seeds 1, 2: generate with `sed` from `cvpr/no_anchor_no_replay_v4.sh` (delete `--we`, `--avg_freq 50`, `--l2 1`; rename job and save dir to `true_ft_v4`) and `robustness/buf_11k_nord.sh` (add `--seed N`; rename to `buf11k_nord_sN` and `buf_11k_nord_seedN`), piped to `sbatch`. First run with `--we` off in this trainer, so check it first if it fails early.
